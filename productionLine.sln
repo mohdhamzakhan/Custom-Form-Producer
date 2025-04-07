@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35506.116 d17.12
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "productionLine.Server", "productionLine.Server\productionLine.Server.csproj", "{A539E556-34D5-4952-AA8E-3FE2CF0CC28D}"
+EndProject
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "productionline.client", "productionline.client\productionline.client.esproj", "{C4D79051-DBBE-416D-B399-688AE7942D40}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A539E556-34D5-4952-AA8E-3FE2CF0CC28D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A539E556-34D5-4952-AA8E-3FE2CF0CC28D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A539E556-34D5-4952-AA8E-3FE2CF0CC28D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A539E556-34D5-4952-AA8E-3FE2CF0CC28D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4D79051-DBBE-416D-B399-688AE7942D40}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4D79051-DBBE-416D-B399-688AE7942D40}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4D79051-DBBE-416D-B399-688AE7942D40}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{C4D79051-DBBE-416D-B399-688AE7942D40}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4D79051-DBBE-416D-B399-688AE7942D40}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4D79051-DBBE-416D-B399-688AE7942D40}.Release|Any CPU.Deploy.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
