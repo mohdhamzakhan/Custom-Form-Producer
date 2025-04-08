@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace productionLine.Server.Migrations
 {
     /// <inheritdoc />
-    public partial class initialForm : Migration
+    public partial class initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -26,17 +26,27 @@ namespace productionLine.Server.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "FF_FORMSUBMISSION",
+                name: "FF_FORMAPPROVER",
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
                         .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
-                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false),
-                    SUBMITTEDAT = table.Column<DateTime>(type: "TIMESTAMP(7)", nullable: false)
+                    ADOBJECTID = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    NAME = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    EMAIL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    TYPE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    LEVEL = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_FF_FORMSUBMISSION", x => x.ID);
+                    table.PrimaryKey("PK_FF_FORMAPPROVER", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_FORMAPPROVER_FF_FORM_FORMID",
+                        column: x => x.FORMID,
+                        principalTable: "FF_FORM",
+                        principalColumn: "ID",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -68,22 +78,22 @@ namespace productionLine.Server.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "FF_FORMSUBMISSIONDATA",
+                name: "FF_FORMSUBMISSION",
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
                         .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
-                    FIELDLABEL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
-                    FIELDVALUE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
-                    FORMSUBMISSIONID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    SUBMITTEDAT = table.Column<DateTime>(type: "TIMESTAMP(7)", nullable: false),
+                    SUBMITTEDBY = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_FF_FORMSUBMISSIONDATA", x => x.ID);
+                    table.PrimaryKey("PK_FF_FORMSUBMISSION", x => x.ID);
                     table.ForeignKey(
-                        name: "FK_FF_FORMSUBMISSIONDATA_FF_FORMSUBMISSION_FORMSUBMISSIONID",
-                        column: x => x.FORMSUBMISSIONID,
-                        principalTable: "FF_FORMSUBMISSION",
+                        name: "FK_FF_FORMSUBMISSION_FF_FORM_FORMID",
+                        column: x => x.FORMID,
+                        principalTable: "FF_FORM",
                         principalColumn: "ID",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -109,9 +119,70 @@ namespace productionLine.Server.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "FF_FORMAPPROVAL",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    FORMSUBMISSIONID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    APPROVERID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    APPROVERNAME = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    APPROVALLEVEL = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    APPROVALAT = table.Column<DateTime>(type: "TIMESTAMP(7)", nullable: false),
+                    COMMENTS = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    STATUS = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_FORMAPPROVAL", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_FORMAPPROVAL_FF_FORMSUBMISSION_FORMSUBMISSIONID",
+                        column: x => x.FORMSUBMISSIONID,
+                        principalTable: "FF_FORMSUBMISSION",
+                        principalColumn: "ID",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FF_FORMSUBMISSIONDATA",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    FIELDLABEL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    FIELDVALUE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    FORMSUBMISSIONID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_FORMSUBMISSIONDATA", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_FORMSUBMISSIONDATA_FF_FORMSUBMISSION_FORMSUBMISSIONID",
+                        column: x => x.FORMSUBMISSIONID,
+                        principalTable: "FF_FORMSUBMISSION",
+                        principalColumn: "ID",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_FORMAPPROVAL_FORMSUBMISSIONID",
+                table: "FF_FORMAPPROVAL",
+                column: "FORMSUBMISSIONID");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_FORMAPPROVER_FORMID",
+                table: "FF_FORMAPPROVER",
+                column: "FORMID");
+
             migrationBuilder.CreateIndex(
                 name: "IX_FF_FORMFIELD_FORMID",
                 table: "FF_FORMFIELD",
+                column: "FORMID");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_FORMSUBMISSION_FORMID",
+                table: "FF_FORMSUBMISSION",
                 column: "FORMID");
 
             migrationBuilder.CreateIndex(
@@ -128,6 +199,12 @@ namespace productionLine.Server.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "FF_FORMAPPROVAL");
+
+            migrationBuilder.DropTable(
+                name: "FF_FORMAPPROVER");
+
             migrationBuilder.DropTable(
                 name: "FF_FORMSUBMISSIONDATA");
 

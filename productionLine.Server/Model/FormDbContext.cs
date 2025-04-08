@@ -11,6 +11,7 @@ namespace productionLine.Server.Model
         public DbSet<FormSubmission> FormSubmissions { get; set; }
         public DbSet<FormSubmissionData> FormSubmissionData { get; set; }
         public DbSet<FormApprover> FormApprovers { get; set; }
+        public DbSet<FormApproval> FormApprovals { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

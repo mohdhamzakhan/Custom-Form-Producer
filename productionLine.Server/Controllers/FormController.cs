@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,7 @@ namespace productionLine.Server.Controllers
 
         // ✅ Save a new form (with unique link)
         [HttpPost]
+        [Authorize(Roles = "Sanand-IT")]
         public async Task<IActionResult> CreateForm([FromBody] Form form)
         {
             if (form == null)
@@ -221,7 +223,7 @@ namespace productionLine.Server.Controllers
                                 id = u.Sid.ToString(),
                                 name = u.DisplayName,
                                 type = "user",
-                                email = "abc@meai-india.com"
+                                email = (u as UserPrincipal)?.EmailAddress ?? ""
                             });
 
                         results.AddRange(users);
@@ -243,7 +245,7 @@ namespace productionLine.Server.Controllers
                                         .Select(m => (object)new
                                         {
                                             name = m.DisplayName ?? m.Name,
-                                         
+                                            
                                         })
                                         .ToList();
                                 }
@@ -275,41 +277,41 @@ namespace productionLine.Server.Controllers
         }
 
 
-        //[HttpPost("submissions/{submissionId}/approve")]
-        //public async Task<IActionResult> ApproveSubmission(int submissionId, [FromBody] ApprovalActionDto approvalDto)
-        //{
-        //    try
-        //    {
-        //        var submission = await _context.FormSubmissions
-        //            .Include(s => s.Form)
-        //            .ThenInclude(f => f.Approvers)
-        //            .FirstOrDefaultAsync(s => s.Id == submissionId);
+        [HttpPost("submissions/{submissionId}/approve")]
+        public async Task<IActionResult> ApproveSubmission(int submissionId, [FromBody] ApprovalActionDto approvalDto)
+        {
+            try
+            {
+                var submission = await _context.FormSubmissions
+                    .Include(s => s.Form)
+                    .ThenInclude(f => f.Approvers)
+                    .FirstOrDefaultAsync(s => s.Id == submissionId);
 
-        //        if (submission == null)
-        //            return NotFound("Submission not found");
+                if (submission == null)
+                    return NotFound("Submission not found");
 
-        //        // Add approval record
-        //        var approval = new FormApproval
-        //        {
-        //            FormSubmissionId = submissionId,
-        //            ApproverId = approvalDto.ApproverId,
-        //            ApproverName = approvalDto.ApproverName,
-        //            ApprovalLevel = approvalDto.Level,
-        //            ApprovedAt = DateTime.Now,
-        //            Comments = approvalDto.Comments,
-        //            Status = approvalDto.Status // "Approved" or "Rejected"
-        //        };
+                // Add approval record
+                var approval = new FormApproval
+                {
+                    FormSubmissionId = submissionId,
+                    ApproverId = approvalDto.ApproverId,
+                    ApproverName = approvalDto.ApproverName,
+                    ApprovalLevel = approvalDto.Level,
+                    ApprovedAt = DateTime.Now,
+                    Comments = approvalDto.Comments,
+                    Status = approvalDto.Status // "Approved" or "Rejected"
+                };
 
-        //        _context.FormApprovals.Add(approval);
-        //        await _context.SaveChangesAsync();
+                _context.FormApprovals.Add(approval);
+                await _context.SaveChangesAsync();
 
-        //        return Ok(new { message = "Approval action recorded successfully" });
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return StatusCode(500, $"Error processing approval: {ex.Message}");
-        //    }
-        //}
+                return Ok(new { message = "Approval action recorded successfully" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error processing approval: {ex.Message}");
+            }
+        }
 
     }
 }

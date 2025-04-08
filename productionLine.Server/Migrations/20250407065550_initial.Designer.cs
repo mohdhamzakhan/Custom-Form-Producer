@@ -12,8 +12,8 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    [Migration("20250401043902_initialForm")]
-    partial class initialForm
+    [Migration("20250407065550_initial")]
+    partial class initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -49,6 +49,97 @@ namespace productionLine.Server.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("FF_FORM");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApprovalLevel")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("APPROVALLEVEL");
+
+                    b.Property<DateTime>("ApprovedAt")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("APPROVALAT");
+
+                    b.Property<int>("ApproverId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("APPROVERID");
+
+                    b.Property<string>("ApproverName")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("APPROVERNAME");
+
+                    b.Property<string>("Comments")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("COMMENTS");
+
+                    b.Property<int>("FormSubmissionId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FORMSUBMISSIONID");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("STATUS");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FormSubmissionId");
+
+                    b.ToTable("FF_FORMAPPROVAL");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.FormApprover", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdObjectId")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("ADOBJECTID");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("EMAIL");
+
+                    b.Property<int>("FormId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FORMID");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("LEVEL");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("NAME");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("TYPE");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FormId");
+
+                    b.ToTable("FF_FORMAPPROVER");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormField", b =>
@@ -129,7 +220,13 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("SUBMITTEDAT");
 
+                    b.Property<string>("SubmittedBy")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("SUBMITTEDBY");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("FormId");
 
                     b.ToTable("FF_FORMSUBMISSION");
                 });
@@ -162,6 +259,8 @@ namespace productionLine.Server.Migrations
                     b.HasIndex("FormSubmissionId");
 
                     b.ToTable("FF_FORMSUBMISSIONDATA");
+
+                    b.HasAnnotation("Relational:JsonPropertyName", "submissionData");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.RemarkTrigger", b =>
@@ -192,10 +291,43 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_REMARK_TRIGGER");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.FormSubmission", "FormSubmission")
+                        .WithMany()
+                        .HasForeignKey("FormSubmissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FormSubmission");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.FormApprover", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.Form", "Form")
+                        .WithMany("Approvers")
+                        .HasForeignKey("FormId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Form");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.FormField", b =>
                 {
                     b.HasOne("productionLine.Server.Model.Form", "Form")
                         .WithMany("Fields")
+                        .HasForeignKey("FormId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Form");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.FormSubmission", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.Form", "Form")
+                        .WithMany()
                         .HasForeignKey("FormId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -227,6 +359,8 @@ namespace productionLine.Server.Migrations
 
             modelBuilder.Entity("productionLine.Server.Model.Form", b =>
                 {
+                    b.Navigation("Approvers");
+
                     b.Navigation("Fields");
                 });
 

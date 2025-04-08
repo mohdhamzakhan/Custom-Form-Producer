@@ -18,9 +18,14 @@ namespace productionLine.Server.Model
         [Column("SUBMITTEDAT")]
         public DateTime SubmittedAt { get; set; } = DateTime.Now;
 
+        [Column("SUBMITTEDBY")]
+        public string? SubmittedBy { get; set; }
+
         // Navigation property for form submission data
         [JsonPropertyName("submissionData")]
         public List<FormSubmissionData> SubmissionData { get; set; } = new List<FormSubmissionData>();
+
+        public Form Form { get; set; }  // Navigation to Form
     }
 
     [Table("FF_FORMSUBMISSIONDATA")]

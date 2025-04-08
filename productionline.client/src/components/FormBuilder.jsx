@@ -255,6 +255,7 @@ const FormBuilder = () => {
 
     return (
         <DndProvider backend={HTML5Backend}>
+
             <div className="max-w-6xl mx-auto p-4">
                 <div className="mb-6 flex justify-between items-center">
                     <h1 className="text-2xl font-bold">Form Builder</h1>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import Layout from "./Layout";
 
 export default function FormSubmissionReport() {
     const [forms, setForms] = useState([]);
@@ -8,8 +9,6 @@ export default function FormSubmissionReport() {
     const [submissions, setSubmissions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-
-    // Navigation hook
     const navigate = useNavigate();
 
     // Fetch available forms on component mount
@@ -195,7 +194,7 @@ export default function FormSubmissionReport() {
     };
 
     return (
-        <div className="max-w-6xl mx-auto p-6">
+        <Layout>
             <h1 className="text-2xl font-bold mb-6">Form Submission Reports</h1>
 
             {error && (
@@ -293,6 +292,6 @@ export default function FormSubmissionReport() {
                     <p>Select a form to view submissions</p>
                 </div>
             )}
-        </div>
+        </Layout>
     );
 }

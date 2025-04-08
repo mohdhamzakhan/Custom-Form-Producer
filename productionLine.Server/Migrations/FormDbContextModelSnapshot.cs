@@ -48,6 +48,53 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_FORM");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApprovalLevel")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("APPROVALLEVEL");
+
+                    b.Property<DateTime>("ApprovedAt")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("APPROVALAT");
+
+                    b.Property<int>("ApproverId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("APPROVERID");
+
+                    b.Property<string>("ApproverName")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("APPROVERNAME");
+
+                    b.Property<string>("Comments")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("COMMENTS");
+
+                    b.Property<int>("FormSubmissionId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FORMSUBMISSIONID");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("STATUS");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FormSubmissionId");
+
+                    b.ToTable("FF_FORMAPPROVAL");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.FormApprover", b =>
                 {
                     b.Property<int>("Id")
@@ -170,7 +217,13 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("SUBMITTEDAT");
 
+                    b.Property<string>("SubmittedBy")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("SUBMITTEDBY");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("FormId");
 
                     b.ToTable("FF_FORMSUBMISSION");
                 });
@@ -235,6 +288,17 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_REMARK_TRIGGER");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.FormSubmission", "FormSubmission")
+                        .WithMany()
+                        .HasForeignKey("FormSubmissionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FormSubmission");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.FormApprover", b =>
                 {
                     b.HasOne("productionLine.Server.Model.Form", "Form")
@@ -250,6 +314,17 @@ namespace productionLine.Server.Migrations
                 {
                     b.HasOne("productionLine.Server.Model.Form", "Form")
                         .WithMany("Fields")
+                        .HasForeignKey("FormId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Form");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.FormSubmission", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.Form", "Form")
+                        .WithMany()
                         .HasForeignKey("FormId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
