@@ -25,6 +25,8 @@ namespace productionLine.Server.Model
         [NotMapped]
         [Required]
         public List<FormField> Fields { get; set; } = new List<FormField>();
-        public ICollection<FormApprover> Approvers { get; set; }
+        [JsonPropertyName("approvers")] // 👈 Important for JSON
+        public List<FormApprover> Approvers { get; set; } = new List<FormApprover>(); // 👈 Important
+
     }
 }

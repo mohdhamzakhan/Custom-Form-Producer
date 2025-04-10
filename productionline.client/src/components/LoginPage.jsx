@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 function LoginPage() {
     const [username, setUsername] = useState("");
@@ -7,7 +7,11 @@ function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const navigate = useNavigate();
+    const location = useLocation();
 
+    useEffect(() => {
+        document.getElementById("username")?.focus();
+    }, []);
     // Check if user is already logged in
     useEffect(() => {
         const token = localStorage.getItem("meaiFormToken");
@@ -42,8 +46,10 @@ function LoginPage() {
 
                 localStorage.setItem("user", JSON.stringify(userData));
                 console.log("Login successful, user data stored:", userData);
+                const params = new URLSearchParams(location.search);
+                const redirectUrl = params.get('redirect') || '/mainpage'; // Default to home if no redirect param
 
-                navigate("/Mainpage");
+                navigate(redirectUrl);
             } else {
                 const errorData = await response.json();
                 setError(errorData.message || "Invalid username or password");

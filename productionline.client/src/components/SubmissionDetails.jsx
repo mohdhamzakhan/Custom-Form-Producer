@@ -30,6 +30,14 @@ export default function SubmissionDetails() {
         fetchSubmissionDetails();
     }, [submissionId]);
 
+
+    const getFieldLabel = (fieldId) => {
+        if (!formDefinition || !formDefinition.fields) return fieldId; // fallback to ID if not found
+
+        const field = formDefinition.fields.find(f => f.id === fieldId);
+        return field ? field.label : fieldId; // if field is found, return label; else fallback to ID
+    };
+
     // Group submission data to combine values with remarks
     const processSubmissionData = () => {
         if (!submission || !submission.submissionData) return [];
@@ -37,20 +45,21 @@ export default function SubmissionDetails() {
         const processedData = {};
 
         submission.submissionData.forEach(item => {
+            const originalField = getFieldLabel(item.fieldLabel.replace(' (Remark)', ''));
             if (item.fieldLabel.includes(' (Remark)')) {
-                const originalField = item.fieldLabel.replace(' (Remark)', '');
                 if (!processedData[originalField]) {
                     processedData[originalField] = { value: '', remark: item.fieldValue };
                 } else {
                     processedData[originalField].remark = item.fieldValue;
                 }
             } else {
-                if (!processedData[item.fieldLabel]) {
-                    processedData[item.fieldLabel] = { value: item.fieldValue, remark: '' };
+                if (!processedData[originalField]) {
+                    processedData[originalField] = { value: item.fieldValue, remark: '' };
                 } else {
-                    processedData[item.fieldLabel].value = item.fieldValue;
+                    processedData[originalField].value = item.fieldValue;
                 }
             }
+            console.log(processedData)
         });
 
         return Object.entries(processedData).map(([label, data]) => ({
@@ -60,11 +69,6 @@ export default function SubmissionDetails() {
         }));
     };
 
-    // Get field details by label
-    const getFieldByLabel = (label) => {
-        if (!formDefinition || !formDefinition.fields) return null;
-        return formDefinition.fields.find(f => f.label === label || f.id === label);
-    };
 
     // Format date for display
     const formatDate = (dateString) => {
@@ -137,50 +141,30 @@ export default function SubmissionDetails() {
                     </div>
                 </div>
 
-                <h2 className="text-xl font-semibold mb-4">Submission Data</h2>
+                <h2 className="text-xl font-semibold mb-4">Submitted Data</h2>
 
-                <div className="border rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Field
-                                </th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Value
-                                </th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Remarks
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {processedData.map((field, index) => {
-                                const fieldDetails = getFieldByLabel(field.label);
-                                return (
-                                    <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="font-medium text-gray-900">
-                                                {fieldDetails?.label || field.label}
-                                            </div>
-                                            {fieldDetails && (
-                                                <div className="text-xs text-gray-500">
-                                                    {fieldDetails.type}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {field.value}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {field.remark || '-'}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                {processedData.length === 0 ? (
+                    <div className="text-gray-500">No submission data available.</div>
+                ) : (
+                    <div className="space-y-6">
+                        {processedData.map((item, index) => (
+                            <div key={index} className="border-b pb-4">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <p className="text-sm text-gray-600">{item.label}</p>
+                                        <p className="font-semibold break-words">{item.value}</p>
+                                    </div>
+                                    {item.remark && (
+                                        <div className="text-right max-w-sm">
+                                            <p className="text-sm text-gray-600">Remark</p>
+                                            <p className="italic text-gray-700 break-words">{item.remark}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

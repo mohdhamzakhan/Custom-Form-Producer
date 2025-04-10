@@ -26,6 +26,10 @@ namespace productionLine.Server.Model
         public List<FormSubmissionData> SubmissionData { get; set; } = new List<FormSubmissionData>();
 
         public Form Form { get; set; }  // Navigation to Form
+
+        [JsonPropertyName("approvals")]
+        public List<FormApproval> Approvals { get; set; } = new();
+
     }
 
     [Table("FF_FORMSUBMISSIONDATA")]

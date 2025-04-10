@@ -1,8 +1,11 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
+﻿import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import LoginPage from "./components/LoginPage";
 import MainPage from "./components/MainPage";
 import FormSubmissionReport from "./components/FormSubmissionReport";
-import SubmissionDetail from "./components/SubmissionDetail"; // Assuming you have this component
+import SubmissionDetail from "./components/SubmissionDetails"; // Assuming you have this component
+import FormBuilder from "./components/FormBuilder";
+import DynamicForm from "./components/DynamicForm";
+import ApprovalPage from "./components/Approval";
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -31,6 +34,14 @@ function App() {
                     }
                 />
                 <Route
+                    path="/form/:formId"
+                    element={
+                        <ProtectedRoute>        
+                            <DynamicForm />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
                     path="/reports"
                     element={
                         <ProtectedRoute>
@@ -38,11 +49,20 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
+                <Route path="/submissions/:submissionId/approve" element={<ApprovalPage />} /> {/* <-- Add this */}
                 <Route
                     path="/submissions/:submissionId"
                     element={
                         <ProtectedRoute>
                             <SubmissionDetail />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/formBuilder"
+                    element={
+                        <ProtectedRoute>
+                            <FormBuilder />
                         </ProtectedRoute>
                     }
                 />

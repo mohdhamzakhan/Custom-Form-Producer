@@ -5,7 +5,9 @@ namespace productionLine.Server.Model
 {
     public class FormDbContext : DbContext
     {
-        public FormDbContext(DbContextOptions<FormDbContext> options) : base(options) { }
+        public FormDbContext(DbContextOptions<FormDbContext> options) : base(options) {
+            ChangeTracker.LazyLoadingEnabled = false;
+        }
         public DbSet<Form> Forms { get; set; }
         public DbSet<FormField> FormFields { get; set; }
         public DbSet<FormSubmission> FormSubmissions { get; set; }

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import Layout from "./Layout";
+import Layout from "./Layout"
 
 export default function FormSubmissionReport() {
     const [forms, setForms] = useState([]);
@@ -9,14 +9,35 @@ export default function FormSubmissionReport() {
     const [submissions, setSubmissions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [user, setUser] = useState(null);
     const navigate = useNavigate();
 
     // Fetch available forms on component mount
     useEffect(() => {
+        const storedUserData = localStorage.getItem("user");
+        if (storedUserData && storedUserData !== "undefined") {
+            const storedUser = JSON.parse(storedUserData);
+            const names = [storedUser.username, ...storedUser.groups]; // Combine user + groups
+            setUser(names);
+        } else {
+            navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        }
+    }, [navigate, location]);  // <-- Add navigate and location here
+
+
+    useEffect(() => {
         const fetchForms = async () => {
+            if (!user) return;  // wait until user is loaded
+
             try {
-                const response = await fetch("http://localhost:5182/api/forms/GetALLForms");
-                if (!response.ok) throw new Error("Failed to fetch forms");
+                const response = await fetch(`http://localhost:5182/api/forms/GetALLForm`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(user)
+                });
+
                 const data = await response.json();
                 setForms(data);
             } catch (err) {
@@ -25,7 +46,8 @@ export default function FormSubmissionReport() {
         };
 
         fetchForms();
-    }, []);
+    }, [user]);  // <-- run when user is set
+
 
     // Fetch form definition when a form is selected
     useEffect(() => {
@@ -35,8 +57,9 @@ export default function FormSubmissionReport() {
             setLoading(true);
             try {
                 const response = await fetch(`http://localhost:5182/api/forms/GetALLForms/${selectedFormId}`);
-                if (!response.ok) throw new Error("Failed to fetch form definition");
+                if (!response.ok) throw new Error("Unable to retirve the data may be there is no submission");
                 const data = await response.json();
+
                 setFormDefinition(data);
 
                 // After getting the form definition, fetch submissions
@@ -81,7 +104,9 @@ export default function FormSubmissionReport() {
                 grouped[submission.id] = {
                     id: submission.id,
                     submittedAt: submission.submittedAt,
-                    data: {}
+                    data: {},
+                    approvals: submission.approvals,
+                    form: submission.form  // Make sure this is included!
                 };
             }
 
@@ -192,6 +217,86 @@ export default function FormSubmissionReport() {
         link.click();
         document.body.removeChild(link);
     };
+    const hasUserApproved = (submission) => {
+        if (!submission.approvals || !user || user.length === 0) return false;
+
+        return submission.approvals.some(approval =>
+            user.includes(approval.approverName) && approval.status === "Approved"
+        );
+    };
+
+    function canUserApprove(submission, user) {
+        // Make sure we have all the required data
+        console.log(submission)
+        console.log(user)
+        if (!submission || !submission.form || !submission.form.approvers || !user || user.length === 0) {
+            return false;
+        }
+
+        const formApprovers = submission.form.approvers || [];
+        const approvals = submission.approvals || [];
+
+        // First, identify if the current user is an approver (either by username or group)
+        // user[0] is the username, the rest are groups
+        const username = user[0];
+        const userGroups = user.slice(1);
+
+        // Find if the user is an approver (either directly or via group)
+        const matchingApprover = formApprovers.find(a =>
+            a.name === username || userGroups.includes(a.name)
+        );
+
+        if (!matchingApprover) {
+            return false; // User is not an approver
+        }
+
+        const userLevel = matchingApprover.level;
+
+        // Check if the user has already approved this submission
+        const hasAlreadyApproved = approvals.some(approval =>
+            (approval.approverName === username || userGroups.includes(approval.approverName)) &&
+            approval.status === "Approved"
+        );
+
+        if (hasAlreadyApproved) {
+            return false;
+        }
+
+        // Check if any submission has been rejected
+        const hasBeenRejected = approvals.some(approval => approval.status === "Rejected");
+        if (hasBeenRejected) {
+            return false;
+        }
+
+        // For level 1, they can always approve if they haven't already
+        if (userLevel === 1) {
+            return true;
+        }
+
+        // For higher levels, check if ALL previous levels have at least one approval
+        for (let level = 1; level < userLevel; level++) {
+            // Check if this level has at least one approval
+            const levelHasApproval = approvals.some(approval => {
+                // Find the approver that made this approval
+                const approvingUser = formApprovers.find(a => a.name === approval.approverName);
+                // Check if they are of the correct level and have approved
+                return approvingUser && approvingUser.level === level && approval.status === "Approved";
+            });
+
+            if (!levelHasApproval) {
+                return false; // Missing approval for a previous level
+            }
+        }
+
+        // If we got here, all previous levels are approved and user hasn't approved yet
+        return true;
+    }
+
+
+
+
+    
+
 
     return (
         <Layout>
@@ -249,7 +354,7 @@ export default function FormSubmissionReport() {
                                     <tr className="bg-gray-100">
                                         <th className="text-left py-3 px-4 border-b">Submission ID</th>
                                         <th className="text-left py-3 px-4 border-b">Submitted At</th>
-                                        <th className="text-left py-3 px-4 border-b">Fields</th>
+                                        {/*<th className="text-left py-3 px-4 border-b">Fields</th>*/}
                                         <th className="text-left py-3 px-4 border-b">Actions</th>
                                     </tr>
                                 </thead>
@@ -258,28 +363,35 @@ export default function FormSubmissionReport() {
                                         <tr key={submission.id} className="hover:bg-gray-50">
                                             <td className="py-2 px-4 border-b">{submission.id}</td>
                                             <td className="py-2 px-4 border-b">{formatDate(submission.submittedAt)}</td>
+
                                             <td className="py-2 px-4 border-b">
-                                                <div className="max-h-32 overflow-y-auto">
-                                                    {Object.entries(submission.data).map(([fieldId, data]) => (
-                                                        <div key={fieldId} className="mb-1">
-                                                            <strong>{getFieldLabelById(fieldId)}:</strong> {data.value}
-                                                            {data.remark && (
-                                                                <div className="ml-4 text-sm text-gray-600">
-                                                                    <em>Remark: {data.remark}</em>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </td>
-                                            <td className="py-2 px-4 border-b">
+                                                {canUserApprove(submission, user) ? (
+                                                    <button
+                                                        onClick={() => navigate(`/submissions/${submission.id}/approve`)}
+                                                        className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-sm"
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                ) : hasUserApproved(submission) ? (
+                                                    <span className="text-green-600 font-semibold">Approved</span>
+                                                ) : submission.approvals.some(a => a.status === "Rejected") ? (
+                                                    <span className="text-red-600 font-semibold">
+                                                        Rejected by {submission.approvals.find(a => a.status === "Rejected")?.approverName}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400 font-semibold">Waiting for previous approval</span>
+                                                )}
+
                                                 <button
                                                     onClick={() => viewSubmissionDetails(submission.id)}
-                                                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded text-sm"
+                                                    className="ml-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded text-sm"
                                                 >
                                                     View Details
                                                 </button>
                                             </td>
+
+
+
                                         </tr>
                                     ))}
                                 </tbody>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
@@ -11,47 +12,63 @@ export default function DynamicForm() {
     const [remarks, setRemarks] = useState({});
     const [formErrors, setFormErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [recentSubmissions, setRecentSubmissions] = useState([]);
+
     const { formId } = useParams();
+    const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         // In a real application, this would be an actual API call
         const fetchFormData = async () => {
             try {
-                // Simulating API response - replace with actual fetch in production
-                const response = await fetch(
-                    `http://localhost:5182/api/forms/link/${formId}`
-                );
-                if (!response.ok) throw new Error("Failed to fetch form data");
-                const data = await response.json();
+                const token = localStorage.getItem('token'); // Assuming you save JWT in localStorage
 
-                // Using mock data for demonstration
 
-                setFormData(data);
+                if (!token) {
+                    // Redirect to login, and pass current location as `redirect` query param
+                    navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+                }
+                else {
+                    // Simulating API response - replace with actual fetch in production
+                    const response = await fetch(
+                        `http://localhost:5182/api/forms/link/${formId}`
+                    );
+                    if (!response.ok) throw new Error("Failed to fetch form data");
+                    const data = await response.json();
 
-                // Initialize form values and remarks based on field types
-                const initialValues = {};
-                const initialRemarks = {};
+                    // Using mock data for demonstration
 
-                data.fields.forEach((field) => {
-                    if (field.type === "checkbox") {
-                        initialValues[field.id] = [];
-                    } else if (field.type === "radio") {
-                        initialValues[field.id] = "";
-                    } else if (field.type === "numeric") {
-                        initialValues[field.id] = "";
-                    } else if (field.type === "date") {
-                        initialValues[field.id] = "";
-                    } else if (field.type === "dropdown") {
-                        initialValues[field.id] = "";
-                    } else {
-                        initialValues[field.id] = "";
-                    }
-                    initialRemarks[field.id] = "";
-                });
+                    setFormData(data);
 
-                setFormValues(initialValues);
-                setRemarks(initialRemarks);
-                setLoading(false);
+                    // Initialize form values and remarks based on field types
+                    const initialValues = {};
+                    const initialRemarks = {};
+
+                    data.fields.forEach((field) => {
+                        if (field.type === "checkbox") {
+                            initialValues[field.id] = [];
+                        } else if (field.type === "radio") {
+                            initialValues[field.id] = "";
+                        } else if (field.type === "numeric") {
+                            initialValues[field.id] = "";
+                        } else if (field.type === "date") {
+                            initialValues[field.id] = "";
+                        } else if (field.type === "dropdown") {
+                            initialValues[field.id] = "";
+                        } else {
+                            initialValues[field.id] = "";
+                        }
+                        initialRemarks[field.id] = "";
+                    });
+
+                    setFormValues(initialValues);
+                    setRemarks(initialRemarks);
+                    setLoading(false);
+
+                    await fetchRecentSubmissions();
+                }
             } catch (err) {
                 setError(err.message || "Failed to fetch form data");
                 setLoading(false);
@@ -76,6 +93,17 @@ export default function DynamicForm() {
             return field.requireRemarks.includes(value);
         }
     };
+
+    // Fetch recent submissions
+    const fetchRecentSubmissions = async () => {
+        const response = await fetch(`http://localhost:5182/api/forms/${formId}/lastsubmissions`);
+        if (!response.ok) throw new Error("Failed to fetch submissions");
+        const submissions = await response.json();
+        setRecentSubmissions(submissions.slice(0, 10)); // Take only last 10
+    };
+
+
+
 
     // Check if a remark should be triggered based on numeric value
     const checkRemarkTriggers = (field, value) => {
@@ -783,8 +811,70 @@ export default function DynamicForm() {
                     >
                         Submit
                     </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setIsModalOpen(true)}
+                        className="ml-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    >
+                        View Last 10 Submissions
+                    </button>
                 </div>
+
             </form>
+           
+            {isModalOpen && (
+                <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+                    <div className="bg-white rounded-lg shadow-lg p-6 w-11/12 max-w-3xl relative">
+                        <h2 className="text-2xl font-bold mb-4">Last 10 Submissions</h2>
+
+                        {/* Table */}
+                        {recentSubmissions.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full bg-white border border-gray-300">
+                                    <thead>
+                                        <tr>
+                                            <th className="py-2 px-4 border-b">ID</th>
+                                            <th className="py-2 px-4 border-b">Submitted At</th>
+                                            <th className="py-2 px-4 border-b">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {recentSubmissions.map((submission) => (
+                                            <tr key={submission.id}>
+                                                <td className="py-2 px-4 border-b">{submission.id}</td>
+                                                <td className="py-2 px-4 border-b">{new Date(submission.submittedAt).toLocaleString()}</td>
+                                                <td className="py-2 px-4 border-b">
+                                                    <span className={`
+                      ${submission.status === "Approved" ? "text-green-600" : ""}
+                      ${submission.status === "Pending" ? "text-yellow-600" : ""}
+                      ${submission.status === "Rejected" ? "text-red-600" : ""}
+                      font-semibold
+                    `}>
+                                                        {submission.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p>No submissions available.</p>
+                        )}
+
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setIsModalOpen(false)}
+                            className="absolute top-2 right-2 text-gray-600 hover:text-gray-900 text-2xl font-bold"
+                        >
+                            &times;
+                        </button>
+                    </div>
+                </div>
+            )}
+
+
         </div>
     );
 }

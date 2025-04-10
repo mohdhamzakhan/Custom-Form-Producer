@@ -22,7 +22,6 @@ namespace productionLine.Server.Controllers
 
         // ✅ Save a new form (with unique link)
         [HttpPost]
-        [Authorize(Roles = "Sanand-IT")]
         public async Task<IActionResult> CreateForm([FromBody] Form form)
         {
             if (form == null)
@@ -138,23 +137,104 @@ namespace productionLine.Server.Controllers
                 message = "Form submitted successfully"
             });
         }
-        [HttpGet("GetALLForms")]
-        public async Task<IActionResult> GetAllForms()
+
+        // Assuming you have a controller like [Route("api/forms")]
+        [HttpGet("{form}/lastsubmissions")]
+        public async Task<IActionResult> GetLastSubmissions(string form)
         {
-            var forms = await _context.Forms.ToListAsync();
+            var formId = await _context.Forms
+                .Where(x => x.FormLink == form.ToLower())
+                .Select(y => y.Id)
+                .FirstOrDefaultAsync();
+            try
+                        {
+                var submissions = await _context.FormSubmissions
+.Where(s => s.FormId == formId)
+.OrderByDescending(s => s.SubmittedAt)
+.Take(10)
+.Select(s => new
+{
+Id = s.Id,
+SubmittedAt = s.SubmittedAt,
+Approvals = s.Approvals.Select(a => a.Status).ToList(),
+ApproversRequired = _context.FormApprovers  
+.Where(a => a.FormId == s.FormId)
+.Count()
+})
+.ToListAsync();
+
+                // After fetching, calculate status
+                var result = submissions.Select(s =>
+                {
+                    var approvals = s.Approvals ?? new List<string>();
+
+                    if (approvals.Any(a => a == "Rejected"))
+                    {
+                        return new
+                        {
+                            s.Id,
+                            s.SubmittedAt,
+                            Status = "Rejected"
+                        };
+                    }
+                    else if (approvals.Count(a => a == "Approved") >= s.ApproversRequired)
+                    {
+                        return new
+                        {
+                            s.Id,
+                            s.SubmittedAt,
+                            Status = "Approved"
+                        };
+                    }
+                    else
+                    {
+                        return new
+                        {
+                            s.Id,
+                            s.SubmittedAt,
+                            Status = "Pending"
+                        };
+                    }
+                });
+
+                return Ok(result);
+
+
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
+
+        [HttpPost("GetALLForm")]
+        public async Task<IActionResult> GetAllForm([FromBody] List<string> names)
+        {
+            var forms = await _context.Forms
+                .Where(f => f.Approvers.Any(a => names.Contains(a.Name)))
+                .Include(f => f.Approvers)
+                .ToListAsync();
             return Ok(forms);
         }
+
 
         [HttpGet("GetALLForms/{submissionId}")]
         public async Task<IActionResult> GetAllForms(int submissionId)
         {
-            var forms = await _context.Forms.FirstOrDefaultAsync(x => x.Id.Equals(submissionId));
-            if (forms == null)
+            var submission = await _context.FormSubmissions
+        .Include(s => s.SubmissionData)
+        .Include(s => s.Approvals)
+        .Include(s => s.Form)
+            .ThenInclude(f => f.Approvers)  // 🔥 Critical!
+        .FirstOrDefaultAsync(s => s.FormId == submissionId);
+
+            if (submission == null)
             {
-                return NotFound("Form not found.");
+                return BadRequest("Unable to retirve the data may be there is no submission");
             }
 
-            return Ok(forms);
+            return Ok(submission);
         }
 
 
@@ -168,8 +248,12 @@ namespace productionLine.Server.Controllers
             }
 
             var submissions = await _context.FormSubmissions
-                .Where(s => s.FormId == formId)
-                .ToListAsync();
+    .Where(s => s.FormId == formId)
+    .Include(s => s.SubmissionData)
+    .Include(s => s.Approvals)
+    .Include(s => s.Form)
+    .ThenInclude(f => f.Approvers)  // 🔥 Critical!// 👈 ADD THIS
+    .ToListAsync();
 
             return Ok(submissions);
         }
@@ -180,8 +264,12 @@ namespace productionLine.Server.Controllers
             try
             {
                 var submission = await _context.FormSubmissions
-                    .Include(s => s.SubmissionData)
-                    .FirstOrDefaultAsync(s => s.Id == submissionId);
+           .Include(s => s.SubmissionData)
+           .Include(s => s.Approvals)
+           .Include(s => s.Form)
+               .ThenInclude(f => f.Approvers) // 🔥 This line is MANDATORY!
+           .FirstOrDefaultAsync(s => s.Id == submissionId);
+
 
                 if (submission == null)
                 {
@@ -203,13 +291,13 @@ namespace productionLine.Server.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
-        [SupportedOSPlatform ("windows")]
+        [SupportedOSPlatform("windows")]
         [HttpGet("ad-search")]
         public async Task<IActionResult> SearchActiveDirectory([FromQuery] string term)
         {
             try
             {
-             var results = new List<object>();
+                var results = new List<object>();
 
                 using (var context = new PrincipalContext(ContextType.Domain))
                 {
@@ -221,9 +309,9 @@ namespace productionLine.Server.Controllers
                             .Select(u => new
                             {
                                 id = u.Sid.ToString(),
-                                name = u.DisplayName,
+                                name = u.SamAccountName,
                                 type = "user",
-                                email = (u as UserPrincipal)?.EmailAddress ?? ""
+                                email = (u as UserPrincipal)?.EmailAddress ?? u.UserPrincipalName
                             });
 
                         results.AddRange(users);
@@ -245,7 +333,7 @@ namespace productionLine.Server.Controllers
                                         .Select(m => (object)new
                                         {
                                             name = m.DisplayName ?? m.Name,
-                                            
+
                                         })
                                         .ToList();
                                 }

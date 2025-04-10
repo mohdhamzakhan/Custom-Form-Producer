@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace productionLine.Server.Model
 {
@@ -17,8 +18,14 @@ namespace productionLine.Server.Model
         public string Type { get; set; } // "user" or "group"
         [Column("LEVEL")]
         public int Level { get; set; }
-        [Column("FORMID")]
+
+
+
+        [ForeignKey("Form")]
         public int FormId { get; set; }
+
+
+        [JsonIgnore] // 👈 Ignore backward navigation
         public Form Form { get; set; }
     }
 }

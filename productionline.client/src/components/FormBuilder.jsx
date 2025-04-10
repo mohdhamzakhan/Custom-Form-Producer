@@ -2,6 +2,7 @@
 import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown } from "lucide-react";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
+import Layout from "./Layout"
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -29,6 +30,17 @@ const FormBuilder = () => {
     useEffect(() => {
         fetchFormLayout();
     }, []);
+
+    useEffect(() => {
+        const savedForm = localStorage.getItem("formBuilderFields");
+        if (savedForm) {
+            setFormFields(JSON.parse(savedForm));
+        }
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem("formBuilderFields", JSON.stringify(formFields));
+    }, [formFields]);
 
     useEffect(() => {
         if (searchTerm.length >= 3) {
@@ -93,13 +105,21 @@ const FormBuilder = () => {
 
     const fetchFormLayout = async () => {
         try {
-            const response = await fetch("http://localhost:5182/api/form-layout");
-            const data = await response.json();
 
-            setFormName(data.name || "");
-            setFormFields(data.fields || []);
-            setApprovers(data.approvers || []);
-            setLoading(false);
+            const savedForm = localStorage.getItem("formBuilderFields");
+            if (savedForm) {
+                setFormFields(JSON.parse(savedForm));
+                setLoading(false);
+            }
+            else {
+                const response = await fetch("http://localhost:5182/api/form-layout");
+                const data = await response.json();
+
+                setFormName(data.name || "");
+                setFormFields(data.fields || []);
+                setApprovers(data.approvers || []);
+                setLoading(false);
+            }
         } catch (error) {
             console.error("Error fetching form layout:", error);
             setLoading(false);
@@ -254,129 +274,132 @@ const FormBuilder = () => {
     if (loading) return <div className="p-4">Loading form builder...</div>;
 
     return (
+        <Layout>
+
         <DndProvider backend={HTML5Backend}>
 
-            <div className="max-w-6xl mx-auto p-4">
-                <div className="mb-6 flex justify-between items-center">
-                    <h1 className="text-2xl font-bold">Form Builder</h1>
-                    <div className="flex items-center gap-4">
-                        <input
-                            type="text"
-                            placeholder="Enter the Form Name"
-                            value={formName}
-                            onChange={(e) => setFormName(e.target.value)}
-                            className="w-1/2 py-2 px-3 border rounded text-lg"
-                        />
-                        <button
-                            onClick={saveForm}
-                            className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                <div className="max-w-6xl mx-auto p-4">
+                    <div className="mb-6 flex justify-between items-center">
+                        <h1 className="text-2xl font-bold">Form Builder</h1>
+                        <div className="flex items-center gap-4">
+                            <input
+                                type="text"
+                                placeholder="Enter the Form Name"
+                                value={formName}
+                                onChange={(e) => setFormName(e.target.value)}
+                                className="w-1/2 py-2 px-3 border rounded text-lg"
+                            />
+                            <button
+                                onClick={saveForm}
+                                className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                            >
+                                <Save size={16} />
+                                Save Layout
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Approval Hierarchy Section */}
+                    <div className="mb-6">
+                        <div
+                            className="flex items-center gap-2 cursor-pointer"
+                            onClick={() => setShowApprovalConfig(!showApprovalConfig)}
                         >
-                            <Save size={16} />
-                            Save Layout
-                        </button>
-                    </div>
-                </div>
+                            <h2 className="text-xl font-semibold">Approval Hierarchy</h2>
+                            {showApprovalConfig ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
 
-                {/* Approval Hierarchy Section */}
-                <div className="mb-6">
-                    <div
-                        className="flex items-center gap-2 cursor-pointer"
-                        onClick={() => setShowApprovalConfig(!showApprovalConfig)}
-                    >
-                        <h2 className="text-xl font-semibold">Approval Hierarchy</h2>
-                        {showApprovalConfig ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                    </div>
-
-                    {showApprovalConfig && (
-                        <div className="bg-gray-50 p-4 rounded border mt-2">
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-1">Search Users or Groups:</label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        placeholder="Search Active Directory..."
-                                        className="w-full px-3 py-2 border rounded"
-                                    />
-                                    {isSearching && <div className="absolute right-3 top-2">Searching...</div>}
+                        {showApprovalConfig && (
+                            <div className="bg-gray-50 p-4 rounded border mt-2">
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-1">Search Users or Groups:</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            placeholder="Search Active Directory..."
+                                            className="w-full px-3 py-2 border rounded"
+                                        />
+                                        {isSearching && <div className="absolute right-3 top-2">Searching...</div>}
+                                    </div>
                                 </div>
-                            </div>
 
-                            {searchResults.length > 0 && (
-                                <div className="max-h-40 overflow-y-auto mb-4 border rounded bg-white">
-                                    {searchResults.map(item => (
-                                        <div
-                                            key={item.id}
-                                            className="flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer"
-                                            onClick={() => addApprover(item)}
-                                        >
-                                            {item.type === 'user'
-                                                ? <User size={16} className="text-gray-600" />
-                                                : <Users size={16} className="text-gray-600" />
-                                            }
-                                            <div>
-                                                <div className="font-medium">{item.name}</div>
-                                                <div className="text-xs text-gray-500">
-                                                    {item.type === 'user' ? item.email : `Group (${item.members?.length || 0} members)`}
+                                {searchResults.length > 0 && (
+                                    <div className="max-h-40 overflow-y-auto mb-4 border rounded bg-white">
+                                        {searchResults.map(item => (
+                                            <div
+                                                key={item.id}
+                                                className="flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer"
+                                                onClick={() => addApprover(item)}
+                                            >
+                                                {item.type === 'user'
+                                                    ? <User size={16} className="text-gray-600" />
+                                                    : <Users size={16} className="text-gray-600" />
+                                                }
+                                                <div>
+                                                    <div className="font-medium">{item.name}</div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {item.type === 'user' ? item.email : `Group (${item.members?.length || 0} members)`}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            <div className="mt-4">
-                                <h3 className="font-medium mb-2">Approval Flow (Ordered by Level):</h3>
-                                {approvers.length === 0 ? (
-                                    <div className="text-gray-500 italic">No approvers added yet. Search and add approvers above.</div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {approvers.map((approver, index) => (
-                                            <ApproverItem
-                                                key={approver.id}
-                                                approver={approver}
-                                                index={index}
-                                                moveApprover={moveApprover}
-                                                removeApprover={() => removeApprover(index)}
-                                            />
                                         ))}
                                     </div>
                                 )}
+
+                                <div className="mt-4">
+                                    <h3 className="font-medium mb-2">Approval Flow (Ordered by Level):</h3>
+                                    {approvers.length === 0 ? (
+                                        <div className="text-gray-500 italic">No approvers added yet. Search and add approvers above.</div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {approvers.map((approver, index) => (
+                                                <ApproverItem
+                                                    key={approver.id}
+                                                    approver={approver}
+                                                    index={index}
+                                                    moveApprover={moveApprover}
+                                                    removeApprover={() => removeApprover(index)}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
 
-                <div className="mb-6 flex gap-2 flex-wrap">
-                    {["textbox", "numeric", "dropdown", "checkbox", "radio", "date"].map(
-                        (type) => (
-                            <button
-                                key={type}
-                                onClick={() => addField(type)}
-                                className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200"
-                            >
-                                Add {type.charAt(0).toUpperCase() + type.slice(1)}
-                            </button>
-                        )
-                    )}
-                </div>
+                    <div className="mb-6 flex gap-2 flex-wrap">
+                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date"].map(
+                            (type) => (
+                                <button
+                                    key={type}
+                                    onClick={() => addField(type)}
+                                    className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200"
+                                >
+                                    Add {type.charAt(0).toUpperCase() + type.slice(1)}
+                                </button>
+                            )
+                        )}
+                    </div>
 
-                <div className="flex flex-wrap -mx-2">
-                    {formFields.map((field, index) => (
-                        <div key={field.id} className={`p-2 ${field.width}`}>
-                            <FormField
-                                field={field}
-                                index={index}
-                                moveField={moveField}
-                                updateField={(updates) => updateField(index, updates)}
-                                removeField={() => removeField(index)}
-                            />
-                        </div>
-                    ))}
+                    <div className="flex flex-wrap -mx-2">
+                        {formFields.map((field, index) => (
+                            <div key={field.id} className={`p-2 ${field.width}`}>
+                                <FormField
+                                    field={field}
+                                    index={index}
+                                    moveField={moveField}
+                                    updateField={(updates) => updateField(index, updates)}
+                                    removeField={() => removeField(index)}
+                                />
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
-        </DndProvider>
+                </DndProvider>
+        </Layout>
     );
 };
 
@@ -764,7 +787,7 @@ const FormField = ({ field, index, moveField, updateField, removeField }) => {
                         )}
                     </div>
                 )}
-        </div>
+            </div>
     );
 };
 

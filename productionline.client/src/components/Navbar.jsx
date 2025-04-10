@@ -1,84 +1,152 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import Navbar from "./Navbar";
+﻿import React, { useState, useRef, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom"; // 🔥 Added useLocation
+import { Menu, X, User, LogOut, ChevronDown } from "lucide-react"; // Icons
 
-// Layout component that includes the Navbar and wraps child components
-export default function Layout({ children }) {
-    const navigate = useNavigate();
-    const [user, setUser] = React.useState(null);
+const Navbar = ({ user, links, onLogout }) => {
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
+    const location = useLocation(); // 🔥 Get current URL location
 
-    React.useEffect(() => {
-        // Get user data from localStorage
-        const storedUserData = localStorage.getItem("user");
-        const token = localStorage.getItem("meaiFormToken");
-
-        // If no token, redirect to login
-        if (!token) {
-            navigate("/login");
-            return;
-        }
-
-        // Parse user data if available
-        if (storedUserData && storedUserData !== "undefined") {
-            try {
-                const userData = JSON.parse(storedUserData);
-                setUser(userData);
-            } catch (error) {
-                console.error("Error parsing user data:", error);
-                // Invalid user data, clear localStorage and redirect to login
-                localStorage.removeItem("user");
-                localStorage.removeItem("meaiFormToken");
-                navigate("/login");
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setDropdownOpen(false);
             }
-        } else {
-            // No user data, redirect to login
-            navigate("/login");
         }
-    }, [navigate]);
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
-    const handleLogout = () => {
-        localStorage.removeItem("meaiFormToken");
-        localStorage.removeItem("user");
-        navigate("/login");
-    };
-
-    // Default navigation links
-    const defaultLinks = [
-        { name: "Dashboard", path: "/Mainpage" },
-        { name: "Forms", path: "/forms" },
-        { name: "Reports", path: "/reports" }
-    ];
-
-    // Add IT-specific links if user is in Sanand-IT group
-    const navLinks = user?.groups?.includes("Sanand-IT")
-        ? [
-            ...defaultLinks,
-            { name: "IT Management", path: "/it-management" },
-            { name: "System Config", path: "/system-config" }
-        ]
-        : defaultLinks;
-
-    // Don't render anything until user is loaded
-    if (!user) {
-        return (
-            <div className="flex items-center justify-center min-h-screen bg-gray-50">
-                <div className="text-center">
-                    <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p className="mt-4 text-gray-600">Loading...</p>
-                </div>
-            </div>
-        );
-    }
+    const userInitial = user?.name?.[0]?.toUpperCase() || "?";
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <Navbar user={user} links={navLinks} onLogout={handleLogout} />
-            <div className="max-w-7xl mx-auto px-4 py-6">
-                {children}
+        <nav className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+                <div className="flex items-center">
+                    <div className="text-2xl font-bold">MEAI Custom Forms</div>
+                </div>
+
+                {/* Desktop Navigation */}
+                <div className="hidden md:flex items-center space-x-1">
+                    {links && links.map(link => {
+                        const isActive = location.pathname.startsWith(link.path); // 🔥 Check active tab
+                        return (
+                            <Link
+                                key={link.name}
+                                to={link.path}
+                                className={`px-3 py-2 rounded-md text-sm font-medium transition duration-150 ${isActive ? "bg-blue-900" : "hover:bg-blue-700"
+                                    }`}
+                            >
+                                {link.name}
+                            </Link>
+                        );
+                    })}
+                </div>
+
+                {/* User Profile - Desktop */}
+                <div className="hidden md:flex items-center">
+                    <div className="relative" ref={dropdownRef}>
+                        <button
+                            onClick={() => setDropdownOpen(!dropdownOpen)}
+                            className="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-blue-700 transition duration-150"
+                        >
+                            <div className="bg-white text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold">
+                                {userInitial}
+                            </div>
+                            <span className="font-medium">{user?.username}</span>
+                            <ChevronDown size={16} />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {dropdownOpen && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10">
+                                <div className="px-4 py-2 text-sm text-gray-700 border-b border-gray-200">
+                                    Signed in as <span className="font-medium">{user?.username}</span>
+                                </div>
+                                <Link
+                                    to="/profile"
+                                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                    <User size={16} className="mr-2" />
+                                    Your Profile
+                                </Link>
+                                <button
+                                    onClick={onLogout}
+                                    className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center"
+                                >
+                                    <LogOut size={16} className="mr-2" />
+                                    Sign out
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Mobile Menu Button */}
+                <div className="md:hidden">
+                    <button
+                        onClick={() => setMenuOpen(!menuOpen)}
+                        className="inline-flex items-center justify-center p-2 rounded-md hover:bg-blue-700 focus:outline-none"
+                    >
+                        {menuOpen ? <X size={24} /> : <Menu size={24} />}
+                    </button>
+                </div>
             </div>
-        </div>
+
+            {/* Mobile Menu */}
+            {menuOpen && (
+                <div className="md:hidden bg-blue-800 pb-4 px-2 pt-2 space-y-1">
+                    {links && links.map(link => {
+                        const isActive = location.pathname.startsWith(link.path); // 🔥 Also active in mobile
+                        return (
+                            <Link
+                                key={link.name}
+                                to={link.path}
+                                onClick={() => setMenuOpen(false)}
+                                className={`block px-3 py-2 rounded-md text-base font-medium transition duration-150 ${isActive ? "bg-blue-900" : "hover:bg-blue-700"
+                                    }`}
+                            >
+                                {link.name}
+                            </Link>
+                        );
+                    })}
+
+                    <div className="border-t border-blue-700 pt-4 mt-2">
+                        <div className="flex items-center px-3 py-2">
+                            <div className="bg-white text-blue-600 rounded-full w-8 h-8 flex items-center justify-center font-bold mr-3">
+                                {userInitial}
+                            </div>
+                            <span className="font-medium">{user?.username}</span>
+                        </div>
+
+                        <Link
+                            to="/profile"
+                            onClick={() => setMenuOpen(false)}
+                            className="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition duration-150 flex items-center"
+                        >
+                            <User size={16} className="mr-2" />
+                            Your Profile
+                        </Link>
+
+                        <button
+                            onClick={() => {
+                                setMenuOpen(false);
+                                onLogout();
+                            }}
+                            className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-300 hover:bg-blue-700 hover:text-white transition duration-150 flex items-center"
+                        >
+                            <LogOut size={16} className="mr-2" />
+                            Sign out
+                        </button>
+                    </div>
+                </div>
+            )}
+        </nav>
     );
-}
+};
+
+export default Navbar;

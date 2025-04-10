@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace productionLine.Server.Model
 {
@@ -12,6 +13,7 @@ namespace productionLine.Server.Model
         public int FormSubmissionId { get; set; }
 
         [Column("FORMSUBMISSION")]
+        [JsonIgnore]
         public FormSubmission FormSubmission { get; set; }  // Navigation to Submission
 
         [Column("APPROVERID")]

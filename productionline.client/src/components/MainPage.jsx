@@ -100,7 +100,7 @@ export default function MainPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {user.groups && user.groups.includes("Sanand-IT") ? (
+                {user.groups && user.groups.includes("SANAND-IT") ? (
                     <>
                         <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition">
                             <h2 className="text-xl font-semibold mb-4 text-indigo-700">IT Management</h2>
@@ -123,7 +123,7 @@ export default function MainPage() {
                         <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition">
                             <h2 className="text-xl font-semibold mb-4 text-indigo-700">Your Forms</h2>
                             <p className="text-gray-600 mb-4">Access and fill out your assigned forms</p>
-                            <button className="text-indigo-600 font-semibold hover:text-indigo-800">View Forms →</button>
+                            <button className="text-indigo-600 font-semibold hover:text-indigo-800">View Forms <a href ="/reports">→</a></button>
                         </div>
                         <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition">
                             <h2 className="text-xl font-semibold mb-4 text-indigo-700">Recent Activity</h2>
