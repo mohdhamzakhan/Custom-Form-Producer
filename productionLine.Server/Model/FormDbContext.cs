@@ -17,6 +17,31 @@ namespace productionLine.Server.Model
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            base.OnModelCreating(modelBuilder);
+
+            // 🔥 Tell EF Core: GridColumn is NOT a table
+            modelBuilder.Entity<GridColumn>().HasNoKey();  // ➡️ No Primary Key
+            modelBuilder.Entity<GridColumn>().ToTable((string)null); // ➡️ Don't map to any table
+
+            // 🔥 Also add this for FormField.ColumnsJson
+            modelBuilder.Entity<FormField>()
+                .Property(f => f.ColumnsJson)
+                .HasColumnType("CLOB");  // Oracle will store JSON inside a CLOB field
+
+            // ✅ Create options outside
+            var jsonOptions = new JsonSerializerOptions
+            {
+                WriteIndented = false
+            };
+
+            // ✅ Fixed version without optional arguments
+            modelBuilder.Entity<FormField>()
+                .Property(f => f.Columns)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, jsonOptions),    // Serialize manually with options
+                    v => JsonSerializer.Deserialize<List<GridColumn>>(v, jsonOptions) // Deserialize manually with options
+                );
+
             modelBuilder.Entity<Form>()
                 .HasMany(f => f.Fields)
                 .WithOne(f => f.Form)

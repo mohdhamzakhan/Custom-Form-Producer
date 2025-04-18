@@ -1,19 +1,22 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
+﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
-using System;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace productionLine.Server.Model
 {
     [Table("FF_FORMFIELD")]
     public class FormField
     {
-        [Column("ID")]
         [Key]
+        [Column("ID")]
         public Guid Id { get; set; }
 
         [Required]
         [Column("TYPE")]
-        public string Type { get; set; }  // textbox, dropdown, numeric, checkbox
+        public string Type { get; set; }  // textbox, dropdown, numeric, etc.
 
         [Required]
         [Column("LABEL")]
@@ -23,15 +26,31 @@ namespace productionLine.Server.Model
         public bool Required { get; set; }
 
         [Column("WIDTH")]
-        public string Width { get; set; }  // w-full, w-1/2, etc.
+        public string Width { get; set; }
 
-        [Column("OPTIONS")]
-        public List<string>? Options { get; set; }  // Only for dropdowns & checkboxes
+        // OPTIONS (dropdown, checkbox, radio)
+        [Column("OPTIONS", TypeName = "CLOB")]
+        public string? OptionsJson { get; set; }
 
-        [Column("REQUIRES_REMARKS")]
-        public List<string>? RequiresRemarks { get; set; }  // Only for dropdowns & checkboxes
+        [NotMapped]
+        public List<string>? Options
+        {
+            get => string.IsNullOrEmpty(OptionsJson) ? null : JsonSerializer.Deserialize<List<string>>(OptionsJson);
+            set => OptionsJson = JsonSerializer.Serialize(value);
+        }
 
-        // For numeric fields
+        // REQUIRE REMARKS (specific dropdown options)
+        [Column("REQUIRES_REMARKS", TypeName = "CLOB")]
+        public string? RequiresRemarksJson { get; set; }
+
+        [NotMapped]
+        public List<string>? RequiresRemarks
+        {
+            get => string.IsNullOrEmpty(RequiresRemarksJson) ? null : JsonSerializer.Deserialize<List<string>>(RequiresRemarksJson);
+            set => RequiresRemarksJson = JsonSerializer.Serialize(value);
+        }
+
+        // NUMERIC-SPECIFIC FIELDS
         [Column("MIN")]
         public double? Min { get; set; }
 
@@ -44,14 +63,91 @@ namespace productionLine.Server.Model
         [Column("REMARKS_OUT", TypeName = "NUMBER(1)")]
         public bool? RequireRemarksOutOfRange { get; set; }
 
-        [Column("REMARK_TRIGGERS")]
-        public List<RemarkTrigger>? RemarkTriggers { get; set; }  // For numeric fields
+        // TRIGGER-BASED REMARKS FOR NUMERIC FIELDS
+        [Column("REMARK_TRIGGERS", TypeName = "CLOB")]
+        public string? RemarkTriggersJson { get; set; }
 
-        [ForeignKey("FORMID")]
+        [NotMapped]
+        public List<RemarkTrigger>? RemarkTriggers
+        {
+            get => string.IsNullOrEmpty(RemarkTriggersJson) ? null : JsonSerializer.Deserialize<List<RemarkTrigger>>(RemarkTriggersJson);
+            set => RemarkTriggersJson = JsonSerializer.Serialize(value);
+        }
+
+        // FORM ASSOCIATION
         [Column("FORMID")]
         public int FormId { get; set; }
+
+        [ForeignKey(nameof(FormId))]
         public Form Form { get; set; }
+
+        // CALCULATION FIELDS
+        [Column("FORMULA", TypeName = "CLOB")]
+        public string? Formula { get; set; }
+
+        [Column("RESULT_DECIMAL", TypeName = "NUMBER(1)")]
+        public bool? ResultDecimal { get; set; }
+
+        [Column("FIELD_REFERENCES", TypeName = "CLOB")]
+        public string? FieldReferencesJson { get; set; }
+
+        [NotMapped]
+        public List<string>? FieldReferences
+        {
+            get => string.IsNullOrEmpty(FieldReferencesJson) ? null : JsonSerializer.Deserialize<List<string>>(FieldReferencesJson);
+            set => FieldReferencesJson = JsonSerializer.Serialize(value);
+        }
+
+        // GRID CONFIG
+        [Column("COLUMNS", TypeName = "CLOB")]
+        public string? ColumnsJson { get; set; }
+
+        [NotMapped]
+        public List<GridColumn>? Columns
+        {
+            get => string.IsNullOrEmpty(ColumnsJson) ? null : JsonSerializer.Deserialize<List<GridColumn>>(ColumnsJson);
+            set => ColumnsJson = JsonSerializer.Serialize(value);
+        }
+
+        [Column("MIN_ROWS")]
+        public int? MinRows { get; set; }
+
+        [Column("MAX_ROWS")]
+        public int? MaxRows { get; set; }
+
+        [Column("INITIAL_ROWS")]
+        public int? InitialRows { get; set; }
     }
 
-   
+
+    public class GridColumn
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+
+        [JsonPropertyName("width")]
+        public string Width { get; set; }
+
+        [JsonPropertyName("options")]
+        public List<string>? Options { get; set; }
+
+        [JsonPropertyName("min")]
+        public double? Min { get; set; }
+
+        [JsonPropertyName("max")]
+        public double? Max { get; set; }
+
+        [JsonPropertyName("decimal")]
+        public bool? Decimal { get; set; }
+
+        [JsonPropertyName("formula")]
+        public string? Formula { get; set; }
+    }
+
 }

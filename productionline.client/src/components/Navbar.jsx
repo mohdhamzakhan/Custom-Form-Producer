@@ -1,12 +1,12 @@
 ﻿import React, { useState, useRef, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom"; // 🔥 Added useLocation
+import { Link, useLocation } from "react-router-dom"; 
 import { Menu, X, User, LogOut, ChevronDown } from "lucide-react"; // Icons
 
 const Navbar = ({ user, links, onLogout }) => {
     const [menuOpen, setMenuOpen] = useState(false);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef(null);
-    const location = useLocation(); // 🔥 Get current URL location
+    const location = useLocation();
 
     // Close dropdown when clicking outside
     useEffect(() => {

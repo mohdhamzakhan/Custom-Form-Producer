@@ -49,7 +49,7 @@ export default function Layout({ children }) {
     ];
 
     // Add IT-specific links if user is in Sanand-IT group
-    const navLinks = user?.groups?.includes("SANAND-IT")
+    let navLinks = user?.groups?.includes("SANAND-IT")
         ? [
             ...defaultLinks,
             { name: "Create Form", path: "/formbuilder" },
@@ -57,6 +57,13 @@ export default function Layout({ children }) {
         ]
         : defaultLinks;
 
+    navLinks = (user?.groups?.includes("SANAND-PROD") || user?.groups?.includes("SANAND-IT"))
+        ? [
+            ...defaultLinks,
+            { name: "Production Report", path: "/ProductionReport" },
+            { name: "Create Form", path: "/formbuilder" }
+        ]
+        : defaultLinks;
     // Don't render anything until user is loaded
     if (!user) {
         return (

@@ -7,6 +7,7 @@ using productionLine.Server.DTO;
 using productionLine.Server.Model;
 using System.DirectoryServices.AccountManagement;
 using System.Runtime.Versioning;
+using System.Text.Json;
 
 namespace productionLine.Server.Controllers
 {
@@ -34,6 +35,19 @@ namespace productionLine.Server.Controllers
                 return BadRequest("Name and FormLink are required.");
             }
 
+            // 🔥 Before saving, manually serialize grid columns
+            if (form.Fields != null)
+            {
+                foreach (var field in form.Fields)
+                {
+                    if (field.Type == "grid" && field.Columns != null)
+                    {
+                        // 🔥 Save columns as JSON
+                        field.ColumnsJson = JsonSerializer.Serialize(field.Columns);
+                    }
+                }
+            }
+
             _context.Forms.Add(form);
             await _context.SaveChangesAsync();
 
@@ -48,30 +62,39 @@ namespace productionLine.Server.Controllers
             if (form == null)
                 return NotFound("Form not found.");
 
+            // 🔥 After loading, manually deserialize columns
+            foreach (var field in form.Fields)
+            {
+                if (field.Type == "grid" && !string.IsNullOrEmpty(field.ColumnsJson))
+                {
+                    field.Columns = JsonSerializer.Deserialize<List<GridColumn>>(field.ColumnsJson);
+                }
+            }
+
             return Ok(form);
         }
+
 
         [HttpGet("link/{formLink}")]
         public async Task<IActionResult> GetFormByLink(string formLink)
         {
             var form = await _context.Forms
-                .Include(f => f.Fields) // Load related fields
-                .ThenInclude(field => field.RemarkTriggers) // Load RemarkTriggers for each field
+                .Include(f => f.Fields)
+                .ThenInclude(field => field.RemarkTriggers)
                 .FirstOrDefaultAsync(f => f.FormLink == formLink);
 
             if (form == null)
                 return NotFound("Form not found.");
 
-            // Map to DTO
             var formDto = new FormDto
             {
                 Id = form.Id,
                 FormLink = form.FormLink,
-                Name = form.Name, // Include form name
+                Name = form.Name,
                 Fields = form.Fields.Select(f => new FieldDto
                 {
                     Id = f.Id,
-                    Name = form.Name, // Use form's name directly
+                    Name = f.Label, // fixed: using field name, not form name
                     Type = f.Type,
                     Label = f.Label,
                     Options = f.Options,
@@ -81,12 +104,30 @@ namespace productionLine.Server.Controllers
                     IsDecimal = f.Decimal,
                     Max = f.Max,
                     Min = f.Min,
-                    RemarkTriggers = f.RemarkTriggers.Select(rt => new RemarkTriggerDto
+                    RemarkTriggers = f.RemarkTriggers?.Select(rt => new RemarkTriggerDto
                     {
                         Id = rt.Id,
                         Operator = rt.Operator,
                         Value = rt.Value
-                    }).ToList()
+                    }).ToList() ?? new List<RemarkTriggerDto>(),
+                    Column = f.Columns?.Select(ct => new GridColumnDto
+                    {
+                        Formula = ct.Formula,
+                        Name = ct.Name,
+                        Decimal = ct.Decimal,
+                        Max = ct.Max,
+                        Id = ct.Id,
+                        Min = ct.Min,
+                        Type = ct.Type,
+                        Width = ct.Width,
+                        Options = ct.Options ?? null
+                    }).ToList() ?? new List<GridColumnDto>(),
+                    Formula = f.Formula,
+                    InitialRows = f.InitialRows,
+                    MaxRows = f.MaxRows,
+                    MinRows = f.MinRows,
+                    ResultDecimal = f.ResultDecimal,
+                    FieldReferencesJson = f.FieldReferencesJson
                 }).ToList()
             };
 
@@ -147,17 +188,17 @@ namespace productionLine.Server.Controllers
                 .Select(y => y.Id)
                 .FirstOrDefaultAsync();
             try
-                        {
+            {
                 var submissions = await _context.FormSubmissions
 .Where(s => s.FormId == formId)
 .OrderByDescending(s => s.SubmittedAt)
 .Take(10)
 .Select(s => new
 {
-Id = s.Id,
-SubmittedAt = s.SubmittedAt,
-Approvals = s.Approvals.Select(a => a.Status).ToList(),
-ApproversRequired = _context.FormApprovers  
+    Id = s.Id,
+    SubmittedAt = s.SubmittedAt,
+    Approvals = s.Approvals.Select(a => a.Status).ToList(),
+    ApproversRequired = _context.FormApprovers
 .Where(a => a.FormId == s.FormId)
 .Count()
 })
@@ -226,7 +267,7 @@ ApproversRequired = _context.FormApprovers
         .Include(s => s.SubmissionData)
         .Include(s => s.Approvals)
         .Include(s => s.Form)
-            .ThenInclude(f => f.Approvers)  // 🔥 Critical!
+            .ThenInclude(f => f.Approvers)
         .FirstOrDefaultAsync(s => s.FormId == submissionId);
 
             if (submission == null)

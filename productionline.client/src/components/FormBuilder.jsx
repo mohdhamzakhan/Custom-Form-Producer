@@ -27,6 +27,8 @@ const FormBuilder = () => {
     const [isSearching, setIsSearching] = useState(false);
     const [showApprovalConfig, setShowApprovalConfig] = useState(false);
 
+
+
     useEffect(() => {
         fetchFormLayout();
     }, []);
@@ -103,28 +105,86 @@ const FormBuilder = () => {
         });
     };
 
-    const fetchFormLayout = async () => {
-        try {
+    //const fetchFormLayout = async () => {
+    //    try {
 
+    //        const savedForm = localStorage.getItem("formBuilderFields");
+    //        if (savedForm) {
+    //            setFormFields(JSON.parse(savedForm));
+    //            setLoading(false);
+    //        }
+    //        else {
+    //            const response = await fetch("http://localhost:5182/api/form-layout");
+    //            const data = await response.json();
+
+    //            setFormName(data.name || "");
+    //            setFormFields(data.fields || []);
+    //            setApprovers(data.approvers || []);
+    //            setLoading(false);
+    //        }
+    //    } catch (error) {
+    //        console.error("Error fetching form layout:", error);
+    //        setLoading(false);
+    //    }
+    //};
+
+    const fetchFormLayout = async () => {
+        const getFormLinkFromUrl = () => {
+            const params = new URLSearchParams(window.location.search);
+            return params.get("formLink");
+        };
+
+        const formLink = getFormLinkFromUrl();
+
+        if (!formLink) {
             const savedForm = localStorage.getItem("formBuilderFields");
             if (savedForm) {
                 setFormFields(JSON.parse(savedForm));
-                setLoading(false);
             }
-            else {
-                const response = await fetch("http://localhost:5182/api/form-layout");
-                const data = await response.json();
+            setLoading(false);
+            return;
+        }
 
-                setFormName(data.name || "");
-                setFormFields(data.fields || []);
-                setApprovers(data.approvers || []);
+        try {
+            const response = await fetch(`http://localhost:5182/api/form-builder/link/${encodeURIComponent(formLink)}`);
+            let data
+            try {
+                data = await response.json();
+                console.log(response)
+            } catch (jsonErr) {
+                const text = await response.text(); // fallback to plain error
+                console.error("Non-JSON error from API:", text);
+                alert("Unexpected response from server. Check console for details.");
                 setLoading(false);
+                return;
             }
+
+            setFormName(data.name || "");
+
+            const transformedFields = (data.fields || []).map((field) => {
+                const isGrid = field.type === "grid";
+
+                return {
+                    ...field,
+                    columns: isGrid ? field.column || [] : undefined, // 👈 fix mismatch
+                    column: undefined, // optional: remove old key
+                    formula: field.formula || "",
+                    resultDecimal: field.resultDecimal || false,
+                    fieldReferences: field.fieldReferencesJson || []
+                };
+            });
+
+            setFormFields(transformedFields);
+            setApprovers(data.approvers || []);
+            setLoading(false);
         } catch (error) {
-            console.error("Error fetching form layout:", error);
+            console.error("Error loading form layout from link:", error);
+            alert("Failed to load form layout from server.");
             setLoading(false);
         }
     };
+
+
 
     const saveForm = async () => {
         if (!formName.trim()) {
@@ -138,6 +198,7 @@ const FormBuilder = () => {
             formLink: formName.toLowerCase().replace(/\s+/g, "-"),
             approvers: [], // 👈 MUST ADD this!
         };
+
 
         // Create form object with the structure matching your API requirements
         const formData = {
@@ -190,6 +251,29 @@ const FormBuilder = () => {
                         })
                     );
                 }
+                if (field.type === "calculation") {
+                    mappedField.formula = field.formula || "";
+                    mappedField.resultDecimal = field.resultDecimal || false;
+                    // You might want to save field references as well
+                    mappedField.fieldReferences = field.fieldReferences || [];
+                }
+                if (field.type === "grid") {
+                    mappedField.columns = (field.columns || []).map(column => ({
+                        id: column.id || 0,
+                        name: column.name,
+                        type: column.type,
+                        width: column.width,
+                        options: column.options || [],
+                        min: column.min,
+                        max: column.max,
+                        decimal: column.decimal || false,
+                        formula: column.formula || "",
+                        formFieldId: field.id
+                    }));
+                    mappedField.minRows = field.minRows || 1;
+                    mappedField.maxRows = field.maxRows || 10;
+                    mappedField.initialRows = field.initialRows || 3;
+                }
 
                 return mappedField;
             }),
@@ -224,6 +308,10 @@ const FormBuilder = () => {
         }
 
     };
+    const getFormLinkFromUrl = () => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("formLink");
+    };
 
     const addField = (type) => {
         const newField = {
@@ -241,6 +329,20 @@ const FormBuilder = () => {
                 requireRemarksOutOfRange: false,
                 remarkTriggers: [],
             }),
+            ...(type === "calculation" && {
+                formula: "",
+                fieldReferences: [], // Track which fields are referenced
+                resultDecimal: true, // Allow decimal in result by default
+            }),
+            ...(type === "grid" && {
+                columns: [
+                    { id: generateGuid(), name: "Column 1", type: "textbox", width: "1fr" },
+                    { id: generateGuid(), name: "Column 2", type: "textbox", width: "1fr" }
+                ],
+                minRows: 1,
+                maxRows: 10,
+                initialRows: 3,
+            }),
         };
         setFormFields([...formFields, newField]);
     };
@@ -255,7 +357,8 @@ const FormBuilder = () => {
 
     const removeField = (index) => {
         setFormFields((prevFields) => prevFields.filter((_, i) => i !== index));
-    };
+    }
+    
 
     const addApprover = (item) => {
         if (approvers.some(a => a.id === item.id)) {
@@ -371,7 +474,7 @@ const FormBuilder = () => {
                     </div>
 
                     <div className="mb-6 flex gap-2 flex-wrap">
-                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date"].map(
+                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "grid"].map(
                             (type) => (
                                 <button
                                     key={type}
@@ -390,6 +493,7 @@ const FormBuilder = () => {
                                 <FormField
                                     field={field}
                                     index={index}
+                                    allFields={formFields} // Pass all fields as a prop
                                     moveField={moveField}
                                     updateField={(updates) => updateField(index, updates)}
                                     removeField={() => removeField(index)}
@@ -458,9 +562,9 @@ const ApproverItem = ({ approver, index, moveApprover, removeApprover }) => {
     );
 };
 
-const FormField = ({ field, index, moveField, updateField, removeField }) => {
+const FormField = ({ field, index, allFields, moveField, updateField, removeField }) => {
     const ref = useRef(null);
-
+    const [availableFields, setAvailableFields] = useState([]);
     const [{ isDragging }, drag] = useDrag({
         type: ITEM_TYPE,
         item: { index },
@@ -468,6 +572,16 @@ const FormField = ({ field, index, moveField, updateField, removeField }) => {
             isDragging: monitor.isDragging(),
         }),
     });
+
+    useEffect(() => {
+        // Now "field" and "allFields" are properly defined here
+        const fields = allFields
+            .filter(f => f.id !== field.id)
+            .filter(f => ["textbox", "numeric", "dropdown", "calculation"].includes(f.type))
+            .map(f => ({ id: f.id, label: f.label }));
+
+        setAvailableFields(fields);
+    }, [allFields, field.id]);
 
     const [, drop] = useDrop({
         accept: ITEM_TYPE,
@@ -482,6 +596,7 @@ const FormField = ({ field, index, moveField, updateField, removeField }) => {
     drag(drop(ref));
 
     const [newOption, setNewOption] = useState("");
+    const [tempDropdownOptions, setTempDropdownOptions] = useState("");
     const [newRemarkTrigger, setNewRemarkTrigger] = useState({
         value: "",
         operator: "=",
@@ -590,6 +705,313 @@ const FormField = ({ field, index, moveField, updateField, removeField }) => {
                 />
                 <label className="text-sm text-gray-600">Required</label>
             </div>
+
+            {field.type === "calculation" && (
+                <div className="mb-4">
+                    <label className="block text-sm font-medium mb-1">Formula</label>
+                    <input
+                        type="text"
+                        value={field.formula || ""}
+                        onChange={(e) => updateField({ formula: e.target.value })}
+                        placeholder="Example: {field1} + {field2} * 2"
+                        className="w-full px-2 py-1 border rounded"
+                    />
+
+                    <div className="mt-2">
+                        <label className="block text-xs font-medium mb-1 text-gray-500">Available Fields:</label>
+                        <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded max-h-32 overflow-y-auto">
+                            {availableFields.map(f => (
+                                <div key={f.id} className="mb-1">
+                                    {f.label}: <code className="bg-gray-100 px-1 rounded">{`{${f.id}}`}</code>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-3">
+                        <input
+                            type="checkbox"
+                            checked={field.resultDecimal || false}
+                            onChange={(e) => updateField({ resultDecimal: e.target.checked })}
+                            className="h-4 w-4"
+                        />
+                        <label className="text-sm text-gray-600">Allow Decimal Results</label>
+                    </div>
+
+                    <p className="text-xs text-gray-500 mt-2">
+                        Use field IDs wrapped in curly braces to reference other fields.
+                        Example: <code className="bg-gray-100 px-1 rounded">{"{fieldId1} + {fieldId2} * 2"}</code>
+                    </p>
+                </div>
+            )}
+
+            {field.type === "grid" && (
+                <div className="mt-4">
+                    <h4 className="text-sm font-semibold mb-2">Grid Configuration</h4>
+
+                    <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label className="block text-sm text-gray-600 mb-1">Initial Rows</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="20"
+                                value={field.initialRows || 3}
+                                onChange={(e) => updateField({ initialRows: parseInt(e.target.value) || 3 })}
+                                className="w-full px-2 py-1 border rounded"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-gray-600 mb-1">Min Rows</label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                value={field.minRows || 1}
+                                onChange={(e) => updateField({ minRows: parseInt(e.target.value) || 1 })}
+                                className="w-full px-2 py-1 border rounded"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm text-gray-600 mb-1">Max Rows</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={field.maxRows || 10}
+                                onChange={(e) => updateField({ maxRows: parseInt(e.target.value) || 10 })}
+                                className="w-full px-2 py-1 border rounded"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 p-3 rounded border mb-4">
+                        <h4 className="text-sm font-semibold mb-2">Columns</h4>
+
+                        {(field.columns || []).map((column, colIndex) => (
+                            <div key={column.id || colIndex} className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-gray-200">
+                                <div className="w-full md:w-1/3 mb-2 md:mb-0">
+                                    <label className="block text-xs text-gray-500 mb-1">Name</label>
+                                    <input
+                                        type="text"
+                                        value={column.name || ""}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...(field.columns || [])];
+                                            updatedColumns[colIndex].name = e.target.value;
+                                            updateField({ columns: updatedColumns });
+                                        }}
+                                        className="w-full px-2 py-1 border rounded"
+                                    />
+                                </div>
+
+                                <div className="w-full md:w-1/4 mb-2 md:mb-0">
+                                    <label className="block text-xs text-gray-500 mb-1">Type</label>
+                                    <select
+                                        value={column.type || "textbox"}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...(field.columns || [])];
+                                            updatedColumns[colIndex].type = e.target.value;
+                                            updateField({ columns: updatedColumns });
+                                        }}
+                                        className="w-full px-2 py-1 border rounded"
+                                    >
+                                        <option value="textbox">Text</option>
+                                        <option value="numeric">Number</option>
+                                        <option value="dropdown">Dropdown</option>
+                                        <option value="checkbox">Checkbox</option>
+                                        <option value="calculation">Calculation</option>
+                                    </select>
+                                </div>
+
+                                <div className="w-full md:w-1/6 mb-2 md:mb-0">
+                                    <label className="block text-xs text-gray-500 mb-1">Width</label>
+                                    <input
+                                        type="text"
+                                        value={column.width || "1fr"}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...(field.columns || [])];
+                                            updatedColumns[colIndex].width = e.target.value;
+                                            updateField({ columns: updatedColumns });
+                                        }}
+                                        className="w-full px-2 py-1 border rounded"
+                                        placeholder="1fr"
+                                    />
+                                </div>
+
+                                {column.type === "calculation" && (
+                                    <div className="w-full mt-2">
+                                        <label className="block text-xs text-gray-500 mb-1">Formula</label>
+                                        <input
+                                            type="text"
+                                            value={column.formula || ""}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...(field.columns || [])];
+                                                updatedColumns[colIndex].formula = e.target.value;
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            className="w-full px-2 py-1 border rounded"
+                                            placeholder="col1 + col2"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Use column IDs to create calculations (e.g., col1 * col2)
+                                        </p>
+                                    </div>
+                                )}
+
+                                {column.type === "dropdown" && (
+                                    <div className="w-full mt-2">
+                                        <label className="block text-xs text-gray-500 mb-1">Options (comma separated)</label>
+                                        <input
+                                            type="text"
+                                            value={tempDropdownOptions}
+                                            onChange={(e) => setTempDropdownOptions(e.target.value)}
+                                            onBlur={() => {
+                                                const options = tempDropdownOptions
+                                                    .split(",")
+                                                    .map((opt) => opt.trim())
+                                                    .filter(Boolean);
+
+                                                const updatedColumns = [...(field.columns || [])];
+                                                updatedColumns[colIndex].options = options;
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            onFocus={() => {
+                                                // Populate temp input with current options when editing starts
+                                                setTempDropdownOptions((column.options || []).join(", "));
+                                            }}
+                                            className="w-full px-2 py-1 border rounded"
+                                            placeholder="Option 1, Option 2, Option 3"
+                                        />
+
+                                    </div>
+                                )}
+
+                                {column.type === "numeric" && (
+                                    <div className="w-full grid grid-cols-3 gap-3 mt-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Min</label>
+                                            <input
+                                                type="number"
+                                                value={column.min || 0}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...(field.columns || [])];
+                                                    updatedColumns[colIndex].min = parseFloat(e.target.value) || 0;
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="w-full px-2 py-1 border rounded"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Max</label>
+                                            <input
+                                                type="number"
+                                                value={column.max || 100}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...(field.columns || [])];
+                                                    updatedColumns[colIndex].max = parseFloat(e.target.value) || 100;
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="w-full px-2 py-1 border rounded"
+                                            />
+                                        </div>
+                                        <div className="flex items-end mb-1">
+                                            <label className="flex items-center gap-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={column.decimal || false}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...(field.columns || [])];
+                                                        updatedColumns[colIndex].decimal = e.target.checked;
+                                                        updateField({ columns: updatedColumns });
+                                                    }}
+                                                    className="h-4 w-4"
+                                                />
+                                                <span className="text-xs text-gray-500">Decimal</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="w-full flex justify-end">
+                                    <button
+                                        onClick={() => {
+                                            const updatedColumns = (field.columns || []).filter((_, i) => i !== colIndex);
+                                            updateField({ columns: updatedColumns });
+                                        }}
+                                        className="text-red-500 hover:text-red-600 text-sm flex items-center gap-1"
+                                    >
+                                        <X size={14} /> Remove
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+
+                        <button
+                            onClick={() => {
+                                const newColumn = {
+                                    id: generateGuid(),
+                                    name: `Column ${(field.columns || []).length + 1}`,
+                                    type: "textbox",
+                                    width: "1fr"
+                                };
+                                updateField({ columns: [...(field.columns || []), newColumn] });
+                            }}
+                            className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 flex items-center gap-1 text-sm"
+                        >
+                            <Plus size={14} /> Add Column
+                        </button>
+                    </div>
+
+                    <div className="bg-gray-50 p-3 rounded border">
+                        <h4 className="text-sm font-semibold mb-2">Grid Preview</h4>
+                        <div className="overflow-x-auto">
+                            <table className="w-full border-collapse">
+                                <thead>
+                                    <tr>
+                                        {(field.columns || []).map((col, i) => (
+                                            <th key={col.id || i} className="border border-gray-300 bg-gray-100 p-2 text-sm text-left"
+                                                style={{ width: col.width }}>
+                                                {col.name}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {[...Array(Math.min(3, field.initialRows || 3))].map((_, rowIndex) => (
+                                        <tr key={rowIndex}>
+                                            {(field.columns || []).map((col, colIndex) => (
+                                                <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2">
+                                                    {col.type === "textbox" && (
+                                                        <input type="text" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                    )}
+                                                    {col.type === "numeric" && (
+                                                        <input type="number" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                    )}
+                                                    {col.type === "dropdown" && (
+                                                        <select className="w-full bg-gray-50 border px-2 py-1 opacity-50">
+                                                            <option>Select...</option>
+                                                            {(col.options || []).map((opt, o) => (
+                                                                <option key={o}>{opt}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                                    {col.type === "checkbox" && (
+                                                        <input type="checkbox" disabled className="h-4 w-4 opacity-50" />
+                                                    )}
+                                                    {col.type === "calculation" && (
+                                                        <input type="text" disabled placeholder="Calculated value"
+                                                            className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                    )}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}          
 
             {field.type === "numeric" && (
                 <div className="mb-4">

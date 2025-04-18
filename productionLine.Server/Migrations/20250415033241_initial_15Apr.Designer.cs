@@ -12,8 +12,8 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    [Migration("20250409081651_approval")]
-    partial class approval
+    [Migration("20250415033241_initial_15Apr")]
+    partial class initial_15Apr
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -152,13 +152,32 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("RAW(16)")
                         .HasColumnName("ID");
 
+                    b.Property<string>("Columns")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("ColumnsJson")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("COLUMNS");
+
                     b.Property<bool?>("Decimal")
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("DECIMAL");
 
+                    b.Property<string>("FieldReferencesJson")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("FIELD_REFERENCES");
+
                     b.Property<int>("FormId")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FORMID");
+
+                    b.Property<string>("Formula")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("FORMULA");
+
+                    b.Property<int?>("InitialRows")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("INITIAL_ROWS");
 
                     b.Property<string>("Label")
                         .IsRequired()
@@ -169,13 +188,28 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("BINARY_DOUBLE")
                         .HasColumnName("MAX");
 
+                    b.Property<int?>("MaxRows")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("MAX_ROWS");
+
                     b.Property<double?>("Min")
                         .HasColumnType("BINARY_DOUBLE")
                         .HasColumnName("MIN");
 
+                    b.Property<int?>("MinRows")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("MIN_ROWS");
+
                     b.Property<string>("Options")
-                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("OptionsJson")
+                        .HasColumnType("CLOB")
                         .HasColumnName("OPTIONS");
+
+                    b.Property<string>("RemarkTriggersJson")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("REMARK_TRIGGERS");
 
                     b.Property<bool?>("RequireRemarksOutOfRange")
                         .HasColumnType("NUMBER(1)")
@@ -186,8 +220,15 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("REQUIRED");
 
                     b.Property<string>("RequiresRemarks")
-                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnType("NVARCHAR2(2000)");
+
+                    b.Property<string>("RequiresRemarksJson")
+                        .HasColumnType("CLOB")
                         .HasColumnName("REQUIRES_REMARKS");
+
+                    b.Property<bool?>("ResultDecimal")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("RESULT_DECIMAL");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -264,6 +305,50 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_FORMSUBMISSIONDATA");
 
                     b.HasAnnotation("Relational:JsonPropertyName", "submissionData");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.GridColumn", b =>
+                {
+                    b.Property<bool?>("Decimal")
+                        .HasColumnType("BOOLEAN")
+                        .HasAnnotation("Relational:JsonPropertyName", "decimal");
+
+                    b.Property<string>("Formula")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "formula");
+
+                    b.Property<string>("Id")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "id");
+
+                    b.Property<double?>("Max")
+                        .HasColumnType("BINARY_DOUBLE")
+                        .HasAnnotation("Relational:JsonPropertyName", "max");
+
+                    b.Property<double?>("Min")
+                        .HasColumnType("BINARY_DOUBLE")
+                        .HasAnnotation("Relational:JsonPropertyName", "min");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "name");
+
+                    b.PrimitiveCollection<string>("Options")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "options");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "type");
+
+                    b.Property<string>("Width")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "width");
+
+                    b.ToTable((string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.RemarkTrigger", b =>

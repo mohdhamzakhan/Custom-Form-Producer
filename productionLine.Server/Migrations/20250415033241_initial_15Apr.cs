@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace productionLine.Server.Migrations
 {
     /// <inheritdoc />
-    public partial class initial : Migration
+    public partial class initial_15Apr : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -36,14 +36,14 @@ namespace productionLine.Server.Migrations
                     EMAIL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
                     TYPE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
                     LEVEL = table.Column<int>(type: "NUMBER(10)", nullable: false),
-                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                    FormId = table.Column<int>(type: "NUMBER(10)", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_FF_FORMAPPROVER", x => x.ID);
                     table.ForeignKey(
-                        name: "FK_FF_FORMAPPROVER_FF_FORM_FORMID",
-                        column: x => x.FORMID,
+                        name: "FK_FF_FORMAPPROVER_FF_FORM_FormId",
+                        column: x => x.FormId,
                         principalTable: "FF_FORM",
                         principalColumn: "ID",
                         onDelete: ReferentialAction.Cascade);
@@ -58,13 +58,24 @@ namespace productionLine.Server.Migrations
                     LABEL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
                     REQUIRED = table.Column<bool>(type: "NUMBER(1)", nullable: false),
                     WIDTH = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
-                    OPTIONS = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
-                    REQUIRES_REMARKS = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
+                    OPTIONS = table.Column<string>(type: "CLOB", nullable: true),
+                    Options = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
+                    REQUIRES_REMARKS = table.Column<string>(type: "CLOB", nullable: true),
+                    RequiresRemarks = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
                     MIN = table.Column<double>(type: "BINARY_DOUBLE", nullable: true),
                     MAX = table.Column<double>(type: "BINARY_DOUBLE", nullable: true),
                     DECIMAL = table.Column<bool>(type: "NUMBER(1)", nullable: true),
                     REMARKS_OUT = table.Column<bool>(type: "NUMBER(1)", nullable: true),
-                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                    REMARK_TRIGGERS = table.Column<string>(type: "CLOB", nullable: true),
+                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    FORMULA = table.Column<string>(type: "CLOB", nullable: true),
+                    RESULT_DECIMAL = table.Column<bool>(type: "NUMBER(1)", nullable: true),
+                    FIELD_REFERENCES = table.Column<string>(type: "CLOB", nullable: true),
+                    COLUMNS = table.Column<string>(type: "CLOB", nullable: true),
+                    Columns = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
+                    MIN_ROWS = table.Column<int>(type: "NUMBER(10)", nullable: true),
+                    MAX_ROWS = table.Column<int>(type: "NUMBER(10)", nullable: true),
+                    INITIAL_ROWS = table.Column<int>(type: "NUMBER(10)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -171,9 +182,9 @@ namespace productionLine.Server.Migrations
                 column: "FORMSUBMISSIONID");
 
             migrationBuilder.CreateIndex(
-                name: "IX_FF_FORMAPPROVER_FORMID",
+                name: "IX_FF_FORMAPPROVER_FormId",
                 table: "FF_FORMAPPROVER",
-                column: "FORMID");
+                column: "FormId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_FF_FORMFIELD_FORMID",

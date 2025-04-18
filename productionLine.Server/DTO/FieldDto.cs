@@ -16,6 +16,13 @@ namespace productionLine.Server.DTO
         public double? Max { get; set; }
         public double? Min { get; set; }
         public List<RemarkTriggerDto> RemarkTriggers { get; set; } = new();
-    }
+        public string? Formula { get; set; }
+        public bool? ResultDecimal { get; set; }
+        public string? FieldReferencesJson { get; set; }
+        public List<GridColumnDto> Column { get; set; }
+        public int? MinRows { get; set; }
+        public int? MaxRows { get; set; }
+        public int? InitialRows { get; set; }
 
+    }
 }

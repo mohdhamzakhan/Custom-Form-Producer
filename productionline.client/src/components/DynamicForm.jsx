@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -37,7 +37,14 @@ export default function DynamicForm() {
                     );
                     if (!response.ok) throw new Error("Failed to fetch form data");
                     const data = await response.json();
+                    console.log(data)
 
+                    data.fields.forEach(field => {
+                        // Fix column → columns for grid fields
+                        if (field.type === "grid" && !field.columns && field.column) {
+                            field.columns = field.column;
+                        }
+                    });
                     // Using mock data for demonstration
 
                     setFormData(data);
@@ -57,10 +64,24 @@ export default function DynamicForm() {
                             initialValues[field.id] = "";
                         } else if (field.type === "dropdown") {
                             initialValues[field.id] = "";
-                        } else {
-                            initialValues[field.id] = "";
+                        } else if(field.type === "grid") {
+                            // Ensure columns is properly set
+                            field.columns = field.columns || [];
+
+                            // Initialize grid with empty rows
+                            const rowCount = field.initialRows || 3;
+                            const rows = [];
+
+                            for (let i = 0; i < rowCount; i++) {
+                                const row = {};
+                                field.columns.forEach(col => {
+                                    row[col.name] = "";
+                                });
+                                rows.push(row);
+                            }
+
+                            initialValues[field.id] = rows;
                         }
-                        initialRemarks[field.id] = "";
                     });
 
                     setFormValues(initialValues);
@@ -297,6 +318,27 @@ export default function DynamicForm() {
         }
     };
 
+    const evaluateFormula = (formula) => {
+        console.log(formula)
+        if (!formula) return "";
+        try {
+            let expression = formula;
+            formData.fields.forEach((field) => {
+                const value = parseFloat(formValues[field.id]) || 0;
+
+                // Replace by both ID and label (label fallback is optional)
+                expression = expression.replaceAll(`{${field.id}}`, value);
+                expression = expression.replaceAll(`{${field.label}}`, value);
+            });
+
+            return eval(expression); // ⚠️ evaluated as JavaScript math
+        } catch (error) {
+            console.error("Formula evaluation error:", error);
+            return "";
+        }
+    };
+
+
     // Validate the form
     const validateForm = () => {
         const errors = {};
@@ -418,6 +460,15 @@ export default function DynamicForm() {
 
             Object.keys(formValues).forEach((fieldId) => {
                 let fieldValue = formValues[fieldId];
+                const fieldType = fieldTypes[fieldId];
+
+                if (fieldType === 'grid' && Array.isArray(fieldValue)) {
+                    // For grid fields, convert the array of row objects to JSON string
+                    fieldValue = JSON.stringify(fieldValue);
+                } else if (Array.isArray(fieldValue)) {
+                    // For checkbox groups, join the selected values
+                    fieldValue = fieldValue.join(', ');
+                } 
 
                 // Handle different field types
                 if (Array.isArray(fieldValue)) {
@@ -701,7 +752,6 @@ export default function DynamicForm() {
                     </div>
                 );
 
-
             case "radio":
                 return (
                     <div className="mb-4 w-full">
@@ -761,10 +811,139 @@ export default function DynamicForm() {
                     </div>
                 );
 
+            case "calculation":
+                return (
+                    <div className="mb-4 w-full">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">{field.label}</label>
+                        <input
+                            type="text"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 bg-gray-100 cursor-not-allowed"
+                            value={evaluateFormula(field.formula)}  // 👈 Result is computed here
+                            readOnly
+                        />
+                    </div>
+                );
+
+            case "grid":
+                // Replace or update the grid cell rendering part to check for calculation type
+                return (
+                    <div className="mb-4 w-full">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">{field.label}</label>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full bg-white border border-gray-300">
+                                <thead>
+                                    <tr>
+                                        {(field.columns || []).map((col, idx) => (
+                                            <th key={idx} className="py-2 px-4 border-b">{col.name}</th>
+                                        ))}
+                                        <th className="py-2 px-4 border-b">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(formValues[field.id] || []).map((row, rowIndex) => (
+                                        <tr key={rowIndex}>
+                                            {(field.columns || []).map((col, colIdx) => (
+                                                <td key={colIdx} className="py-2 px-4 border-b">
+                                                    {col.type === "calculation" ? (
+                                                        <input
+                                                            type="text"
+                                                            value={evaluateRowFormula(col.formula, row)}
+                                                            className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
+                                                            readOnly
+                                                        />
+                                                    ) : col.type === "dropdown" ? (
+                                                        <select
+                                                            value={row[col.name] || ""}
+                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                            className="border rounded px-2 py-1 w-full"
+                                                        >
+                                                            <option value="">Select...</option>
+                                                            {(col.options || []).map((opt, i) => (
+                                                                <option key={i} value={opt}>
+                                                                    {opt}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            value={row[col.name] || ""}
+                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                            className="border rounded px-2 py-1 w-full"
+                                                        />
+                                                    )}
+                                                </td>
+                                            ))}
+                                            <td className="py-2 px-4 border-b">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeGridRow(field.id, rowIndex)}
+                                                    className="text-red-500 hover:text-red-700"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => addGridRow(field.id, field.columns)}
+                            className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
+                        >
+                            Add Row
+                        </button>
+                    </div>
+                );
+
             default:
                 return null;
         }
     };
+
+    // Add this function next to your evaluateFormula function
+    const evaluateRowFormula = (formula, row) => {
+        if (!formula) return "";
+        try {
+            let expression = formula;
+            Object.keys(row).forEach((colName) => {
+                const value = parseFloat(row[colName]) || 0;
+                expression = expression.replaceAll(`{${colName}}`, value);
+                expression = expression.replaceAll(colName, value);
+            });
+            return eval(expression);
+        } catch (error) {
+            console.error("Row formula evaluation error:", error);
+            return "";
+        }
+    };
+
+
+    const handleGridChange = (fieldId, rowIndex, columnName, value) => {
+        const updatedRows = [...(formValues[fieldId] || [])];
+        updatedRows[rowIndex] = { ...updatedRows[rowIndex], [columnName]: value };
+        setFormValues((prev) => ({ ...prev, [fieldId]: updatedRows }));
+    };
+
+    const addGridRow = (fieldId, columns) => {
+        const newRow = {};
+        (columns || []).forEach((col) => {
+            newRow[col.name] = "";
+        });
+        setFormValues((prev) => ({
+            ...prev,
+            [fieldId]: [...(prev[fieldId] || []), newRow],
+        }));
+    };
+
+    const removeGridRow = (fieldId, rowIndex) => {
+        const updatedRows = (formValues[fieldId] || []).filter((_, idx) => idx !== rowIndex);
+        setFormValues((prev) => ({ ...prev, [fieldId]: updatedRows }));
+    };
+
 
     if (loading) {
         return (

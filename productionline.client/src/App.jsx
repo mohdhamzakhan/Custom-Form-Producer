@@ -6,6 +6,7 @@ import SubmissionDetail from "./components/SubmissionDetails"; // Assuming you h
 import FormBuilder from "./components/FormBuilder";
 import DynamicForm from "./components/DynamicForm";
 import ApprovalPage from "./components/Approval";
+import ReportPage from "./components/ReportPage"; // Assuming you have this component
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -30,6 +31,15 @@ function App() {
                     element={
                         <ProtectedRoute>
                             <MainPage />
+                        </ProtectedRoute>
+                    }
+                />
+
+                <Route
+                    path="/ProductionReport"
+                    element={
+                        <ProtectedRoute>
+                            <ReportPage />
                         </ProtectedRoute>
                     }
                 />
