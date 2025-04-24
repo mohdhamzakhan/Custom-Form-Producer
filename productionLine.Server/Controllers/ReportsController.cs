@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using productionLine.Server.DTO;
 using productionLine.Server.Model;
+using productionLine.Server.Service;
 
 namespace productionLine.Server.Controllers
 {
@@ -10,9 +12,11 @@ namespace productionLine.Server.Controllers
     public class ReportsController : ControllerBase
     {
         private readonly FormDbContext _context;
-        public ReportsController(FormDbContext context)
+        private readonly ReportService _reportService;
+        public ReportsController(FormDbContext context, ReportService reportService)
         {
             _context = context;
+            _reportService = reportService;
         }
         [HttpGet("production")]
         public async Task<IActionResult> GetProductionReport(int formId, DateTime start, DateTime end)
@@ -57,5 +61,78 @@ namespace productionLine.Server.Controllers
             }
         }
 
+        [HttpPost]
+        public async Task<IActionResult> CreateReport([FromBody] ReportDto reportDto)
+        {
+            var report = new Report
+            {
+                FormId = reportDto.FormId,
+                Name = reportDto.Name,
+                Description = reportDto.Description,
+                LayoutType = reportDto.LayoutType,
+                DefinitionJson = reportDto.DefinitionJson,
+                CreatedBy = User.Identity.Name ?? "Hamza",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                AccessList = reportDto.AccessList.Select(a => new ReportAccess
+                {
+                    UserOrGroupId = a.UserOrGroupId,
+                    AccessType = a.AccessType
+                }).ToList()
+            };
+
+            _context.Reports.Add(report);
+            await _context.SaveChangesAsync();
+            return Ok(new { report.Id });
+        }
+        [HttpGet("form/{formId}")]
+        public async Task<IActionResult> GetReportsForForm(int formId)
+        {
+            var reports = await _context.Reports
+                .Where(r => r.FormId == formId)
+                .Include(r => r.AccessList)
+                .ToListAsync();
+
+            return Ok(reports);
+        }
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateReport(int id, [FromBody] ReportDto updated)
+        {
+            var report = await _context.Reports
+                .Include(r => r.AccessList)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (report == null) return NotFound();
+
+            report.Name = updated.Name;
+            report.Description = updated.Description;
+            report.LayoutType = updated.LayoutType;
+            report.DefinitionJson = updated.DefinitionJson;
+            report.UpdatedAt = DateTime.UtcNow;
+
+            report.AccessList.Clear();
+            foreach (var a in updated.AccessList)
+            {
+                report.AccessList.Add(new ReportAccess
+                {
+                    UserOrGroupId = a.UserOrGroupId,
+                    AccessType = a.AccessType
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetReportById(int id)
+        {
+            var report = await _context.Reports
+                .Include(r => r.AccessList)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (report == null) return NotFound();
+
+            return Ok(report);
+        }
     }
 }

@@ -42,6 +42,8 @@ namespace productionLine.Server.Model
         // REQUIRE REMARKS (specific dropdown options)
         [Column("REQUIRES_REMARKS", TypeName = "CLOB")]
         public string? RequiresRemarksJson { get; set; }
+        [Column("ORDER")]
+        public int Order { get; set; }
 
         [NotMapped]
         public List<string>? RequiresRemarks
@@ -123,6 +125,7 @@ namespace productionLine.Server.Model
     public class GridColumn
     {
         [JsonPropertyName("id")]
+        [Key]
         public string Id { get; set; }
 
         [JsonPropertyName("name")]

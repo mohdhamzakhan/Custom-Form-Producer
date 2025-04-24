@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace productionLine.Server.Migrations
 {
     /// <inheritdoc />
-    public partial class initial_15Apr : Migration
+    public partial class Initial_22Apr : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -110,6 +110,32 @@ namespace productionLine.Server.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "FF_REPORT",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    NAME = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    DESCRIPTION = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    LAYOUTTYPE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    DEFINITIONJSON = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    CREATEDBY = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    CREATEDAT = table.Column<DateTime>(type: "TIMESTAMP(7)", nullable: false),
+                    UPDATEDAT = table.Column<DateTime>(type: "TIMESTAMP(7)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_REPORT", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_REPORT_FF_FORM_FORMID",
+                        column: x => x.FORMID,
+                        principalTable: "FF_FORM",
+                        principalColumn: "ID",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "FF_REMARK_TRIGGER",
                 columns: table => new
                 {
@@ -176,6 +202,27 @@ namespace productionLine.Server.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "FF_REPORT_ACCESS",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    REPORTID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    USERGROUPID = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    ACCESSTYPE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_REPORT_ACCESS", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_REPORT_ACCESS_FF_REPORT_REPORTID",
+                        column: x => x.REPORTID,
+                        principalTable: "FF_REPORT",
+                        principalColumn: "ID",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_FF_FORMAPPROVAL_FORMSUBMISSIONID",
                 table: "FF_FORMAPPROVAL",
@@ -205,6 +252,16 @@ namespace productionLine.Server.Migrations
                 name: "IX_FF_REMARK_TRIGGER_FORMFIELDID",
                 table: "FF_REMARK_TRIGGER",
                 column: "FORMFIELDID");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_REPORT_FORMID",
+                table: "FF_REPORT",
+                column: "FORMID");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_REPORT_ACCESS_REPORTID",
+                table: "FF_REPORT_ACCESS",
+                column: "REPORTID");
         }
 
         /// <inheritdoc />
@@ -223,10 +280,16 @@ namespace productionLine.Server.Migrations
                 name: "FF_REMARK_TRIGGER");
 
             migrationBuilder.DropTable(
+                name: "FF_REPORT_ACCESS");
+
+            migrationBuilder.DropTable(
                 name: "FF_FORMSUBMISSION");
 
             migrationBuilder.DropTable(
                 name: "FF_FORMFIELD");
+
+            migrationBuilder.DropTable(
+                name: "FF_REPORT");
 
             migrationBuilder.DropTable(
                 name: "FF_FORM");

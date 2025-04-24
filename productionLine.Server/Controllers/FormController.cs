@@ -35,22 +35,196 @@ namespace productionLine.Server.Controllers
                 return BadRequest("Name and FormLink are required.");
             }
 
-            // 🔥 Before saving, manually serialize grid columns
-            if (form.Fields != null)
+            var existingForm = await _context.Forms
+                .Include(f => f.Fields)
+                .FirstOrDefaultAsync(f => f.FormLink == form.FormLink);
+
+            if (existingForm != null)
             {
+                // Update existing form properties
+                existingForm.Name = form.Name;
+
                 foreach (var field in form.Fields)
                 {
-                    if (field.Type == "grid" && field.Columns != null)
+                    var existingField = existingForm.Fields.FirstOrDefault(f => f.Id == field.Id);
+
+                    if (existingField != null)
                     {
-                        // 🔥 Save columns as JSON
-                        field.ColumnsJson = JsonSerializer.Serialize(field.Columns);
+                        // Update existing field
+                        _context.Entry(existingField).CurrentValues.SetValues(field);
+
+                        if (field.Type == "grid" && field.Columns != null)
+                        {
+                            // Handle grid columns manually
+                            var updatedColumns = field.Columns;
+
+                            if (!string.IsNullOrEmpty(existingField.ColumnsJson))
+                            {
+                                var existingColumns = JsonSerializer.Deserialize<List<GridColumn>>(existingField.ColumnsJson) ?? new List<GridColumn>();
+
+                                foreach (var column in updatedColumns)
+                                {
+                                    var existingColumn = existingColumns.FirstOrDefault(c => c.Id == column.Id);
+
+                                    if (existingColumn != null)
+                                    {
+                                        // Update existing column in the JSON
+                                        existingColumn.Name = column.Name;
+                                        existingColumn.Type = column.Type;
+                                        existingColumn.Width = column.Width;
+                                        existingColumn.Options = column.Options;
+                                        existingColumn.Min = column.Min;
+                                        existingColumn.Max = column.Max;
+                                        existingColumn.Decimal = column.Decimal;
+                                        existingColumn.Formula = column.Formula;
+                                    }
+                                    else
+                                    {
+                                        // Add new column to the JSON
+                                        existingColumns.Add(column);
+                                    }
+                                }
+
+                                // Serialize updated columns back to the JSON field
+                                existingField.ColumnsJson = JsonSerializer.Serialize(existingColumns);
+                            }
+                            else
+                            {
+                                // Handle case where ColumnsJson is null
+                                existingField.ColumnsJson = JsonSerializer.Serialize(updatedColumns);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Add new field
+                        if (field.Type == "grid" && field.Columns != null)
+                        {
+                            field.ColumnsJson = JsonSerializer.Serialize(field.Columns);
+                        }
+                        existingForm.Fields.Add(field);
                     }
                 }
             }
-
-            _context.Forms.Add(form);
+            else
+            {
+                // Add new form
+                if (form.Fields != null)
+                {
+                    foreach (var field in form.Fields)
+                    {
+                        if (field.Type == "grid" && field.Columns != null)
+                        {
+                            field.ColumnsJson = JsonSerializer.Serialize(field.Columns);
+                        }
+                    }
+                }
+                _context.Forms.Add(form);
+            }
             await _context.SaveChangesAsync();
+            return Ok(new { formLink = form.FormLink });
+        }
 
+        [HttpPut("{id}")]
+        public async Task<IActionResult> CreateForm(int id, [FromBody] Form form)
+        {
+            if (form == null)
+            {
+                return BadRequest("Form data is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(form.Name) || string.IsNullOrWhiteSpace(form.FormLink))
+            {
+                return BadRequest("Name and FormLink are required.");
+            }
+
+            var existingForm = await _context.Forms
+                .Include(f => f.Fields)
+                .FirstOrDefaultAsync(f => f.FormLink == form.FormLink);
+
+            if (existingForm != null)
+            {
+                // Update existing form properties
+                existingForm.Name = form.Name;
+
+                foreach (var field in form.Fields)
+                {
+                    var existingField = existingForm.Fields.FirstOrDefault(f => f.Id == field.Id);
+
+                    if (existingField != null)
+                    {
+                        // Update existing field
+                        _context.Entry(existingField).CurrentValues.SetValues(field);
+
+                        if (field.Type == "grid" && field.Columns != null)
+                        {
+                            // Handle grid columns manually
+                            var updatedColumns = field.Columns;
+
+                            if (!string.IsNullOrEmpty(existingField.ColumnsJson))
+                            {
+                                var existingColumns = JsonSerializer.Deserialize<List<GridColumn>>(existingField.ColumnsJson) ?? new List<GridColumn>();
+
+                                foreach (var column in updatedColumns)
+                                {
+                                    var existingColumn = existingColumns.FirstOrDefault(c => c.Id == column.Id);
+
+                                    if (existingColumn != null)
+                                    {
+                                        // Update existing column in the JSON
+                                        existingColumn.Name = column.Name;
+                                        existingColumn.Type = column.Type;
+                                        existingColumn.Width = column.Width;
+                                        existingColumn.Options = column.Options;
+                                        existingColumn.Min = column.Min;
+                                        existingColumn.Max = column.Max;
+                                        existingColumn.Decimal = column.Decimal;
+                                        existingColumn.Formula = column.Formula;
+                                    }
+                                    else
+                                    {
+                                        // Add new column to the JSON
+                                        existingColumns.Add(column);
+                                    }
+                                }
+
+                                // Serialize updated columns back to the JSON field
+                                existingField.ColumnsJson = JsonSerializer.Serialize(existingColumns);
+                            }
+                            else
+                            {
+                                // Handle case where ColumnsJson is null
+                                existingField.ColumnsJson = JsonSerializer.Serialize(updatedColumns);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Add new field
+                        if (field.Type == "grid" && field.Columns != null)
+                        {
+                            field.ColumnsJson = JsonSerializer.Serialize(field.Columns);
+                        }
+                        existingForm.Fields.Add(field);
+                    }
+                }
+            }
+            else
+            {
+                // Add new form
+                if (form.Fields != null)
+                {
+                    foreach (var field in form.Fields)
+                    {
+                        if (field.Type == "grid" && field.Columns != null)
+                        {
+                            field.ColumnsJson = JsonSerializer.Serialize(field.Columns);
+                        }
+                    }
+                }
+                _context.Forms.Add(form);
+            }
+            await _context.SaveChangesAsync();
             return Ok(new { formLink = form.FormLink });
         }
 
@@ -58,7 +232,11 @@ namespace productionLine.Server.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetForm(int id)
         {
-            var form = await _context.Forms.Include(f => f.Fields).FirstOrDefaultAsync(f => f.Id == id);
+            var form = await _context.Forms
+                .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
+                .Include(f => f.Approvers.OrderBy(a => a.Level))
+                // Other includes...
+                .FirstOrDefaultAsync(f => f.Id == id);
             if (form == null)
                 return NotFound("Form not found.");
 
@@ -80,6 +258,7 @@ namespace productionLine.Server.Controllers
         {
             var form = await _context.Forms
                 .Include(f => f.Fields)
+                .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
                 .ThenInclude(field => field.RemarkTriggers)
                 .FirstOrDefaultAsync(f => f.FormLink == formLink);
 

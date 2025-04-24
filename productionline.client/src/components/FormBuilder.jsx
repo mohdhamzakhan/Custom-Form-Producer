@@ -3,6 +3,7 @@ import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown } from
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import Layout from "./Layout"
+import { useParams } from 'react-router-dom';
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -26,6 +27,9 @@ const FormBuilder = () => {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     const [showApprovalConfig, setShowApprovalConfig] = useState(false);
+    const [formId, setFormId] = useState(null);
+    const { formLink } = useParams();
+    const [originalFormLink, setOriginalFormLink] = useState("");
 
 
 
@@ -92,7 +96,12 @@ const FormBuilder = () => {
             const updatedFields = [...prevFields];
             const [movedField] = updatedFields.splice(dragIndex, 1);
             updatedFields.splice(hoverIndex, 0, movedField);
-            return updatedFields;
+
+            // Update order values for all fields to match their new positions
+            return updatedFields.map((field, index) => ({
+                ...field,
+                order: index
+            }));
         });
     };
 
@@ -128,14 +137,63 @@ const FormBuilder = () => {
     //    }
     //};
 
+    //const fetchFormLayout = async () => {
+    //    const getFormLinkFromUrl = () => {
+    //        const params = new URLSearchParams(window.location.search);
+    //        return params.get("formLink");
+    //    };
+
+    //    const formLink = getFormLinkFromUrl();
+
+    //    if (!formLink) {
+    //        const savedForm = localStorage.getItem("formBuilderFields");
+    //        if (savedForm) {
+    //            setFormFields(JSON.parse(savedForm));
+    //        }
+    //        setLoading(false);
+    //        return;
+    //    }
+
+    //    try {
+    //        const response = await fetch(`http://localhost:5182/api/form-builder/link/${encodeURIComponent(formLink)}`);
+    //        let data
+    //        try {
+    //            data = await response.json();
+    //            console.log(response)
+    //        } catch (jsonErr) {
+    //            const text = await response.text(); // fallback to plain error
+    //            console.error("Non-JSON error from API:", text);
+    //            alert("Unexpected response from server. Check console for details.");
+    //            setLoading(false);
+    //            return;
+    //        }
+
+    //        setFormName(data.name || "");
+
+    //        const transformedFields = (data.fields || []).map((field) => {
+    //            const isGrid = field.type === "grid";
+
+    //            return {
+    //                ...field,
+    //                columns: isGrid ? field.column || [] : undefined, // 👈 fix mismatch
+    //                column: undefined, // optional: remove old key
+    //                formula: field.formula || "",
+    //                resultDecimal: field.resultDecimal || false,
+    //                fieldReferences: field.fieldReferencesJson || []
+    //            };
+    //        });
+
+    //        setFormFields(transformedFields);
+    //        setApprovers(data.approvers || []);
+    //        setLoading(false);
+    //    } catch (error) {
+    //        console.error("Error loading form layout from link:", error);
+    //        alert("Failed to load form layout from server.");
+    //        setLoading(false);
+    //    }
+    //};
     const fetchFormLayout = async () => {
-        const getFormLinkFromUrl = () => {
-            const params = new URLSearchParams(window.location.search);
-            return params.get("formLink");
-        };
-
-        const formLink = getFormLinkFromUrl();
-
+        console.log(formLink)
         if (!formLink) {
             const savedForm = localStorage.getItem("formBuilderFields");
             if (savedForm) {
@@ -145,38 +203,49 @@ const FormBuilder = () => {
             return;
         }
 
+        setOriginalFormLink(formLink); // Store the original form link
+
         try {
             const response = await fetch(`http://localhost:5182/api/form-builder/link/${encodeURIComponent(formLink)}`);
-            let data
+            let data;
+
             try {
                 data = await response.json();
-                console.log(response)
+                console.log(data)
             } catch (jsonErr) {
-                const text = await response.text(); // fallback to plain error
+                const text = await response.text();
                 console.error("Non-JSON error from API:", text);
                 alert("Unexpected response from server. Check console for details.");
                 setLoading(false);
                 return;
             }
 
+            // Store the form ID for updates
+            setFormId(data.id || 0);
             setFormName(data.name || "");
 
-            const transformedFields = (data.fields || []).map((field) => {
+            const transformedFields = (data.fields || []).map((field, index) => {
                 const isGrid = field.type === "grid";
 
                 return {
                     ...field,
-                    columns: isGrid ? field.column || [] : undefined, // 👈 fix mismatch
-                    column: undefined, // optional: remove old key
+                    id: field.id || generateGuid(), // Ensure ID exists
+                    order: field.order !== undefined ? field.order : index, // Preserve or create order
+                    columns: isGrid ? field.column || [] : undefined,
+                    column: undefined, // Remove old key
                     formula: field.formula || "",
                     resultDecimal: field.resultDecimal || false,
-                    fieldReferences: field.fieldReferencesJson || []
+                    fieldReferences: field.fieldReferencesJson || [],
+                    remarkTriggers: field.remarkTriggers || [] // Ensure this exists
                 };
             });
 
-            setFormFields(transformedFields);
+            // Sort fields by their order property
+            const sortedFields = transformedFields.sort((a, b) => a.order - b.order);
+            setFormFields(sortedFields);
             setApprovers(data.approvers || []);
             setLoading(false);
+
         } catch (error) {
             console.error("Error loading form layout from link:", error);
             alert("Failed to load form layout from server.");
@@ -186,80 +255,203 @@ const FormBuilder = () => {
 
 
 
+    //const saveForm = async () => {
+    //    if (!formName.trim()) {
+    //        alert("Please enter a form name.");
+    //        return;
+    //    }
+
+    //    const baseForm = {
+    //        id: 1,
+    //        name: formName,
+    //        formLink: formName.toLowerCase().replace(/\s+/g, "-"),
+    //        approvers: [], // 👈 MUST ADD this!
+    //    };
+
+
+    //    // Create form object with the structure matching your API requirements
+    //    const formData = {
+    //        id: 0,
+    //        name: formName,
+    //        formLink: formName.toLowerCase().replace(/\s+/g, "-"),
+    //        approvers: approvers.map((approver, index) => ({
+    //            id: 0,
+    //            adObjectId: approver.id,
+    //            name: approver.name,
+    //            email: approver.email,
+    //            type: approver.type,
+    //            level: index + 1,
+    //            formId: 1,
+    //            form: baseForm // 👈 use baseForm here
+    //        })),
+    //        fields: formFields.map((field) => {
+    //            const mappedField = {
+    //                id: field.id,
+    //                type: field.type,
+    //                label: field.label,
+    //                required: field.required,
+    //                width: field.width,
+    //                options: field.options || [],
+    //                requiresRemarks: field.requiresRemarks || [],
+    //                formId: 1,
+    //                form: baseForm // 👈 use baseForm here
+    //            };
+
+    //            if (field.type === "numeric") {
+    //                mappedField.min = field.min || 0;
+    //                mappedField.max = field.max || 100;
+    //                mappedField.decimal = field.decimal || false;
+    //                mappedField.requireRemarksOutOfRange =
+    //                    field.requireRemarksOutOfRange || false;
+
+    //                mappedField.remarkTriggers = (field.remarkTriggers || []).map(
+    //                    (trigger) => ({
+    //                        id: 0,
+    //                        operator: trigger.operator,
+    //                        value: trigger.value,
+    //                        formFieldId: field.id,
+    //                        formField: {
+    //                            id: field.id,
+    //                            type: field.type,
+    //                            label: field.label,
+    //                            width: field.width,
+    //                            form: baseForm // 👈 use baseForm here
+    //                        },
+    //                    })
+    //                );
+    //            }
+    //            if (field.type === "calculation") {
+    //                mappedField.formula = field.formula || "";
+    //                mappedField.resultDecimal = field.resultDecimal || false;
+    //                // You might want to save field references as well
+    //                mappedField.fieldReferences = field.fieldReferences || [];
+    //            }
+    //            if (field.type === "grid") {
+    //                mappedField.columns = (field.columns || []).map(column => ({
+    //                    id: column.id || 0,
+    //                    name: column.name,
+    //                    type: column.type,
+    //                    width: column.width,
+    //                    options: column.options || [],
+    //                    min: column.min,
+    //                    max: column.max,
+    //                    decimal: column.decimal || false,
+    //                    formula: column.formula || "",
+    //                    formFieldId: field.id
+    //                }));
+    //                mappedField.minRows = field.minRows || 1;
+    //                mappedField.maxRows = field.maxRows || 10;
+    //                mappedField.initialRows = field.initialRows || 3;
+    //            }
+
+    //            return mappedField;
+    //        }),
+    //    };
+
+    //    try {
+    //        console.log("Sending payload:", JSON.stringify(formData));
+
+    //        const response = await fetch("http://localhost:5182/api/forms", {
+    //            method: "POST",
+    //            headers: { "Content-Type": "application/json-patch+json" },
+    //            body: JSON.stringify(formData),
+    //        });
+
+    //        if (!response.ok) {
+    //            const errorMessage = await response.text();
+    //            throw new Error(
+    //                `Failed to save form layout: ${response.status} - ${errorMessage}`
+    //            );
+    //        }
+
+    //        const responseBody = await response.json(); // Now it's safe
+    //        console.log("Form saved successfully:", responseBody);
+
+    //        alert(
+    //            `Form Saved! Link: ${window.location.origin}/form/${responseBody.formLink}`
+    //        );
+    //        window.location.reload();
+    //    } catch (error) {
+    //        console.error("Error saving form layout:", error);
+    //        alert("Error saving form layout. Check the console for details.");
+    //    }
+
+    //};
+
     const saveForm = async () => {
         if (!formName.trim()) {
             alert("Please enter a form name.");
             return;
         }
 
-        const baseForm = {
-            id: 1,
-            name: formName,
-            formLink: formName.toLowerCase().replace(/\s+/g, "-"),
-            approvers: [], // 👈 MUST ADD this!
-        };
+        const formLink = formName.toLowerCase().replace(/\s+/g, "-");
 
+        const baseForm = {
+            id: formId || 0, // Use existing ID if editing
+            name: formName,
+            formLink: originalFormLink || formLink, // Use original link if editing
+            approvers: [],
+        };
 
         // Create form object with the structure matching your API requirements
         const formData = {
-            id: 0,
+            id: formId || 0, // Use existing ID if editing
             name: formName,
-            formLink: formName.toLowerCase().replace(/\s+/g, "-"),
+            formLink: originalFormLink || formLink, // Use original link if editing
             approvers: approvers.map((approver, index) => ({
-                id: 0,
-                adObjectId: approver.id,
+                id: approver.id || 0, // Preserve approver ID if exists
+                adObjectId: approver.adObjectId || approver.id,
                 name: approver.name,
                 email: approver.email,
                 type: approver.type,
                 level: index + 1,
-                formId: 1,
-                form: baseForm // 👈 use baseForm here
+                formId: formId || 1,
+                form: baseForm
             })),
-            fields: formFields.map((field) => {
+            fields: formFields.map((field, index) => {
                 const mappedField = {
                     id: field.id,
                     type: field.type,
                     label: field.label,
                     required: field.required,
                     width: field.width,
+                    order: field.order !== undefined ? field.order : index, // Preserve explicit order
                     options: field.options || [],
                     requiresRemarks: field.requiresRemarks || [],
-                    formId: 1,
-                    form: baseForm // 👈 use baseForm here
+                    formId: formId || 1,
+                    form: baseForm
                 };
 
+                // Handle field-specific properties
                 if (field.type === "numeric") {
                     mappedField.min = field.min || 0;
                     mappedField.max = field.max || 100;
                     mappedField.decimal = field.decimal || false;
-                    mappedField.requireRemarksOutOfRange =
-                        field.requireRemarksOutOfRange || false;
-
-                    mappedField.remarkTriggers = (field.remarkTriggers || []).map(
-                        (trigger) => ({
-                            id: 0,
-                            operator: trigger.operator,
-                            value: trigger.value,
-                            formFieldId: field.id,
-                            formField: {
-                                id: field.id,
-                                type: field.type,
-                                label: field.label,
-                                width: field.width,
-                                form: baseForm // 👈 use baseForm here
-                            },
-                        })
-                    );
+                    mappedField.requireRemarksOutOfRange = field.requireRemarksOutOfRange || false;
+                    mappedField.remarkTriggers = (field.remarkTriggers || []).map(trigger => ({
+                        id: trigger.id || 0, // Preserve trigger ID if exists
+                        operator: trigger.operator,
+                        value: trigger.value,
+                        formFieldId: field.id,
+                        formField: {
+                            id: field.id,
+                            type: field.type,
+                            label: field.label,
+                            width: field.width,
+                            form: baseForm
+                        },
+                    }));
                 }
+
                 if (field.type === "calculation") {
                     mappedField.formula = field.formula || "";
                     mappedField.resultDecimal = field.resultDecimal || false;
-                    // You might want to save field references as well
                     mappedField.fieldReferences = field.fieldReferences || [];
                 }
+
                 if (field.type === "grid") {
                     mappedField.columns = (field.columns || []).map(column => ({
-                        id: column.id || 0,
+                        id: column.id || generateGuid(),
                         name: column.name,
                         type: column.type,
                         width: column.width,
@@ -282,37 +474,76 @@ const FormBuilder = () => {
         try {
             console.log("Sending payload:", JSON.stringify(formData));
 
-            const response = await fetch("http://localhost:5182/api/forms", {
-                method: "POST",
+            // Determine if we're creating a new form or updating an existing one
+            const url = formId
+                ? `http://localhost:5182/api/forms/${formId}`
+                : "http://localhost:5182/api/forms";
+
+            const method = formId ? "PUT" : "POST";
+
+            const response = await fetch(url, {
+                method: method,
                 headers: { "Content-Type": "application/json-patch+json" },
                 body: JSON.stringify(formData),
             });
 
             if (!response.ok) {
                 const errorMessage = await response.text();
-                throw new Error(
-                    `Failed to save form layout: ${response.status} - ${errorMessage}`
-                );
+                throw new Error(`Failed to save form layout: ${response.status} - ${errorMessage}`);
             }
 
-            const responseBody = await response.json(); // Now it's safe
+            const responseBody = await response.json();
             console.log("Form saved successfully:", responseBody);
 
-            alert(
-                `Form Saved! Link: ${window.location.origin}/form/${responseBody.formLink}`
-            );
-            window.location.reload();
+            // Update form ID after successful creation
+            if (!formId) {
+                setFormId(responseBody.id);
+                setOriginalFormLink(responseBody.formLink);
+            }
+
+            alert(`Form Saved! Link: ${window.location.origin}/form/${responseBody.formLink}`);
         } catch (error) {
             console.error("Error saving form layout:", error);
             alert("Error saving form layout. Check the console for details.");
         }
-
     };
-    const getFormLinkFromUrl = () => {
-        const params = new URLSearchParams(window.location.search);
-        return params.get("formLink");
-    };
+    
 
+    //const addField = (type) => {
+    //    const newField = {
+    //        id: generateGuid(),
+    //        type,
+    //        label: `New ${type}`,
+    //        required: false,
+    //        width: "w-1/2",
+    //        options: [],
+    //        requiresRemarks: [],
+    //        ...(type === "numeric" && {
+    //            min: 0,
+    //            max: 100,
+    //            decimal: false,
+    //            requireRemarksOutOfRange: false,
+    //            remarkTriggers: [],
+    //        }),
+    //        ...(type === "calculation" && {
+    //            formula: "",
+    //            fieldReferences: [], // Track which fields are referenced
+    //            resultDecimal: true, // Allow decimal in result by default
+    //        }),
+    //        ...(type === "grid" && {
+    //            columns: [
+    //                { id: generateGuid(), name: "Column 1", type: "textbox", width: "1fr" },
+    //                { id: generateGuid(), name: "Column 2", type: "textbox", width: "1fr" }
+    //            ],
+    //            minRows: 1,
+    //            maxRows: 10,
+    //            initialRows: 3,
+    //        }),
+    //    };
+    //    setFormFields([...formFields, newField]);
+    //};
+
+    // Replace your addField function with this one that tracks order
     const addField = (type) => {
         const newField = {
             id: generateGuid(),
@@ -320,6 +551,7 @@ const FormBuilder = () => {
             label: `New ${type}`,
             required: false,
             width: "w-1/2",
+            order: formFields.length, // Add explicit order tracking
             options: [],
             requiresRemarks: [],
             ...(type === "numeric" && {
@@ -331,8 +563,8 @@ const FormBuilder = () => {
             }),
             ...(type === "calculation" && {
                 formula: "",
-                fieldReferences: [], // Track which fields are referenced
-                resultDecimal: true, // Allow decimal in result by default
+                fieldReferences: [],
+                resultDecimal: true,
             }),
             ...(type === "grid" && {
                 columns: [
@@ -358,7 +590,7 @@ const FormBuilder = () => {
     const removeField = (index) => {
         setFormFields((prevFields) => prevFields.filter((_, i) => i !== index));
     }
-    
+
 
     const addApprover = (item) => {
         if (approvers.some(a => a.id === item.id)) {
@@ -379,7 +611,7 @@ const FormBuilder = () => {
     return (
         <Layout>
 
-        <DndProvider backend={HTML5Backend}>
+            <DndProvider backend={HTML5Backend}>
 
                 <div className="max-w-6xl mx-auto p-4">
                     <div className="mb-6 flex justify-between items-center">
@@ -502,7 +734,7 @@ const FormBuilder = () => {
                         ))}
                     </div>
                 </div>
-                </DndProvider>
+            </DndProvider>
         </Layout>
     );
 };
@@ -1011,7 +1243,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         </div>
                     </div>
                 </div>
-            )}          
+            )}
 
             {field.type === "numeric" && (
                 <div className="mb-4">
@@ -1209,7 +1441,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         )}
                     </div>
                 )}
-            </div>
+        </div>
     );
 };
 

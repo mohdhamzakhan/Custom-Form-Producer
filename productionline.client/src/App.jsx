@@ -7,6 +7,10 @@ import FormBuilder from "./components/FormBuilder";
 import DynamicForm from "./components/DynamicForm";
 import ApprovalPage from "./components/Approval";
 import ReportPage from "./components/ReportPage"; // Assuming you have this component
+import ReportList from "./components/ReportList";
+import ReportViewer from "./components/ReportViewer";
+import ReportDesigner from "./components/ReportDesigner";
+
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -69,6 +73,14 @@ function App() {
                     }
                 />
                 <Route
+                    path="/formBuilder/:formLink"
+                    element={
+                        <ProtectedRoute>
+                            <FormBuilder />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
                     path="/formBuilder"
                     element={
                         <ProtectedRoute>
@@ -80,6 +92,10 @@ function App() {
                     path="/"
                     element={<Navigate to="/login" replace />}
                 />
+                <Route path="/report" element={<ReportDesigner />} />
+                <Route path="/report/list" element={<ReportList />} />
+                <Route path="/report/view/:id" element={<ReportViewer />} />
+                <Route path="/report/edit/:id" element={<ReportDesigner editMode={true} />} />
             </Routes>
         </Router>
     );

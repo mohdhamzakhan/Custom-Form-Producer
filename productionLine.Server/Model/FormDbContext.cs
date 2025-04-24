@@ -14,7 +14,8 @@ namespace productionLine.Server.Model
         public DbSet<FormSubmissionData> FormSubmissionData { get; set; }
         public DbSet<FormApprover> FormApprovers { get; set; }
         public DbSet<FormApproval> FormApprovals { get; set; }
-
+        public DbSet<Report> Reports { get; set; }
+        public DbSet<ReportAccess> ReportAccesses { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -62,6 +63,16 @@ namespace productionLine.Server.Model
         .HasOne(fa => fa.Form)
         .WithMany(f => f.Approvers)
         .HasForeignKey(fa => fa.FormId);
+
+            modelBuilder.Entity<Report>()
+           .HasOne(r => r.Form)
+           .WithMany()
+           .HasForeignKey(r => r.FormId);
+
+            modelBuilder.Entity<ReportAccess>()
+                .HasOne(ra => ra.Report)
+                .WithMany(r => r.AccessList)
+                .HasForeignKey(ra => ra.ReportId);
 
             // Configure JSON serialization for lists (if you're using JSON storage)
             modelBuilder.Entity<FormField>()

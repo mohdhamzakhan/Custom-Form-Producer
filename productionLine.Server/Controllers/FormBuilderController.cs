@@ -96,7 +96,7 @@ namespace productionLine.Server.Controllers
                         foreach (var col in field.Columns)
                         {
                             col.Id = Guid.NewGuid().ToString(); // Reset column ID
-                                                     // No need to set FormFieldId unless explicitly required
+                                                                // No need to set FormFieldId unless explicitly required
                         }
                     }
                 }
@@ -172,6 +172,7 @@ namespace productionLine.Server.Controllers
         {
             var form = await _context.Forms
                 .Include(f => f.Fields) // Load related fields
+                                .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
                 .ThenInclude(field => field.RemarkTriggers) // Load RemarkTriggers for each field
                 .FirstOrDefaultAsync(f => f.FormLink == formLink);
 

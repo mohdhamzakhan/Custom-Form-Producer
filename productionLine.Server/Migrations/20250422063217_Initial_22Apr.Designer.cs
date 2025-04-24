@@ -12,8 +12,8 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    [Migration("20250415033241_initial_15Apr")]
-    partial class initial_15Apr
+    [Migration("20250422063217_Initial_22Apr")]
+    partial class Initial_22Apr
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -379,6 +379,89 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_REMARK_TRIGGER");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.Report", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("CREATEDAT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("CREATEDBY");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("DEFINITIONJSON");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("DESCRIPTION");
+
+                    b.Property<int>("FormId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FORMID");
+
+                    b.Property<string>("LayoutType")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("LAYOUTTYPE");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("NAME");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("UPDATEDAT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FormId");
+
+                    b.ToTable("FF_REPORT");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.ReportAccess", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AccessType")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("ACCESSTYPE");
+
+                    b.Property<int>("ReportId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("REPORTID");
+
+                    b.Property<string>("UserOrGroupId")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("USERGROUPID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportId");
+
+                    b.ToTable("FF_REPORT_ACCESS");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
                 {
                     b.HasOne("productionLine.Server.Model.FormSubmission", "FormSubmission")
@@ -445,6 +528,28 @@ namespace productionLine.Server.Migrations
                     b.Navigation("FormField");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.Report", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.Form", "Form")
+                        .WithMany()
+                        .HasForeignKey("FormId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Form");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.ReportAccess", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.Report", "Report")
+                        .WithMany("AccessList")
+                        .HasForeignKey("ReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Report");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.Form", b =>
                 {
                     b.Navigation("Approvers");
@@ -462,6 +567,11 @@ namespace productionLine.Server.Migrations
                     b.Navigation("Approvals");
 
                     b.Navigation("SubmissionData");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.Report", b =>
+                {
+                    b.Navigation("AccessList");
                 });
 #pragma warning restore 612, 618
         }
