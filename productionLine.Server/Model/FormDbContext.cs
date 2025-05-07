@@ -69,6 +69,11 @@ namespace productionLine.Server.Model
            .WithMany()
            .HasForeignKey(r => r.FormId);
 
+            modelBuilder.Entity<Form>()
+    .Property(f => f.RowVersion)
+    .IsRowVersion();
+
+
             modelBuilder.Entity<ReportAccess>()
                 .HasOne(ra => ra.Report)
                 .WithMany(r => r.AccessList)

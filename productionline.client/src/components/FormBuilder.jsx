@@ -378,103 +378,212 @@ const FormBuilder = () => {
 
     //};
 
+    //const saveForm = async () => {
+    //    if (!formName.trim()) {
+    //        alert("Please enter a form name.");
+    //        return;
+    //    }
+
+    //    const formLink = formName.toLowerCase().replace(/\s+/g, "-");
+
+    //    const baseForm = {
+    //        id: formId || 0, // Use existing ID if editing
+    //        name: formName,
+    //        formLink: originalFormLink || formLink, // Use original link if editing
+    //        approvers: [],
+    //    };
+
+    //    // Create form object with the structure matching your API requirements
+    //    const formData = {
+    //        id: formId || 0, // Use existing ID if editing
+    //        name: formName,
+    //        formLink: originalFormLink || formLink, // Use original link if editing
+    //        approvers: approvers.map((approver, index) => ({
+    //            id: approver.id || 0, // Preserve approver ID if exists
+    //            adObjectId: approver.adObjectId || approver.id,
+    //            name: approver.name,
+    //            email: approver.email,
+    //            type: approver.type,
+    //            level: index + 1,
+    //            formId: formId || 1,
+    //            form: baseForm
+    //        })),
+    //        fields: formFields.map((field, index) => {
+    //            const mappedField = {
+    //                id: field.id,
+    //                type: field.type,
+    //                label: field.label,
+    //                required: field.required,
+    //                width: field.width,
+    //                order: field.order !== undefined ? field.order : index, // Preserve explicit order
+    //                options: field.options || [],
+    //                requiresRemarks: field.requiresRemarks || [],
+    //                formId: formId || 1,
+    //                form: baseForm
+    //            };
+
+    //            // Handle field-specific properties
+    //            if (field.type === "numeric") {
+    //                mappedField.min = field.min || 0;
+    //                mappedField.max = field.max || 100;
+    //                mappedField.decimal = field.decimal || false;
+    //                mappedField.requireRemarksOutOfRange = field.requireRemarksOutOfRange || false;
+    //                mappedField.remarkTriggers = (field.remarkTriggers || []).map(trigger => ({
+    //                    id: trigger.id || 0, // Preserve trigger ID if exists
+    //                    operator: trigger.operator,
+    //                    value: trigger.value,
+    //                    formFieldId: field.id,
+    //                    formField: {
+    //                        id: field.id,
+    //                        type: field.type,
+    //                        label: field.label,
+    //                        width: field.width,
+    //                        form: baseForm
+    //                    },
+    //                }));
+    //            }
+
+    //            if (field.type === "calculation") {
+    //                mappedField.formula = field.formula || "";
+    //                mappedField.resultDecimal = field.resultDecimal || false;
+    //                mappedField.fieldReferences = field.fieldReferences || [];
+    //            }
+
+    //            if (field.type === "grid") {
+    //                mappedField.columns = (field.columns || []).map(column => ({
+    //                    id: column.id || generateGuid(),
+    //                    name: column.name,
+    //                    type: column.type,
+    //                    width: column.width,
+    //                    options: column.options || [],
+    //                    min: column.min,
+    //                    max: column.max,
+    //                    decimal: column.decimal || false,
+    //                    formula: column.formula || "",
+    //                    formFieldId: field.id
+    //                }));
+    //                mappedField.minRows = field.minRows || 1;
+    //                mappedField.maxRows = field.maxRows || 10;
+    //                mappedField.initialRows = field.initialRows || 3;
+    //            }
+
+    //            return mappedField;
+    //        }),
+    //    };
+
+    //    try {
+    //        console.log("Sending payload:", JSON.stringify(formData));
+
+    //        // Determine if we're creating a new form or updating an existing one
+    //        const url = formId
+    //            ? `http://localhost:5182/api/forms/${formId}`
+    //            : "http://localhost:5182/api/forms";
+
+    //        const method = formId ? "PUT" : "POST";
+
+    //        const response = await fetch(url, {
+    //            method: method,
+    //            headers: { "Content-Type": "application/json-patch+json" },
+    //            body: JSON.stringify(formData),
+    //        });
+
+    //        if (!response.ok) {
+    //            const errorMessage = await response.text();
+    //            throw new Error(`Failed to save form layout: ${response.status} - ${errorMessage}`);
+    //        }
+
+    //        const responseBody = await response.json();
+    //        console.log("Form saved successfully:", responseBody);
+
+    //        // Update form ID after successful creation
+    //        if (!formId) {
+    //            setFormId(responseBody.id);
+    //            setOriginalFormLink(responseBody.formLink);
+    //        }
+
+    //        alert(`Form Saved! Link: ${window.location.origin}/form/${responseBody.formLink}`);
+    //    } catch (error) {
+    //        console.error("Error saving form layout:", error);
+    //        alert("Error saving form layout. Check the console for details.");
+    //    }
+    //};
+
     const saveForm = async () => {
         if (!formName.trim()) {
             alert("Please enter a form name.");
             return;
         }
 
-        const formLink = formName.toLowerCase().replace(/\s+/g, "-");
-
-        const baseForm = {
-            id: formId || 0, // Use existing ID if editing
-            name: formName,
-            formLink: originalFormLink || formLink, // Use original link if editing
-            approvers: [],
-        };
-
-        // Create form object with the structure matching your API requirements
-        const formData = {
-            id: formId || 0, // Use existing ID if editing
-            name: formName,
-            formLink: originalFormLink || formLink, // Use original link if editing
-            approvers: approvers.map((approver, index) => ({
-                id: approver.id || 0, // Preserve approver ID if exists
-                adObjectId: approver.adObjectId || approver.id,
-                name: approver.name,
-                email: approver.email,
-                type: approver.type,
-                level: index + 1,
-                formId: formId || 1,
-                form: baseForm
-            })),
-            fields: formFields.map((field, index) => {
-                const mappedField = {
-                    id: field.id,
-                    type: field.type,
-                    label: field.label,
-                    required: field.required,
-                    width: field.width,
-                    order: field.order !== undefined ? field.order : index, // Preserve explicit order
-                    options: field.options || [],
-                    requiresRemarks: field.requiresRemarks || [],
-                    formId: formId || 1,
-                    form: baseForm
-                };
-
-                // Handle field-specific properties
-                if (field.type === "numeric") {
-                    mappedField.min = field.min || 0;
-                    mappedField.max = field.max || 100;
-                    mappedField.decimal = field.decimal || false;
-                    mappedField.requireRemarksOutOfRange = field.requireRemarksOutOfRange || false;
-                    mappedField.remarkTriggers = (field.remarkTriggers || []).map(trigger => ({
-                        id: trigger.id || 0, // Preserve trigger ID if exists
-                        operator: trigger.operator,
-                        value: trigger.value,
-                        formFieldId: field.id,
-                        formField: {
-                            id: field.id,
-                            type: field.type,
-                            label: field.label,
-                            width: field.width,
-                            form: baseForm
-                        },
-                    }));
-                }
-
-                if (field.type === "calculation") {
-                    mappedField.formula = field.formula || "";
-                    mappedField.resultDecimal = field.resultDecimal || false;
-                    mappedField.fieldReferences = field.fieldReferences || [];
-                }
-
-                if (field.type === "grid") {
-                    mappedField.columns = (field.columns || []).map(column => ({
-                        id: column.id || generateGuid(),
-                        name: column.name,
-                        type: column.type,
-                        width: column.width,
-                        options: column.options || [],
-                        min: column.min,
-                        max: column.max,
-                        decimal: column.decimal || false,
-                        formula: column.formula || "",
-                        formFieldId: field.id
-                    }));
-                    mappedField.minRows = field.minRows || 1;
-                    mappedField.maxRows = field.maxRows || 10;
-                    mappedField.initialRows = field.initialRows || 3;
-                }
-
-                return mappedField;
-            }),
-        };
+        const currentUtc = "2025-04-24 07:55:02";
+        const currentUser = "mohdhamzakhan";
 
         try {
-            console.log("Sending payload:", JSON.stringify(formData));
+            // If updating, first fetch the current form to get the RowVersion
+            let existingRowVersion = null;
+            if (formId) {
+                const response = await fetch(`http://localhost:5182/api/forms/${formId}`);
+                if (response.ok) {
+                    const currentForm = await response.json();
+                    existingRowVersion = currentForm.rowVersion;
+                }
+            }
 
-            // Determine if we're creating a new form or updating an existing one
+            // Base form object with RowVersion
+            const baseForm = {
+                id: formId || 0,
+                name: formName,
+                formLink: originalFormLink || formName.toLowerCase().replace(/\s+/g, "-"),
+                createdBy: currentUser,
+                createdAt: currentUtc,
+                updatedBy: currentUser,
+                updatedAt: currentUtc,
+                rowVersion: existingRowVersion || "", // Include RowVersion if it exists
+            };
+
+            // Construct form data payload
+            const formData = {
+                ...baseForm,
+                form: baseForm,
+                approvers: [],
+                fields: formFields.map((field) => {
+                    const fieldObj = {
+                        ...field,
+                        formId: baseForm.id,
+                        Form: {  // Capital F version
+                            ...baseForm,
+                            rowVersion: existingRowVersion || "" // Include RowVersion in Form
+                        },
+                        form: {  // Lowercase f version
+                            ...baseForm,
+                            rowVersion: existingRowVersion || "" // Include RowVersion in form
+                        },
+                        // Handle arrays properly
+                        fieldReferences: null,
+                        options: Array.isArray(field.options) ? field.options : [],
+                        requireRemarks: Array.isArray(field.requireRemarks) ? field.requireRemarks : [],
+                        remarkTriggers: Array.isArray(field.remarkTriggers) ? field.remarkTriggers : [],
+                    };
+
+                    // Handle grid type
+                    if (field.type === "grid" && field.columns) {
+                        fieldObj.columns = field.columns;
+                        fieldObj.columnsJson = JSON.stringify(field.columns);
+                    }
+
+                    // Handle calculation type
+                    if (field.type === "calculation") {
+                        fieldObj.formula = field.formula.replace(/\{([^}]+)\}/g, (match, fieldName) => {
+                            const referencedField = formFields.find(f => f.name === fieldName);
+                            return referencedField ? referencedField.id : match;
+                        });
+                    }
+
+                    return fieldObj;
+                })
+            };
+
+            console.log("Payload being sent to the backend:", JSON.stringify(formData, null, 2));
+
             const url = formId
                 ? `http://localhost:5182/api/forms/${formId}`
                 : "http://localhost:5182/api/forms";
@@ -483,28 +592,42 @@ const FormBuilder = () => {
 
             const response = await fetch(url, {
                 method: method,
-                headers: { "Content-Type": "application/json-patch+json" },
-                body: JSON.stringify(formData),
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "If-Match": existingRowVersion ? `"${existingRowVersion}"` : "*"
+                },
+                body: JSON.stringify(formData)
             });
 
             if (!response.ok) {
-                const errorMessage = await response.text();
-                throw new Error(`Failed to save form layout: ${response.status} - ${errorMessage}`);
+                const errorText = await response.text();
+                console.error("Server response:", errorText);
+
+                // Handle concurrency conflicts
+                if (response.status === 409) {
+                    const shouldRetry = window.confirm(
+                        "The form has been modified by another user. Would you like to:\n\n" +
+                        "• Click 'OK' to reload the latest version and retry your changes\n" +
+                        "• Click 'Cancel' to cancel your changes"
+                    );
+
+                    if (shouldRetry) {
+                        window.location.reload();
+                        return;
+                    }
+                }
+
+                throw new Error(`Failed to save form: ${response.status} - ${errorText}`);
             }
 
             const responseBody = await response.json();
             console.log("Form saved successfully:", responseBody);
+            alert(`Form saved successfully! Link: ${window.location.origin}/form/${responseBody.formLink}`);
 
-            // Update form ID after successful creation
-            if (!formId) {
-                setFormId(responseBody.id);
-                setOriginalFormLink(responseBody.formLink);
-            }
-
-            alert(`Form Saved! Link: ${window.location.origin}/form/${responseBody.formLink}`);
         } catch (error) {
-            console.error("Error saving form layout:", error);
-            alert("Error saving form layout. Check the console for details.");
+            console.error("Error saving form:", error);
+            alert(`An error occurred while saving the form: ${error.message}`);
         }
     };
     

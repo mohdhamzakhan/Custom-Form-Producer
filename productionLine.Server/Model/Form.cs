@@ -22,6 +22,9 @@ namespace productionLine.Server.Model
         [JsonPropertyName("formLink")]
         public string FormLink { get; set; }  // Unique link to access the form
 
+        [Timestamp]
+        public byte[] RowVersion { get; set; }
+
         [NotMapped]
         [Required]
         public List<FormField> Fields { get; set; } = new List<FormField>();
