@@ -14,6 +14,7 @@ export default function DynamicForm() {
     const [submitted, setSubmitted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [recentSubmissions, setRecentSubmissions] = useState([]);
+    const [editingSubmissionId, setEditingSubmissionId] = useState(null);
 
     const { formId } = useParams();
     const navigate = useNavigate();
@@ -115,16 +116,74 @@ export default function DynamicForm() {
         }
     };
 
+    const handleEditSubmission = async (submissionId) => {
+        setIsModalOpen(false);
+        setEditingSubmissionId(submissionId);
+
+        try {
+            const res = await fetch(`http://localhost:5182/api/forms/submissions/${submissionId}`);
+            if (!res.ok) throw new Error("Failed to load submission");
+
+            const json = await res.json();
+
+            const submission = json.submission;
+            const submissionData = submission.submissionData;
+            const formDefinition = json.formDefinition;
+
+            // Optional: update form structure if needed
+            setFormData(formDefinition);
+
+            const updatedValues = {};
+            const updatedRemarks = {};
+
+            for (const item of submissionData) {
+                if (item.fieldLabel.endsWith("(Remark)")) {
+                    const baseLabel = item.fieldLabel.replace(" (Remark)", "");
+                    updatedRemarks[baseLabel] = item.fieldValue;
+                } else {
+                    updatedValues[item.fieldLabel] = parseFieldValue(item.fieldLabel, item.fieldValue);
+                }
+            }
+
+            setFormValues(updatedValues);
+            setRemarks(updatedRemarks);
+        } catch (err) {
+            console.error("Error loading submission:", err);
+            alert("Failed to load submission for editing.");
+        }
+    };
+
+    const parseFieldValue = (fieldId, rawValue) => {
+        const field = formData?.fields?.find(f => f.id === fieldId);
+        if (!field) return rawValue;
+
+        if (field.type === "checkbox") {
+            return rawValue.split(",").map(s => s.trim());
+        }
+
+        if (field.type === "grid") {
+            try {
+                return JSON.parse(rawValue);
+            } catch {
+                return [];
+            }
+        }
+
+        if (field.type === "numeric") {
+            return rawValue === "" ? "" : parseFloat(rawValue);
+        }
+
+        return rawValue;
+    };
+
     // Fetch recent submissions
     const fetchRecentSubmissions = async () => {
         const response = await fetch(`http://localhost:5182/api/forms/${formId}/lastsubmissions`);
         if (!response.ok) throw new Error("Failed to fetch submissions");
         const submissions = await response.json();
+        console.log(submissions)
         setRecentSubmissions(submissions.slice(0, 10)); // Take only last 10
     };
-
-
-
 
     // Check if a remark should be triggered based on numeric value
     const checkRemarkTriggers = (field, value) => {
@@ -338,7 +397,6 @@ export default function DynamicForm() {
         }
     };
 
-
     // Validate the form
     const validateForm = () => {
         const errors = {};
@@ -409,36 +467,6 @@ export default function DynamicForm() {
         return errors;
     };
 
-    // Handle form submission
-    //const handleSubmit = (e) => {
-    //    e.preventDefault();
-
-    //    const validationErrors = validateForm();
-    //    setFormErrors(validationErrors);
-    //    setSubmitted(true);
-
-    //    if (Object.keys(validationErrors).length === 0) {
-    //        // Form is valid, prepare data for submission
-    //        const submissionData = {
-    //            formId: formData.id,
-    //            values: {},
-    //            remarks: {},
-    //        };
-
-    //        // Extract values and remarks
-    //        Object.keys(formValues).forEach((fieldId) => {
-    //            submissionData.values[fieldId] = formValues[fieldId];
-    //            if (remarks[fieldId] && remarks[fieldId].trim() !== "") {
-    //                submissionData.remarks[fieldId] = remarks[fieldId];
-    //            }
-    //        });
-
-    //        // Here you would send the data to your backend
-    //        console.log("Form submitted:", submissionData);
-    //        alert("Form submitted successfully!");
-    //    }
-    //};
-
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -449,6 +477,7 @@ export default function DynamicForm() {
         if (Object.keys(validationErrors).length === 0) {
             const submissionData = {
                 formId: formData.id,
+                submissionId: editingSubmissionId, // 👈 include if editing
                 submissionData: []
             };
 
@@ -974,6 +1003,11 @@ export default function DynamicForm() {
                 </div>
             )}
 
+            {editingSubmissionId && (
+                <div className="mb-4 text-yellow-600 font-semibold">
+                    Editing Submission #{editingSubmissionId}
+                </div>
+            )}
             <form onSubmit={handleSubmit}>
                 <div className="flex flex-wrap -mx-2">
                     {formData.fields.map((field) => (
@@ -1016,6 +1050,7 @@ export default function DynamicForm() {
                                             <th className="py-2 px-4 border-b">ID</th>
                                             <th className="py-2 px-4 border-b">Submitted At</th>
                                             <th className="py-2 px-4 border-b">Status</th>
+                                            <th className="py-2 px-4 border-b">Actions</th> {/* NEW COLUMN */}
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1032,6 +1067,17 @@ export default function DynamicForm() {
                     `}>
                                                         {submission.status}
                                                     </span>
+                                                </td>
+                                                <td className="py-2 px-4 border-b">
+                                                    {console.log(submission.form?.approvers?.length) }
+                                                    {submission.status === "Pending" && (
+                                                        <button
+                                                            className="text-blue-500 hover:underline"
+                                                            onClick={() => handleEditSubmission(submission.id)}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}

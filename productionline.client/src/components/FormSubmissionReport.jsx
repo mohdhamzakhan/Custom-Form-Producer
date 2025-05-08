@@ -60,6 +60,7 @@ export default function FormSubmissionReport() {
                 if (!response.ok) throw new Error("Unable to retirve the data may be there is no submission");
                 const data = await response.json();
 
+
                 setFormDefinition(data);
 
                 // After getting the form definition, fetch submissions

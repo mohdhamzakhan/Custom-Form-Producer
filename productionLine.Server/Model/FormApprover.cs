@@ -26,6 +26,6 @@ namespace productionLine.Server.Model
 
 
         [JsonIgnore] // 👈 Ignore backward navigation
-        public Form Form { get; set; }
+        public Form? Form { get; set; }
     }
 }

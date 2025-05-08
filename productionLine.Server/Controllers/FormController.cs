@@ -134,6 +134,7 @@ namespace productionLine.Server.Controllers
             var existingForm = await _context.Forms
                 .Include(f => f.Fields)
                 .ThenInclude(f => f.RemarkTriggers)
+                .Include(f => f.Approvers.OrderBy(a => a.Level)) // 👈 Include and order approvers
                 .FirstOrDefaultAsync(f => f.Id == id);
 
             if (existingForm == null)
@@ -193,6 +194,23 @@ namespace productionLine.Server.Controllers
                 };
 
                 _context.FormFields.Add(newField);
+            }
+
+            _context.FormApprovers.RemoveRange(existingForm.Approvers);
+            foreach (var approver in form.Approvers)
+            {
+                FormApprover formApprover = new FormApprover
+                {
+                    AdObjectId = approver.AdObjectId,
+                    Email = approver.Email,
+                    Form = approver.Form,
+                    FormId = id,
+                    Level = approver.Level,
+                    Name = approver.Name,
+                    Type = approver.Type
+                };
+
+                _context.FormApprovers.Add(formApprover);
             }
 
             try
@@ -311,35 +329,57 @@ namespace productionLine.Server.Controllers
                 return BadRequest("No form data provided");
             }
 
-            // Create the form submission entity
-            var formSubmission = new FormSubmission
-            {
-                FormId = submissionDTO.FormId,
-                SubmittedAt = DateTime.Now,
-                SubmissionData = new List<FormSubmissionData>()
-            };
+            FormSubmission formSubmission;
 
-            // Add each field data and link it to the form submission
+            // ✅ EDIT mode
+            if (submissionDTO.SubmissionId.HasValue && submissionDTO.SubmissionId.Value > 0)
+            {
+                formSubmission = await _context.FormSubmissions
+                    .Include(s => s.SubmissionData)
+                    .FirstOrDefaultAsync(s => s.Id == submissionDTO.SubmissionId.Value);
+
+                if (formSubmission == null)
+                    return NotFound("Submission not found");
+
+                // Replace previous submission data
+                _context.FormSubmissionData.RemoveRange(formSubmission.SubmissionData);
+
+                formSubmission.SubmissionData = new List<FormSubmissionData>();
+                formSubmission.SubmittedAt = DateTime.Now; // optional: update timestamp
+            }
+            else
+            {
+                // ✅ CREATE mode
+                formSubmission = new FormSubmission
+                {
+                    FormId = submissionDTO.FormId,
+                    SubmittedAt = DateTime.Now,
+                    SubmissionData = new List<FormSubmissionData>()
+                };
+                _context.FormSubmissions.Add(formSubmission);
+            }
+
+            // Add field data
             foreach (var data in submissionDTO.SubmissionData)
             {
                 formSubmission.SubmissionData.Add(new FormSubmissionData
                 {
                     FieldLabel = data.FieldLabel,
-                    FieldValue = data.FieldValue,
-                    FormSubmission = formSubmission  // Set the navigation property
+                    FieldValue = data.FieldValue
                 });
             }
 
-            // Add to database
-            _context.FormSubmissions.Add(formSubmission);
             await _context.SaveChangesAsync();
 
             return Ok(new
             {
                 id = formSubmission.Id,
-                message = "Form submitted successfully"
+                message = submissionDTO.SubmissionId.HasValue
+                    ? "Form updated successfully"
+                    : "Form submitted successfully"
             });
         }
+
 
         // Assuming you have a controller like [Route("api/forms")]
         [HttpGet("{form}/lastsubmissions")]
@@ -377,7 +417,8 @@ namespace productionLine.Server.Controllers
                         {
                             s.Id,
                             s.SubmittedAt,
-                            Status = "Rejected"
+                            Status = "Rejected",
+                            
                         };
                     }
                     else if (approvals.Count(a => a == "Approved") >= s.ApproversRequired)
@@ -387,6 +428,24 @@ namespace productionLine.Server.Controllers
                             s.Id,
                             s.SubmittedAt,
                             Status = "Approved"
+                        };
+                    }
+                    else if(approvals.Count() == 0)
+                    {
+                        return new
+                        {
+                            s.Id,
+                            s.SubmittedAt,
+                            Status = "Pending"
+                        };
+                    }
+                    else if(approvals.Count(a=>a == "Pending") < s.ApproversRequired)
+                    {
+                        return new
+                        {
+                            s.Id,
+                            s.SubmittedAt,
+                            Status = "Initial Approval Done"
                         };
                     }
                     else

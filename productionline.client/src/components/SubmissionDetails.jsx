@@ -17,7 +17,6 @@ export default function SubmissionDetails() {
                 const response = await fetch(`http://localhost:5182/api/forms/submissions/${submissionId}`);
                 if (!response.ok) throw new Error("Failed to fetch submission details");
                 const data = await response.json();
-
                 setSubmission(data.submission);
                 setFormDefinition(data.formDefinition);
                 setLoading(false);
@@ -103,6 +102,17 @@ export default function SubmissionDetails() {
         return <div className="text-center">Submission not found</div>;
     }
 
+    const isGridValue = (value) => {
+        console.log(value)
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) && typeof parsed[0] === 'object';
+        } catch {
+            return false;
+        }
+    };
+
+
     const processedData = processSubmissionData();
 
     return (
@@ -152,7 +162,55 @@ export default function SubmissionDetails() {
                                 <div className="flex justify-between items-center">
                                     <div>
                                         <p className="text-sm text-gray-600">{item.label}</p>
-                                        <p className="font-semibold break-words">{item.value}</p>
+                                        <p className="font-semibold break-words">{isGridValue(item.value) ? (
+                                            <div className="overflow-auto">
+                                                <table className="min-w-full text-sm text-left border border-gray-300">
+                                                    <thead className="bg-gray-100">
+                                                        <tr>
+                                                            {Object.keys(JSON.parse(item.value)[0] || {}).map((col, idx) => (
+                                                                <th key={idx} className="px-4 py-2 border">{col}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {JSON.parse(item.value).map((row, rIdx) => (
+                                                            <tr key={rIdx} className="border-t">
+                                                                {Object.values(row).map((cell, cIdx) => (
+                                                                    <td key={cIdx} className="px-4 py-2 border">{cell}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                                <p className="font-semibold break-words">{isGridValue(item.value) ? (
+                                                    <div className="overflow-auto mt-2">
+                                                        <table className="min-w-full text-sm text-left border border-gray-300">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    {Object.keys(JSON.parse(item.value)[0] || {}).map((col, idx) => (
+                                                                        <th key={idx} className="px-4 py-2 border">{col}</th>
+                                                                    ))}
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {JSON.parse(item.value).map((row, rIdx) => (
+                                                                    <tr key={rIdx} className="border-t">
+                                                                        {Object.values(row).map((cell, cIdx) => (
+                                                                            <td key={cIdx} className="px-4 py-2 border">{cell}</td>
+                                                                        ))}
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                ) : (
+                                                    <p className="font-semibold break-words mt-1">{item.value}</p>
+                                                )}
+</p>
+                                        )}
+</p>
                                     </div>
                                     {item.remark && (
                                         <div className="text-right max-w-sm">

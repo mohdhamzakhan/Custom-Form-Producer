@@ -174,6 +174,7 @@ namespace productionLine.Server.Controllers
                 .Include(f => f.Fields) // Load related fields
                                 .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
                 .ThenInclude(field => field.RemarkTriggers) // Load RemarkTriggers for each field
+                .Include(f => f.Approvers.OrderBy(a => a.Level)) // 👈 Include and order approvers
                 .FirstOrDefaultAsync(f => f.FormLink == formLink);
 
             if (form == null)
@@ -185,6 +186,15 @@ namespace productionLine.Server.Controllers
                 Id = form.Id,
                 FormLink = form.FormLink,
                 Name = form.Name,
+                Approvers = form.Approvers?.Select(a => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>(),
                 Fields = form.Fields.Select(f => new FieldDto
                 {
                     Id = f.Id,

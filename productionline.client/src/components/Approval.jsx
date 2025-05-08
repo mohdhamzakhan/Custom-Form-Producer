@@ -176,6 +176,15 @@ export default function ApprovalPage() {
             </Layout>
         );
     }
+    const isGridValue = (value) => {
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) && typeof parsed[0] === 'object';
+        } catch {
+            return false;
+        }
+    };
+
 
     const processedData = processSubmissionData();
     const previousApprovals = getSortedApprovals();
@@ -213,8 +222,33 @@ export default function ApprovalPage() {
                             {processedData.slice(0, 5).map((item, index) => (
                                 <div key={index}>
                                     <p className="text-gray-700">
-                                        <strong>{item.label}:</strong> {item.value}
+                                        <strong>{item.label}:</strong>
                                     </p>
+                                    {isGridValue(item.value) ? (
+                                        <div className="overflow-auto mt-1 border rounded">
+                                            <table className="min-w-full text-sm text-left border-collapse border border-gray-300">
+                                                <thead className="bg-gray-100">
+                                                    <tr>
+                                                        {Object.keys(JSON.parse(item.value)[0] || {}).map((col, idx) => (
+                                                            <th key={idx} className="px-4 py-2 border">{col}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {JSON.parse(item.value).map((row, rIdx) => (
+                                                        <tr key={rIdx} className="border-t">
+                                                            {Object.values(row).map((cell, cIdx) => (
+                                                                <td key={cIdx} className="px-4 py-2 border">{cell}</td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <p className="ml-4">{item.value}</p>
+                                    )}
+
                                     {item.remark && (
                                         <p className="ml-4 italic text-gray-600">
                                             Remark: {item.remark}

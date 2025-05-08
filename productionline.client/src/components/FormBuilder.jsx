@@ -540,11 +540,19 @@ const FormBuilder = () => {
                 rowVersion: existingRowVersion || "", // Include RowVersion if it exists
             };
 
+            console.log(approvers)
             // Construct form data payload
             const formData = {
                 ...baseForm,
                 form: baseForm,
-                approvers: [],
+                approvers: approvers.map((a) => ({
+                    adObjectId: a.name,
+                    name: a.name,
+                    email: a.email,
+                    type: a.type,
+                    level: a.level,
+                    formId: baseForm.id
+                })),
                 fields: formFields.map((field) => {
                     const fieldObj = {
                         ...field,
