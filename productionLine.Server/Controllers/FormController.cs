@@ -224,11 +224,6 @@ namespace productionLine.Server.Controllers
             }
         }
 
-
-
-
-
-
         // ✅ Get form by ID
         [HttpGet("{id}")]
         public async Task<IActionResult> GetForm(int id)
@@ -662,6 +657,27 @@ namespace productionLine.Server.Controllers
                 return StatusCode(500, $"Error processing approval: {ex.Message}");
             }
         }
+
+        [HttpGet("{formId}/fields")]
+        public async Task<IActionResult> GetFormFields(int formId)
+        {
+            var form = await _context.Forms
+                .Include(f => f.Fields)
+                .FirstOrDefaultAsync(f => f.Id == formId);
+
+            if (form == null)
+                return NotFound("Form not found.");
+
+            var fields = form.Fields.Select(f => new {
+                id = f.Id,
+                label = f.Label,
+                ColumnJson = f.ColumnsJson
+                
+            });
+
+            return Ok(fields);
+        }
+
 
     }
 }
