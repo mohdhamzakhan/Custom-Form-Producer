@@ -29,6 +29,10 @@ namespace productionLine.Server.Model
                 .Property(f => f.ColumnsJson)
                 .HasColumnType("CLOB");  // Oracle will store JSON inside a CLOB field
 
+            modelBuilder.Entity<FormField>()
+              .Property(f => f.Columns)
+              .HasColumnType("CLOB");  // Oracle will store JSON inside a CLOB field
+
             // ✅ Create options outside
             var jsonOptions = new JsonSerializerOptions
             {

@@ -207,7 +207,6 @@ namespace productionLine.Server.Controllers
                     RequireRemarks = f.RequiresRemarks,
                     IsDecimal = f.Decimal,
                     Max = f.Max,
-                    Min = f.Min,
                     RemarkTriggers = f.RemarkTriggers?.Select(rt => new RemarkTriggerDto
                     {
                         Id = rt.Id,
@@ -224,6 +223,8 @@ namespace productionLine.Server.Controllers
                         Min = ct.Min,
                         Type = ct.Type,
                         Width = ct.Width,
+                        backgroundColor =ct.backgroundColor,
+                        textColor =ct.textColor,
                         Options = ct.Options ?? null
                     }).ToList() ?? new List<GridColumnDto>(),
                     Formula = f.Formula,

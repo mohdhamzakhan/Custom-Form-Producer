@@ -508,6 +508,8 @@ const FormBuilder = () => {
     //    }
     //};
 
+
+
     const saveForm = async () => {
         if (!formName.trim()) {
             alert("Please enter a form name.");
@@ -935,7 +937,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             isDragging: monitor.isDragging(),
         }),
     });
-
     useEffect(() => {
         // Now "field" and "allFields" are properly defined here
         const fields = allFields
@@ -1161,11 +1162,39 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         onChange={(e) => {
                                             const updatedColumns = [...(field.columns || [])];
                                             updatedColumns[colIndex].name = e.target.value;
-                                            updateField({ columns: updatedColumns });
+                                            updateField({ ...field, columns: updatedColumns });
                                         }}
                                         className="w-full px-2 py-1 border rounded"
                                     />
                                 </div>
+                                <div className="w-full md:w-1/4 mb-2">
+                                    <label className="block text-xs text-gray-500 mb-1">Text Color</label>
+                                    <input
+                                        type="color"
+                                        value={column.textColor || "#000000"}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...field.columns];
+                                            updatedColumns[colIndex].textColor = e.target.value;
+                                            updateField({ ...field, columns: updatedColumns });
+                                        }}
+                                        className="w-full h-10 border rounded"
+                                    />
+                                </div>
+
+                                <div className="w-full md:w-1/4 mb-2">
+                                    <label className="block text-xs text-gray-500 mb-1">Background Color</label>
+                                    <input
+                                        type="color"
+                                        value={column.backgroundColor || "#ffffff"}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...field.columns];
+                                            updatedColumns[colIndex].backgroundColor = e.target.value;
+                                            updateField({ ...field, columns: updatedColumns });
+                                        }}
+                                        className="w-full h-10 border rounded"
+                                    />
+                                </div>
+
 
                                 <div className="w-full md:w-1/4 mb-2 md:mb-0">
                                     <label className="block text-xs text-gray-500 mb-1">Type</label>
@@ -1174,7 +1203,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         onChange={(e) => {
                                             const updatedColumns = [...(field.columns || [])];
                                             updatedColumns[colIndex].type = e.target.value;
-                                            updateField({ columns: updatedColumns });
+                                            updateField({ ...field, columns: updatedColumns });
                                         }}
                                         className="w-full px-2 py-1 border rounded"
                                     >
@@ -1183,6 +1212,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <option value="dropdown">Dropdown</option>
                                         <option value="checkbox">Checkbox</option>
                                         <option value="calculation">Calculation</option>
+                                        <option value="time">Time</option>
+                                        <option value="timecalculation">Time Calculation</option>
                                     </select>
                                 </div>
 
@@ -1194,7 +1225,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         onChange={(e) => {
                                             const updatedColumns = [...(field.columns || [])];
                                             updatedColumns[colIndex].width = e.target.value;
-                                            updateField({ columns: updatedColumns });
+                                            updateField({ ...field, columns: updatedColumns });
                                         }}
                                         className="w-full px-2 py-1 border rounded"
                                         placeholder="1fr"
@@ -1210,7 +1241,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             onChange={(e) => {
                                                 const updatedColumns = [...(field.columns || [])];
                                                 updatedColumns[colIndex].formula = e.target.value;
-                                                updateField({ columns: updatedColumns });
+                                                updateField({ ...field, columns: updatedColumns });
                                             }}
                                             className="w-full px-2 py-1 border rounded"
                                             placeholder="col1 + col2"
@@ -1236,7 +1267,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
                                                 const updatedColumns = [...(field.columns || [])];
                                                 updatedColumns[colIndex].options = options;
-                                                updateField({ columns: updatedColumns });
+                                                updateField({ ...field, columns: updatedColumns });
                                             }}
                                             onFocus={() => {
                                                 // Populate temp input with current options when editing starts
@@ -1259,7 +1290,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 onChange={(e) => {
                                                     const updatedColumns = [...(field.columns || [])];
                                                     updatedColumns[colIndex].min = parseFloat(e.target.value) || 0;
-                                                    updateField({ columns: updatedColumns });
+                                                    updateField({ ...field, columns: updatedColumns });
                                                 }}
                                                 className="w-full px-2 py-1 border rounded"
                                             />
@@ -1272,7 +1303,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 onChange={(e) => {
                                                     const updatedColumns = [...(field.columns || [])];
                                                     updatedColumns[colIndex].max = parseFloat(e.target.value) || 100;
-                                                    updateField({ columns: updatedColumns });
+                                                    updateField({ ...field, columns: updatedColumns });
                                                 }}
                                                 className="w-full px-2 py-1 border rounded"
                                             />
@@ -1285,7 +1316,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     onChange={(e) => {
                                                         const updatedColumns = [...(field.columns || [])];
                                                         updatedColumns[colIndex].decimal = e.target.checked;
-                                                        updateField({ columns: updatedColumns });
+                                                        updateField({ ...field, columns: updatedColumns });
                                                     }}
                                                     className="h-4 w-4"
                                                 />
@@ -1295,11 +1326,66 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     </div>
                                 )}
 
+                                {column.type === "timecalculation" && (
+                                    <div className="flex space-x-2 mt-2">
+                                        <div className="w-1/2">
+                                            <label className="block text-xs font-semibold text-gray-600">Start Time Column</label>
+                                            <select
+                                                className="border rounded w-full p-1"
+                                                value={column.startTime || ""}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].startTime = e.target.value;
+
+                                                    // If both selected, auto-generate formula
+                                                    if (updatedColumns[colIndex].startTime && updatedColumns[colIndex].endTime) {
+                                                        updatedColumns[colIndex].formula = `{${updatedColumns[colIndex].endTime}} - {${updatedColumns[colIndex].startTime}}`;
+                                                    }
+
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                            >
+                                                <option value="">Select start</option>
+                                                {field.columns.filter(c => c.type === "time").map((col) => (
+                                                    <option key={col.name} value={col.name}>{col.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="w-1/2">
+                                            <label className="block text-xs font-semibold text-gray-600">End Time Column</label>
+                                            <select
+                                                className="border rounded w-full p-1"
+                                                value={column.endTime || ""}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].endTime = e.target.value;
+
+                                                    if (updatedColumns[colIndex].startTime && updatedColumns[colIndex].endTime) {
+                                                        updatedColumns[colIndex].formula = `{${updatedColumns[colIndex].endTime}} - {${updatedColumns[colIndex].startTime}}`;
+                                                    }
+
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                            >
+                                                <option value="">Select end</option>
+                                                {field.columns.filter(c => c.type === "time").map((col) => (
+                                                    <option key={col.name} value={col.name}>{col.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+                              
+
+
+
                                 <div className="w-full flex justify-end">
                                     <button
                                         onClick={() => {
                                             const updatedColumns = (field.columns || []).filter((_, i) => i !== colIndex);
-                                            updateField({ columns: updatedColumns });
+                                            updateField({ ...field, columns: updatedColumns });
                                         }}
                                         className="text-red-500 hover:text-red-600 text-sm flex items-center gap-1"
                                     >
@@ -1365,6 +1451,13 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                         <input type="text" disabled placeholder="Calculated value"
                                                             className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
                                                     )}
+                                                    {col.type === "time" && (
+                                                        <input type="time" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                    )}
+                                                    {col.type === "timecalculation" && (
+                                                        <input type="text" disabled placeholder="Calculated duration" className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                    )}
+
                                                 </td>
                                             ))}
                                         </tr>

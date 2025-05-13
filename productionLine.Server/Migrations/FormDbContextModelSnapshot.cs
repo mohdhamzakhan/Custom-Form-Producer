@@ -51,7 +51,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FF_FORM");
+                    b.ToTable("FF_FORM", (string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
@@ -98,7 +98,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormSubmissionId");
 
-                    b.ToTable("FF_FORMAPPROVAL");
+                    b.ToTable("FF_FORMAPPROVAL", (string)null);
 
                     b.HasAnnotation("Relational:JsonPropertyName", "approvals");
                 });
@@ -143,7 +143,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_FORMAPPROVER");
+                    b.ToTable("FF_FORMAPPROVER", (string)null);
 
                     b.HasAnnotation("Relational:JsonPropertyName", "approvers");
                 });
@@ -251,7 +251,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_FORMFIELD");
+                    b.ToTable("FF_FORMFIELD", (string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormSubmission", b =>
@@ -279,7 +279,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_FORMSUBMISSION");
+                    b.ToTable("FF_FORMSUBMISSION", (string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormSubmissionData", b =>
@@ -309,7 +309,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormSubmissionId");
 
-                    b.ToTable("FF_FORMSUBMISSIONDATA");
+                    b.ToTable("FF_FORMSUBMISSIONDATA", (string)null);
 
                     b.HasAnnotation("Relational:JsonPropertyName", "submissionData");
                 });
@@ -383,7 +383,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormFieldId");
 
-                    b.ToTable("FF_REMARK_TRIGGER");
+                    b.ToTable("FF_REMARK_TRIGGER", (string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.Report", b =>
@@ -436,7 +436,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_REPORT");
+                    b.ToTable("FF_REPORT", (string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.ReportAccess", b =>
@@ -466,7 +466,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("ReportId");
 
-                    b.ToTable("FF_REPORT_ACCESS");
+                    b.ToTable("FF_REPORT_ACCESS", (string)null);
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>

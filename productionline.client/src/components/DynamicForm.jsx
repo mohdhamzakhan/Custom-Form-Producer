@@ -545,7 +545,7 @@ export default function DynamicForm() {
                     alert("Form submitted successfully!");
 
                     // Optional: Reset form or redirect
-                    // resetForm(); // You would need to implement this function
+                     resetForm(); // You would need to implement this function
                     // Or redirect: window.location.href = "/success";
                 } else {
                     const errorText = await response.text();
@@ -557,6 +557,40 @@ export default function DynamicForm() {
                 alert("Network error. Please try again.");
             }
         }
+    };
+
+    const resetForm = () => {
+        if (!formData) return;
+
+        const initialValues = {};
+        const initialRemarks = {};
+
+        formData.fields.forEach((field) => {
+            if (field.type === "checkbox") {
+                initialValues[field.id] = [];
+            } else if (field.type === "radio" || field.type === "dropdown") {
+                initialValues[field.id] = "";
+            } else if (field.type === "numeric" || field.type === "textbox" || field.type === "date") {
+                initialValues[field.id] = "";
+            } else if (field.type === "grid") {
+                const rows = [];
+                const rowCount = field.initialRows || 3;
+                for (let i = 0; i < rowCount; i++) {
+                    const row = {};
+                    (field.columns || []).forEach((col) => {
+                        row[col.name] = "";
+                    });
+                    rows.push(row);
+                }
+                initialValues[field.id] = rows;
+            }
+        });
+
+        setFormValues(initialValues);
+        setRemarks(initialRemarks);
+        setFormErrors({});
+        setSubmitted(false);
+        setEditingSubmissionId(null);
     };
 
 
@@ -873,34 +907,92 @@ export default function DynamicForm() {
                                         <tr key={rowIndex}>
                                             {(field.columns || []).map((col, colIdx) => (
                                                 <td key={colIdx} className="py-2 px-4 border-b">
-                                                    {col.type === "calculation" ? (
-                                                        <input
-                                                            type="text"
-                                                            value={evaluateRowFormula(col.formula, row)}
-                                                            className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
-                                                            readOnly
-                                                        />
-                                                    ) : col.type === "dropdown" ? (
-                                                        <select
-                                                            value={row[col.name] || ""}
-                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
-                                                            className="border rounded px-2 py-1 w-full"
-                                                        >
-                                                            <option value="">Select...</option>
-                                                            {(col.options || []).map((opt, i) => (
-                                                                <option key={i} value={opt}>
-                                                                    {opt}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    ) : (
-                                                        <input
-                                                            type="text"
-                                                            value={row[col.name] || ""}
-                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
-                                                            className="border rounded px-2 py-1 w-full"
-                                                        />
-                                                    )}
+                                                    {(() => {
+                                                        const style = {
+                                                            color: col.textColor || "inherit",
+                                                            backgroundColor: col.backgroundColor || "inherit",
+                                                        };
+                                                        if (col.type === "calculation") {
+                                                            return (
+                                                                <input
+                                                                    type="text"
+                                                                    value={evaluateRowFormula(col.formula, row)}
+                                                                    className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
+                                                                    readOnly
+                                                                    style={style}
+                                                                />
+                                                            );
+                                                        }
+
+                                                        if (col.type === "time") {
+                                                            return (
+                                                                <input
+                                                                    type="time"
+                                                                    value={row[col.name] || ""}
+                                                                    onChange={(e) =>
+                                                                        handleGridChange(field.id, rowIndex, col.name, e.target.value)
+                                                                    }
+                                                                    className="border rounded px-2 py-1 w-full"
+                                                                    style={style}
+                                                                />
+                                                            );
+                                                        }
+
+                                                        if (col.type === "timecalculation") {
+                                                            const formula = col.formula || "";
+                                                            const matches = formula.match(/\{(.*?)\}/g);
+                                                            let time1 = "", time2 = "", diff = "";
+
+                                                            if (matches && matches.length === 2) {
+                                                                time1 = row[matches[0].replace(/[{}]/g, "")] || "";
+                                                                time2 = row[matches[1].replace(/[{}]/g, "")] || "";
+                                                                diff = calculateTimeDifference(time1, time2);
+                                                            }
+
+                                                            return (
+                                                                <input
+                                                                    type="text"
+                                                                    value={diff}
+                                                                    readOnly
+                                                                    className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
+                                                                    style={style}
+                                                                />
+                                                            );
+                                                        }
+
+                                                        if (col.type === "dropdown") {
+                                                            return (
+                                                                <select
+                                                                    value={row[col.name] || ""}
+                                                                    onChange={(e) =>
+                                                                        handleGridChange(field.id, rowIndex, col.name, e.target.value)
+                                                                    }
+                                                                    className="border rounded px-2 py-1 w-full"
+                                                                    style={style}
+                                                                >
+                                                                    <option value="">Select...</option>
+                                                                    {(col.options || []).map((opt, i) => (
+                                                                        <option key={i} value={opt}>
+                                                                            {opt}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <input
+                                                                type="text"
+                                                                value={row[col.name] || ""}
+                                                                onChange={(e) =>
+                                                                    handleGridChange(field.id, rowIndex, col.name, e.target.value)
+                                                                }
+                                                                className="border rounded px-2 py-1 w-full"
+                                                                style={style}
+                                                            />
+                                                        );
+                                                    })()}
+
                                                 </td>
                                             ))}
                                             <td className="py-2 px-4 border-b">
@@ -989,6 +1081,20 @@ export default function DynamicForm() {
     if (!formData) {
         return <div>No form data available</div>;
     }
+
+    function calculateTimeDifference(start, end) {
+        if (!start || !end) return "";
+
+        const [h1, m1] = start.split(":").map(Number);
+        const [h2, m2] = end.split(":").map(Number);
+
+        const totalStart = h1 * 60 + m1;
+        const totalEnd = h2 * 60 + m2;
+        const diff = totalEnd - totalStart;
+
+        return diff >= 0 ? `${diff}` : "Invalid";
+    }
+
 
     return (
         <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">

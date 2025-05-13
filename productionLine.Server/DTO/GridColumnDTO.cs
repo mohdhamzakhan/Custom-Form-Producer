@@ -25,5 +25,9 @@ namespace productionLine.Server.DTO
         public bool? Decimal { get; set; }
 
         public string? Formula { get; set; }
+
+        public string? textColor { get; set; }
+
+        public string? backgroundColor { get; set; }
     }
 }

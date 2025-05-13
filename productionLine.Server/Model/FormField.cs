@@ -151,6 +151,12 @@ namespace productionLine.Server.Model
 
         [JsonPropertyName("formula")]
         public string? Formula { get; set; }
+        [JsonPropertyName("textColor")]
+        public string? textColor { get; set; }
+
+        [JsonPropertyName("backgroundColor")]
+        public string? backgroundColor { get; set; }    
+
     }
 
 }

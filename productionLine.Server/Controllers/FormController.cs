@@ -77,6 +77,8 @@ namespace productionLine.Server.Controllers
                                         existingColumn.Max = column.Max;
                                         existingColumn.Decimal = column.Decimal;
                                         existingColumn.Formula = column.Formula;
+                                        existingColumn.textColor = column.textColor;
+                                        existingColumn.backgroundColor = column.backgroundColor;
                                     }
                                     else
                                     {
@@ -185,7 +187,6 @@ namespace productionLine.Server.Controllers
                     RemarkTriggersJson = field.RemarkTriggersJson,
                     RequireRemarksOutOfRange = field.RequireRemarksOutOfRange,
                     RequiresRemarksJson = field.RequiresRemarksJson,
-
                     RemarkTriggers = field.RemarkTriggers?.Select(rt => new RemarkTrigger
                     {
                         Operator = rt.Operator,
@@ -295,6 +296,8 @@ namespace productionLine.Server.Controllers
                         Min = ct.Min,
                         Type = ct.Type,
                         Width = ct.Width,
+                        backgroundColor=ct.backgroundColor,
+                        textColor = ct.textColor,
                         Options = ct.Options ?? null
                     }).ToList() ?? new List<GridColumnDto>(),
                     Formula = f.Formula,
@@ -535,6 +538,7 @@ namespace productionLine.Server.Controllers
 
                 var form = await _context.Forms
                     .Include(f => f.Fields)
+                    .Include(f => f.Fields.OrderBy(field => field.Order))
                     .FirstOrDefaultAsync(f => f.Id == submission.FormId);
 
                 return Ok(new

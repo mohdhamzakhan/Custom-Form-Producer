@@ -28,7 +28,8 @@ const FormList = () => {
                                 <p className="text-gray-500 text-sm">{form.formLink}</p>
                             </div>
                             <Link
-                                to={`/form-builder/${form.formLink}/edit`} // 👈 open in FormBuilder
+                                to={`/form-builder/${form.formLink}/edit`} // 👈 open in 
+
                                 className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                             >
                                 Edit
