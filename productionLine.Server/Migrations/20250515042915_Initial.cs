@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace productionLine.Server.Migrations
 {
     /// <inheritdoc />
-    public partial class Initial_22Apr : Migration
+    public partial class Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -18,11 +18,31 @@ namespace productionLine.Server.Migrations
                     ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
                         .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
                     NAME = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
-                    FORMLINK = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false)
+                    FORMLINK = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "RAW(8)", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_FF_FORM", x => x.ID);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FF_REPORTTEMPLATE",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    NAME = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    CREATEDBY = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    CREATEDAT = table.Column<DateTime>(type: "TIMESTAMP(7)", nullable: false),
+                    INCLUDEAPPROVALS = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    INCLUDEREMARKS = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    SHAREDWITHROLE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_REPORTTEMPLATE", x => x.ID);
                 });
 
             migrationBuilder.CreateTable(
@@ -36,14 +56,14 @@ namespace productionLine.Server.Migrations
                     EMAIL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
                     TYPE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
                     LEVEL = table.Column<int>(type: "NUMBER(10)", nullable: false),
-                    FormId = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                    FORMID = table.Column<int>(type: "NUMBER(10)", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_FF_FORMAPPROVER", x => x.ID);
                     table.ForeignKey(
-                        name: "FK_FF_FORMAPPROVER_FF_FORM_FormId",
-                        column: x => x.FormId,
+                        name: "FK_FF_FORMAPPROVER_FF_FORM_FORMID",
+                        column: x => x.FORMID,
                         principalTable: "FF_FORM",
                         principalColumn: "ID",
                         onDelete: ReferentialAction.Cascade);
@@ -61,6 +81,7 @@ namespace productionLine.Server.Migrations
                     OPTIONS = table.Column<string>(type: "CLOB", nullable: true),
                     Options = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
                     REQUIRES_REMARKS = table.Column<string>(type: "CLOB", nullable: true),
+                    ORDER = table.Column<int>(type: "NUMBER(10)", nullable: false),
                     RequiresRemarks = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
                     MIN = table.Column<double>(type: "BINARY_DOUBLE", nullable: true),
                     MAX = table.Column<double>(type: "BINARY_DOUBLE", nullable: true),
@@ -72,7 +93,7 @@ namespace productionLine.Server.Migrations
                     RESULT_DECIMAL = table.Column<bool>(type: "NUMBER(1)", nullable: true),
                     FIELD_REFERENCES = table.Column<string>(type: "CLOB", nullable: true),
                     COLUMNS = table.Column<string>(type: "CLOB", nullable: true),
-                    Columns = table.Column<string>(type: "NVARCHAR2(2000)", nullable: true),
+                    Columns = table.Column<string>(type: "CLOB", nullable: true),
                     MIN_ROWS = table.Column<int>(type: "NUMBER(10)", nullable: true),
                     MAX_ROWS = table.Column<int>(type: "NUMBER(10)", nullable: true),
                     INITIAL_ROWS = table.Column<int>(type: "NUMBER(10)", nullable: true)
@@ -133,6 +154,47 @@ namespace productionLine.Server.Migrations
                         principalTable: "FF_FORM",
                         principalColumn: "ID",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FF_REPORTFIELD",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    FIELDLABEL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    ORDER = table.Column<int>(type: "NUMBER(10)", nullable: false),
+                    ReportTemplateId = table.Column<int>(type: "NUMBER(10)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_REPORTFIELD", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_REPORTFIELD_FF_REPORTTEMPLATE_ReportTemplateId",
+                        column: x => x.ReportTemplateId,
+                        principalTable: "FF_REPORTTEMPLATE",
+                        principalColumn: "ID");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FF_REPORTFILTER",
+                columns: table => new
+                {
+                    ID = table.Column<int>(type: "NUMBER(10)", nullable: false)
+                        .Annotation("Oracle:Identity", "START WITH 1 INCREMENT BY 1"),
+                    FIELDLABEL = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    OPERATOR = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    VALUE = table.Column<string>(type: "NVARCHAR2(2000)", nullable: false),
+                    ReportTemplateId = table.Column<int>(type: "NUMBER(10)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FF_REPORTFILTER", x => x.ID);
+                    table.ForeignKey(
+                        name: "FK_FF_REPORTFILTER_FF_REPORTTEMPLATE_ReportTemplateId",
+                        column: x => x.ReportTemplateId,
+                        principalTable: "FF_REPORTTEMPLATE",
+                        principalColumn: "ID");
                 });
 
             migrationBuilder.CreateTable(
@@ -229,9 +291,9 @@ namespace productionLine.Server.Migrations
                 column: "FORMSUBMISSIONID");
 
             migrationBuilder.CreateIndex(
-                name: "IX_FF_FORMAPPROVER_FormId",
+                name: "IX_FF_FORMAPPROVER_FORMID",
                 table: "FF_FORMAPPROVER",
-                column: "FormId");
+                column: "FORMID");
 
             migrationBuilder.CreateIndex(
                 name: "IX_FF_FORMFIELD_FORMID",
@@ -262,6 +324,16 @@ namespace productionLine.Server.Migrations
                 name: "IX_FF_REPORT_ACCESS_REPORTID",
                 table: "FF_REPORT_ACCESS",
                 column: "REPORTID");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_REPORTFIELD_ReportTemplateId",
+                table: "FF_REPORTFIELD",
+                column: "ReportTemplateId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FF_REPORTFILTER_ReportTemplateId",
+                table: "FF_REPORTFILTER",
+                column: "ReportTemplateId");
         }
 
         /// <inheritdoc />
@@ -283,6 +355,12 @@ namespace productionLine.Server.Migrations
                 name: "FF_REPORT_ACCESS");
 
             migrationBuilder.DropTable(
+                name: "FF_REPORTFIELD");
+
+            migrationBuilder.DropTable(
+                name: "FF_REPORTFILTER");
+
+            migrationBuilder.DropTable(
                 name: "FF_FORMSUBMISSION");
 
             migrationBuilder.DropTable(
@@ -290,6 +368,9 @@ namespace productionLine.Server.Migrations
 
             migrationBuilder.DropTable(
                 name: "FF_REPORT");
+
+            migrationBuilder.DropTable(
+                name: "FF_REPORTTEMPLATE");
 
             migrationBuilder.DropTable(
                 name: "FF_FORM");

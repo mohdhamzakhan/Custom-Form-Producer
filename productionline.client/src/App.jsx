@@ -63,7 +63,7 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
-                <Route path="/submissions/:submissionId/approve" element={<ApprovalPage />} /> {/* <-- Add this */}
+                <Route path="/submissions/:submissionId/approve" element={<ApprovalPage />} />
                 <Route
                     path="/submissions/:submissionId"
                     element={
@@ -94,7 +94,7 @@ function App() {
                 />
                 <Route path="/report" element={<ReportDesigner />} />
                 <Route path="/report/list" element={<ReportList />} />
-                <Route path="/report/view/:id" element={<ReportViewer />} />
+                <Route path="/report/view/:templateId" element={<ReportViewer />} />
                 <Route path="/report/edit/:id" element={<ReportDesigner editMode={true} />} />
             </Routes>
         </Router>

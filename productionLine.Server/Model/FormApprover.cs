@@ -22,6 +22,7 @@ namespace productionLine.Server.Model
 
 
         [ForeignKey("Form")]
+        [Column("FORMID")]
         public int FormId { get; set; }
 
 

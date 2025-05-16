@@ -5,25 +5,24 @@
 namespace productionLine.Server.Migrations
 {
     /// <inheritdoc />
-    public partial class orderBy : Migration
+    public partial class typeAddInReport : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "ORDER",
-                table: "FF_FORMFIELD",
-                type: "NUMBER(10)",
-                nullable: false,
-                defaultValue: 0);
+            migrationBuilder.AddColumn<string>(
+                name: "TYPE",
+                table: "FF_REPORTFILTER",
+                type: "NVARCHAR2(2000)",
+                nullable: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "ORDER",
-                table: "FF_FORMFIELD");
+                name: "TYPE",
+                table: "FF_REPORTFILTER");
         }
     }
 }

@@ -471,12 +471,17 @@ namespace productionLine.Server.Controllers
         [HttpPost("GetALLForm")]
         public async Task<IActionResult> GetAllForm([FromBody] List<string> names)
         {
+           
             var forms = await _context.Forms
-                .Where(f => f.Approvers.Any(a => names.Contains(a.Name)))
+                .Where(f =>
+                    !f.Approvers.Any() || // Include forms with no approvers
+                    f.Approvers.Any(a => names.Contains(a.Name))) // Or matching approver
                 .Include(f => f.Approvers)
                 .ToListAsync();
+
             return Ok(forms);
         }
+
 
 
         [HttpGet("GetALLForms/{submissionId}")]
@@ -675,13 +680,11 @@ namespace productionLine.Server.Controllers
             var fields = form.Fields.Select(f => new {
                 id = f.Id,
                 label = f.Label,
-                ColumnJson = f.ColumnsJson
-                
+                type = f.Type, // ✅ Add this to support field type rendering
+                columnJson = f.ColumnsJson // lowercase to match frontend expectation
             });
 
             return Ok(fields);
         }
-
-
     }
 }

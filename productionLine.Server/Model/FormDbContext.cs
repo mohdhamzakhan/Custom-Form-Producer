@@ -16,6 +16,8 @@ namespace productionLine.Server.Model
         public DbSet<FormApproval> FormApprovals { get; set; }
         public DbSet<Report> Reports { get; set; }
         public DbSet<ReportAccess> ReportAccesses { get; set; }
+
+        public DbSet<ReportTemplate> ReportTemplates { get; set; } // Add this line to include ReportTemplate in the context
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -95,6 +97,14 @@ namespace productionLine.Server.Model
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
                     v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null));
+
+            modelBuilder.Entity<ReportTemplate>()
+    .Property(e => e.IncludeApprovals)
+    .HasConversion<int>();
+
+            modelBuilder.Entity<ReportTemplate>()
+                .Property(e => e.IncludeRemarks)
+                .HasConversion<int>();
         }
     }
 

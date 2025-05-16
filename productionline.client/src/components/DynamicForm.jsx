@@ -15,6 +15,7 @@ export default function DynamicForm() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [recentSubmissions, setRecentSubmissions] = useState([]);
     const [editingSubmissionId, setEditingSubmissionId] = useState(null);
+    const [fontSize, setFontSize] = useState(16); // default 16px
 
     const { formId } = useParams();
     const navigate = useNavigate();
@@ -65,7 +66,7 @@ export default function DynamicForm() {
                             initialValues[field.id] = "";
                         } else if (field.type === "dropdown") {
                             initialValues[field.id] = "";
-                        } else if(field.type === "grid") {
+                        } else if (field.type === "grid") {
                             // Ensure columns is properly set
                             field.columns = field.columns || [];
 
@@ -99,6 +100,42 @@ export default function DynamicForm() {
 
         fetchFormData();
     }, []);
+    useEffect(() => {
+        if (!formData) return;
+
+        const updatedValues = { ...formValues };
+        let changed = false;
+
+        formData.fields.forEach((field) => {
+            if (field.type === "calculation") {
+                const result = evaluateFormula(field.formula);
+                if (formValues[field.id] !== result) {
+                    updatedValues[field.id] = result;
+                    changed = true;
+                }
+            }
+        });
+
+        if (changed) {
+            setFormValues(updatedValues);
+        }
+    }, [formData]);
+
+
+
+    function evaluateFormula_(formula, formData) {
+        if (!formula) return "";
+
+        try {
+            const expression = formula.replace(/\{(.*?)\}/g, (_, name) => {
+                return parseFloat(formData[name] || 0);
+            });
+            return eval(expression);
+        } catch {
+            return "";
+        }
+    }
+
 
     // Check if a remark is required for the current field value
     const needsRemark = (field, value) => {
@@ -497,7 +534,7 @@ export default function DynamicForm() {
                 } else if (Array.isArray(fieldValue)) {
                     // For checkbox groups, join the selected values
                     fieldValue = fieldValue.join(', ');
-                } 
+                }
 
                 // Handle different field types
                 if (Array.isArray(fieldValue)) {
@@ -545,7 +582,7 @@ export default function DynamicForm() {
                     alert("Form submitted successfully!");
 
                     // Optional: Reset form or redirect
-                     resetForm(); // You would need to implement this function
+                    resetForm(); // You would need to implement this function
                     // Or redirect: window.location.href = "/success";
                 } else {
                     const errorText = await response.text();
@@ -738,6 +775,12 @@ export default function DynamicForm() {
                                 </option>
                             ))}
                         </select>
+                        {formValues[field.id] && (
+                            <div className="text-sm text-gray-600 mt-1">
+                                You selected: <span className="font-semibold">{formValues[field.id]}</span>
+                            </div>
+                        )}
+
                         {formErrors[field.id] && (
                             <p className="text-red-500 text-xs mt-1">
                                 {formErrors[field.id]}
@@ -913,10 +956,14 @@ export default function DynamicForm() {
                                                             backgroundColor: col.backgroundColor || "inherit",
                                                         };
                                                         if (col.type === "calculation") {
+                                                            const calculatedValue = evaluateRowFormula(col.formula, row);
+                                                            if (row[col.name] !== calculatedValue) {
+                                                                row[col.name] = calculatedValue;
+                                                            }
                                                             return (
                                                                 <input
                                                                     type="text"
-                                                                    value={evaluateRowFormula(col.formula, row)}
+                                                                    value={calculatedValue}
                                                                     className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
                                                                     readOnly
                                                                     style={style}
@@ -948,6 +995,9 @@ export default function DynamicForm() {
                                                                 time2 = row[matches[1].replace(/[{}]/g, "")] || "";
                                                                 diff = calculateTimeDifference(time1, time2);
                                                             }
+                                                            if (row[col.name] !== diff) {
+                                                                row[col.name] = diff;
+                                                            }
 
                                                             return (
                                                                 <input
@@ -961,24 +1011,35 @@ export default function DynamicForm() {
                                                         }
 
                                                         if (col.type === "dropdown") {
+                                                            const selected = row[col.name] || "";
+
                                                             return (
-                                                                <select
-                                                                    value={row[col.name] || ""}
-                                                                    onChange={(e) =>
-                                                                        handleGridChange(field.id, rowIndex, col.name, e.target.value)
-                                                                    }
-                                                                    className="border rounded px-2 py-1 w-full"
-                                                                    style={style}
-                                                                >
-                                                                    <option value="">Select...</option>
-                                                                    {(col.options || []).map((opt, i) => (
-                                                                        <option key={i} value={opt}>
-                                                                            {opt}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
+                                                                <div>
+                                                                    <select
+                                                                        value={selected}
+                                                                        onChange={(e) =>
+                                                                            handleGridChange(field.id, rowIndex, col.name, e.target.value)
+                                                                        }
+                                                                        className="border rounded px-2 py-1 w-full"
+                                                                        style={style}
+                                                                    >
+                                                                        <option value="">Select...</option>
+                                                                        {(col.options || []).map((opt, i) => (
+                                                                            <option key={i} value={opt}>
+                                                                                {opt}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+
+                                                                    {selected && (
+                                                                        <div className="text-xs text-gray-500 mt-1">
+                                                                            <span className="font-semibold">{selected}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             );
                                                         }
+
 
                                                         return (
                                                             <input
@@ -1019,6 +1080,7 @@ export default function DynamicForm() {
                         </button>
                     </div>
                 );
+
 
             default:
                 return null;
@@ -1097,8 +1159,15 @@ export default function DynamicForm() {
 
 
     return (
-        <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">
+        <div className="max-w-1xl mx-auto p-6 bg-white rounded-lg shadow-lg">
             <h1 className="text-2xl font-bold mb-6">{formData.name}</h1>
+
+            <div className="flex items-center gap-2 mb-4">
+                <span className="text-sm font-medium">Font size:</span>
+                <button onClick={() => setFontSize((size) => Math.max(10, size - 1))} className="px-2 py-1 border rounded">A-</button>
+                <button onClick={() => setFontSize(16)} className="px-2 py-1 border rounded">Reset</button>
+                <button onClick={() => setFontSize((size) => Math.min(32, size + 1))} className="px-2 py-1 border rounded">A+</button>
+            </div>
 
             {submitted && Object.keys(formErrors).length === 0 && (
                 <div
@@ -1115,33 +1184,35 @@ export default function DynamicForm() {
                 </div>
             )}
             <form onSubmit={handleSubmit}>
-                <div className="flex flex-wrap -mx-2">
-                    {formData.fields.map((field) => (
-                        <div key={field.id} className={`px-2 ${field.width}`}>
-                            {renderField(field)}
-                        </div>
-                    ))}
+                <div style={{ fontSize: `${fontSize}px` }}>
+                    <div className="flex flex-wrap -mx-2">
+                        {formData.fields.map((field) => (
+                            <div key={field.id} className={`px-2 ${field.width}`}>
+                                {renderField(field)}
+                            </div>
+                        ))}
+                    </div>
+
+
+                    <div className="mt-6">
+                        <button
+                            type="submit"
+                            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                        >
+                            Submit
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsModalOpen(true)}
+                            className="ml-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                        >
+                            View Last 10 Submissions
+                        </button>
+                    </div>
                 </div>
-
-                <div className="mt-6">
-                    <button
-                        type="submit"
-                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                    >
-                        Submit
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setIsModalOpen(true)}
-                        className="ml-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                    >
-                        View Last 10 Submissions
-                    </button>
-                </div>
-
             </form>
-           
+
             {isModalOpen && (
                 <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
                     <div className="bg-white rounded-lg shadow-lg p-6 w-11/12 max-w-3xl relative">
@@ -1175,7 +1246,7 @@ export default function DynamicForm() {
                                                     </span>
                                                 </td>
                                                 <td className="py-2 px-4 border-b">
-                                                    {console.log(submission.form?.approvers?.length) }
+                                                    {console.log(submission.form?.approvers?.length)}
                                                     {submission.status === "Pending" && (
                                                         <button
                                                             className="text-blue-500 hover:underline"

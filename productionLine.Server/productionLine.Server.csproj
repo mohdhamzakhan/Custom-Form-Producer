@@ -34,8 +34,4 @@
     <PackageReference Include="System.DirectoryServices.AccountManagement" Version="9.0.3" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Migrations\" />
-  </ItemGroup>
-
 </Project>

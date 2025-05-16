@@ -12,8 +12,8 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    [Migration("20250424074930_RowVersion")]
-    partial class RowVersion
+    [Migration("20250516040442_reportFilter")]
+    partial class reportFilter
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -126,7 +126,8 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("EMAIL");
 
                     b.Property<int>("FormId")
-                        .HasColumnType("NUMBER(10)");
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FORMID");
 
                     b.Property<int>("Level")
                         .HasColumnType("NUMBER(10)")
@@ -159,7 +160,7 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("ID");
 
                     b.Property<string>("Columns")
-                        .HasColumnType("NVARCHAR2(2000)");
+                        .HasColumnType("CLOB");
 
                     b.Property<string>("ColumnsJson")
                         .HasColumnType("CLOB")
@@ -358,6 +359,14 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasAnnotation("Relational:JsonPropertyName", "width");
 
+                    b.Property<string>("backgroundColor")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "backgroundColor");
+
+                    b.Property<string>("textColor")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasAnnotation("Relational:JsonPropertyName", "textColor");
+
                     b.ToTable((string)null);
                 });
 
@@ -472,6 +481,112 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_REPORT_ACCESS");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.ReportField", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FieldLabel")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("FIELDLABEL");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ORDER");
+
+                    b.Property<int?>("ReportTemplateId")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportTemplateId");
+
+                    b.ToTable("FF_REPORTFIELD");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.ReportFilter", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FieldLabel")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("FIELDLABEL");
+
+                    b.Property<string>("Operator")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("OPERATOR");
+
+                    b.Property<int?>("ReportTemplateId")
+                        .HasColumnType("NUMBER(10)");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("TYPE");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("VALUE");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportTemplateId");
+
+                    b.ToTable("FF_REPORTFILTER");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.ReportTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("ID");
+
+                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("CREATEDAT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("CREATEDBY");
+
+                    b.Property<int>("FormId")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("FORMID");
+
+                    b.Property<int>("IncludeApprovals")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("INCLUDEAPPROVALS");
+
+                    b.Property<int>("IncludeRemarks")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("INCLUDEREMARKS");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("NAME");
+
+                    b.Property<string>("SharedWithRole")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("SHAREDWITHROLE");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FF_REPORTTEMPLATE");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
                 {
                     b.HasOne("productionLine.Server.Model.FormSubmission", "FormSubmission")
@@ -560,6 +675,20 @@ namespace productionLine.Server.Migrations
                     b.Navigation("Report");
                 });
 
+            modelBuilder.Entity("productionLine.Server.Model.ReportField", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.ReportTemplate", null)
+                        .WithMany("Fields")
+                        .HasForeignKey("ReportTemplateId");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.ReportFilter", b =>
+                {
+                    b.HasOne("productionLine.Server.Model.ReportTemplate", null)
+                        .WithMany("Filters")
+                        .HasForeignKey("ReportTemplateId");
+                });
+
             modelBuilder.Entity("productionLine.Server.Model.Form", b =>
                 {
                     b.Navigation("Approvers");
@@ -582,6 +711,13 @@ namespace productionLine.Server.Migrations
             modelBuilder.Entity("productionLine.Server.Model.Report", b =>
                 {
                     b.Navigation("AccessList");
+                });
+
+            modelBuilder.Entity("productionLine.Server.Model.ReportTemplate", b =>
+                {
+                    b.Navigation("Fields");
+
+                    b.Navigation("Filters");
                 });
 #pragma warning restore 612, 618
         }
