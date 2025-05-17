@@ -24,8 +24,11 @@ namespace productionLine.Server.Model
         [Column("UPDATEDAT")]
         public DateTime UpdatedAt { get; set; }
 
+
         public Form Form { get; set; }
         public ICollection<ReportAccess> AccessList { get; set; }
+        [Column("SHAREDWITHROLES")]
+        public List<string> SharedWithRoles { get; set; } = new List<string>();
     }
 
 }

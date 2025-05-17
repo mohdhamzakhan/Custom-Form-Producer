@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useNavigate, useLocation } from 'react-router-dom';
+import { initializeDependentOptions, getDependentOptions } from './utils/dependentDropdownHelpers';
+import APP_CONSTANTS from "./store";
 
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
@@ -35,7 +37,7 @@ export default function DynamicForm() {
                 else {
                     // Simulating API response - replace with actual fetch in production
                     const response = await fetch(
-                        `http://localhost:5182/api/forms/link/${formId}`
+                        `${APP_CONSTANTS.API_BASE_URL}/api/forms/link/${formId}`
                     );
                     if (!response.ok) throw new Error("Failed to fetch form data");
                     const data = await response.json();
@@ -46,6 +48,10 @@ export default function DynamicForm() {
                         if (field.type === "grid" && !field.columns && field.column) {
                             field.columns = field.column;
                         }
+                        field.columns = (field.columns || []).map(col => ({
+                            ...col,
+                            dependentOptions: col.dependentOptions || {}
+                        }));
                     });
                     // Using mock data for demonstration
 
@@ -135,6 +141,36 @@ export default function DynamicForm() {
             return "";
         }
     }
+    const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
+        console.log(columnName, value)
+        setFormValues(prev => {
+            const updatedRows = [...(prev[fieldId] || [])];
+
+            if (entireRow) {
+                updatedRows[rowIndex] = entireRow;
+            } else {
+                updatedRows[rowIndex] = {
+                    ...updatedRows[rowIndex],
+                    [columnName]: value
+                };
+
+                // Clear dependent fields when parent changes
+                const field = formData.fields.find(f => f.id === fieldId);
+                if (field) {
+                    field.columns.forEach(col => {
+                        if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
+                            updatedRows[rowIndex][col.name] = "";
+                        }
+                    });
+                }
+            }
+
+            return {
+                ...prev,
+                [fieldId]: updatedRows
+            };
+        });
+    };
 
 
     // Check if a remark is required for the current field value
@@ -153,12 +189,53 @@ export default function DynamicForm() {
         }
     };
 
+    const handleGridDependentDropdown = (field, row, col, rowIndex) => {
+        const parentValue = row[col.parentColumn];
+        const options = col.dependentOptions?.[parentValue] || [];
+        const style = {
+            color: col.textColor || "inherit",
+            backgroundColor: col.backgroundColor || "inherit"
+        };
+
+        return (
+            <div>
+                <select
+                    value={row[col.name] || ""}
+                    onChange={(e) => {
+                        const newValue = e.target.value;
+                        handleGridChange(field.id, rowIndex, col.name, newValue);
+                    }}
+                    className="border rounded px-2 py-1 w-full"
+                    disabled={!parentValue}
+                    style={style}
+                >
+                    <option value="">
+                        {!parentValue
+                            ? `Select ${col.parentColumn} first`
+                            : `Select ${col.name}`}
+                    </option>
+                    {options.map((option, i) => (
+                        <option key={i} value={option}>
+                            {option}
+                        </option>
+                    ))}
+                </select>
+                {!parentValue && (
+                    <p className="text-xs text-gray-500 mt-1">
+                        Please select {col.parentColumn} first
+                    </p>
+                )}
+            </div>
+        );
+    };
+
+
     const handleEditSubmission = async (submissionId) => {
         setIsModalOpen(false);
         setEditingSubmissionId(submissionId);
 
         try {
-            const res = await fetch(`http://localhost:5182/api/forms/submissions/${submissionId}`);
+            const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
             if (!res.ok) throw new Error("Failed to load submission");
 
             const json = await res.json();
@@ -215,7 +292,7 @@ export default function DynamicForm() {
 
     // Fetch recent submissions
     const fetchRecentSubmissions = async () => {
-        const response = await fetch(`http://localhost:5182/api/forms/${formId}/lastsubmissions`);
+        const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/lastsubmissions`);
         if (!response.ok) throw new Error("Failed to fetch submissions");
         const submissions = await response.json();
         console.log(submissions)
@@ -568,7 +645,7 @@ export default function DynamicForm() {
             try {
                 console.log("Submitting JSON:", JSON.stringify(submissionData, null, 2));
 
-                const response = await fetch(`http://localhost:5182/api/forms/${formData.id}/submit`, {
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formData.id}/submit`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -1009,34 +1086,71 @@ export default function DynamicForm() {
                                                                 />
                                                             );
                                                         }
+                                                        if (col.type === "dependentDropdown") {
+                                                            // Get the parent column value from the current row
+                                                            const parentValue = row[col.parentColumn] || "";
 
-                                                        if (col.type === "dropdown") {
-                                                            const selected = row[col.name] || "";
+                                                            // Get the dependent options based on the parent value
+                                                            const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
 
                                                             return (
-                                                                <div>
-                                                                    <select
-                                                                        value={selected}
-                                                                        onChange={(e) =>
-                                                                            handleGridChange(field.id, rowIndex, col.name, e.target.value)
-                                                                        }
-                                                                        className="border rounded px-2 py-1 w-full"
-                                                                        style={style}
-                                                                    >
-                                                                        <option value="">Select...</option>
-                                                                        {(col.options || []).map((opt, i) => (
-                                                                            <option key={i} value={opt}>
-                                                                                {opt}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
+                                                                <select
+                                                                    value={row[col.name] || ""}
+                                                                    onChange={(e) => {
+                                                                        const newValue = e.target.value;
+                                                                        const updatedRow = { ...row, [col.name]: newValue };
 
-                                                                    {selected && (
-                                                                        <div className="text-xs text-gray-500 mt-1">
-                                                                            <span className="font-semibold">{selected}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
+                                                                        // Update the row with the new dependent dropdown value
+                                                                        handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                    }}
+                                                                    disabled={!parentValue} // Disable if parent value is not selected
+                                                                    className="border rounded px-2 py-1 w-full"
+                                                                    style={{
+                                                                        color: col.textColor || "inherit",
+                                                                        backgroundColor: col.backgroundColor || "inherit"
+                                                                    }}
+                                                                >
+                                                                    <option value="">Select {col.name}</option>
+                                                                    {dependentOptions.map((opt, i) => (
+                                                                        <option key={i} value={opt}>
+                                                                            {opt}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            );
+                                                        }
+
+                                                        if (col.type === "dropdown") {
+                                                            return (
+                                                                <select
+                                                                    value={row[col.name] || ""}
+                                                                    onChange={(e) => {
+                                                                        const newValue = e.target.value;
+                                                                        const updatedRow = { ...row, [col.name]: newValue };
+
+                                                                        // Clear dependent fields
+                                                                        field.columns.forEach(depCol => {
+                                                                            if (depCol.type === "dependentDropdown" &&
+                                                                                depCol.parentColumn === col.name) {
+                                                                                updatedRow[depCol.name] = "";
+                                                                            }
+                                                                        });
+
+                                                                        handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                    }}
+                                                                    className="border rounded px-2 py-1 w-full"
+                                                                    style={{
+                                                                        color: col.textColor || "inherit",
+                                                                        backgroundColor: col.backgroundColor || "inherit"
+                                                                    }}
+                                                                >
+                                                                    <option value="">Select {col.name}</option>
+                                                                    {(col.options || []).map((opt, i) => (
+                                                                        <option key={i} value={opt}>
+                                                                            {opt}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
                                                             );
                                                         }
 
@@ -1082,6 +1196,7 @@ export default function DynamicForm() {
                 );
 
 
+
             default:
                 return null;
         }
@@ -1105,11 +1220,11 @@ export default function DynamicForm() {
     };
 
 
-    const handleGridChange = (fieldId, rowIndex, columnName, value) => {
-        const updatedRows = [...(formValues[fieldId] || [])];
-        updatedRows[rowIndex] = { ...updatedRows[rowIndex], [columnName]: value };
-        setFormValues((prev) => ({ ...prev, [fieldId]: updatedRows }));
-    };
+    //const handleGridChange = (fieldId, rowIndex, columnName, value) => {
+    //    const updatedRows = [...(formValues[fieldId] || [])];
+    //    updatedRows[rowIndex] = { ...updatedRows[rowIndex], [columnName]: value };
+    //    setFormValues((prev) => ({ ...prev, [fieldId]: updatedRows }));
+    //};
 
     const addGridRow = (fieldId, columns) => {
         const newRow = {};
@@ -1144,6 +1259,7 @@ export default function DynamicForm() {
         return <div>No form data available</div>;
     }
 
+
     function calculateTimeDifference(start, end) {
         if (!start || !end) return "";
 
@@ -1156,6 +1272,31 @@ export default function DynamicForm() {
 
         return diff >= 0 ? `${diff}` : "Invalid";
     }
+
+    const handleChange = (columnName, value) => {
+        // Update the form values
+        const newValues = { ...formValues, [columnName]: value };
+
+        // Reset dependent dropdown values when parent changes
+        if (formData?.columns) {
+            formData.columns.forEach(column => {
+                if (column.type === 'dependentDropdown' && column.parentColumn === columnName) {
+                    newValues[column.name] = ''; // Reset child value
+                }
+            });
+        }
+
+        setFormValues(newValues);
+    };
+
+    const getDependentOptions = (column) => {
+        if (!column.parentColumn) return [];
+
+        const parentValue = formValues[column.parentColumn];
+        if (!parentValue) return [];
+
+        return column.dependentOptions?.[parentValue] || [];
+    };
 
 
     return (

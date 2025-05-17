@@ -1,6 +1,7 @@
 import axios from "axios";
+import APP_CONSTANTS from "./store";
 
-const API_URL = "http://localhost:5182/api/forms"; // Adjust if needed
+const API_URL = `${APP_CONSTANTS.API_BASE_URL}/api/forms`; // Adjust if needed
 
 export const createForm = async (formData) => {
   return await axios.post(API_URL, formData);

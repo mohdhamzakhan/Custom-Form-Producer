@@ -7,7 +7,7 @@ import FormBuilder from "./components/FormBuilder";
 import DynamicForm from "./components/DynamicForm";
 import ApprovalPage from "./components/Approval";
 import ReportPage from "./components/ReportPage"; // Assuming you have this component
-import ReportList from "./components/ReportList";
+import ReportsList from "./components/ReportList";
 import ReportViewer from "./components/ReportViewer";
 import ReportDesigner from "./components/ReportDesigner";
 
@@ -92,10 +92,10 @@ function App() {
                     path="/"
                     element={<Navigate to="/login" replace />}
                 />
-                <Route path="/report" element={<ReportDesigner />} />
-                <Route path="/report/list" element={<ReportList />} />
-                <Route path="/report/view/:templateId" element={<ReportViewer />} />
-                <Route path="/report/edit/:id" element={<ReportDesigner editMode={true} />} />
+                <Route path="/report" element={<ReportsList />} />
+                <Route path="/reports/edit/:id" element={<ReportDesigner />} />
+                <Route path="/reports/view/:id" element={<ReportViewer />} />
+                <Route path="/reports/new" element={<ReportDesigner />} />
             </Routes>
         </Router>
     );

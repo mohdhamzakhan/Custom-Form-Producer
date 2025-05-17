@@ -1,12 +1,13 @@
 ﻿import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import APP_CONSTANTS from "./store";
 
 const FormList = () => {
     const [forms, setForms] = useState([]);
 
     useEffect(() => {
         const fetchForms = async () => {
-            const response = await fetch("http://localhost:5182/api/forms");
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms`);
             const data = await response.json();
             setForms(data);
         };

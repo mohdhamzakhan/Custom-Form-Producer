@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import APP_CONSTANTS from "./store";
 
 export default function SubmissionDetails() {
     const { submissionId } = useParams();
@@ -14,7 +15,7 @@ export default function SubmissionDetails() {
     useEffect(() => {
         const fetchSubmissionDetails = async () => {
             try {
-                const response = await fetch(`http://localhost:5182/api/forms/submissions/${submissionId}`);
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
                 if (!response.ok) throw new Error("Failed to fetch submission details");
                 const data = await response.json();
                 setSubmission(data.submission);

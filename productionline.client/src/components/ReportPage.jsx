@@ -3,6 +3,7 @@ import DatePicker from "react-datepicker";
 import { useNavigate } from "react-router-dom";
 import "react-datepicker/dist/react-datepicker.css";
 import Layout from "./Layout";
+import APP_CONSTANTS from "./store";
 
 export default function ReportPage() {
     const [forms, setForms] = useState([]);
@@ -29,7 +30,7 @@ export default function ReportPage() {
         // Fetch available forms to populate dropdown
         const fetchForms = async () => {
             if (!user) return;  // wait until user is loaded
-            const response = await fetch(`http://localhost:5182/api/forms/GetALLForm`, {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForm`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -51,7 +52,7 @@ export default function ReportPage() {
 
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:5182/api/reports/production?formId=${selectedFormId}&start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/reports/production?formId=${selectedFormId}&start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
             if (!response.ok) throw new Error("Failed to fetch report data");
 
             const data = await response.json();

@@ -1,7 +1,8 @@
 ﻿import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import CalculatedFieldsEditor from "./CalculatedFieldsEditor";
+import APP_CONSTANTS from "./store";
 
 export default function ReportDesigner() {
     const [forms, setForms] = useState([]);
@@ -22,6 +23,26 @@ export default function ReportDesigner() {
     const [success, setSuccess] = useState(null);
     const [availableRoles, setAvailableRoles] = useState([]);
     const navigate = useNavigate();
+    const { reportId } = useParams();  // In component
+
+    useEffect(() => {
+        if (reportId) {
+            fetch(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`)
+                .then(res => res.json())
+                .then(data => {
+                    setTemplateName(data.name);
+                    setSelectedFormId(data.formId);
+                    setSelectedFields(data.fields.map(f => f.fieldId));
+                    setFilters(data.filters);
+                    setCalculatedFields(data.calculatedFields || []);
+                    setOptions(prev => ({
+                        ...prev,
+                        sharedWithRoles: data.sharedWithRole || []
+                    }));
+                });
+        }
+    }, [reportId]);
+
 
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
@@ -51,7 +72,7 @@ export default function ReportDesigner() {
         const fetchForms = async () => {
             if (!user) return;
             try {
-                const response = await fetch(`http://localhost:5182/api/forms/GetALLForm`, {
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForm`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -72,7 +93,7 @@ export default function ReportDesigner() {
         setSelectedFormId(formId);
 
         try {
-            const res = await axios.get(`http://localhost:5182/api/forms/${formId}/fields`);
+            const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/fields`);
             const fieldList = Array.isArray(res.data)
                 ? res.data
                 : Array.isArray(res.data.fields)
@@ -216,7 +237,7 @@ export default function ReportDesigner() {
         };
 
         try {
-            const response = await fetch(`http://localhost:5182/api/Reports/save`, {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json-patch+json"

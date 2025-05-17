@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Layout from "./Layout";
+import APP_CONSTANTS from "./store";
 
 export default function ApprovalPage() {
     const { submissionId } = useParams();
@@ -27,7 +28,7 @@ export default function ApprovalPage() {
     useEffect(() => {
         const fetchSubmissionDetails = async () => {
             try {
-                const response = await fetch(`http://localhost:5182/api/forms/submissions/${submissionId}`);
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
                 if (!response.ok) throw new Error("Failed to fetch submission details");
                 const data = await response.json();
 
@@ -64,7 +65,7 @@ export default function ApprovalPage() {
                 status: status,
             };
 
-            const response = await fetch(`http://localhost:5182/api/forms/submissions/${submissionId}/approve`, {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}/approve`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(approvalData),

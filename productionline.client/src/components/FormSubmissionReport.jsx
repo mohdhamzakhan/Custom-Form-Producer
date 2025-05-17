@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "./Layout"
+import APP_CONSTANTS from "./store";
 
 export default function FormSubmissionReport() {
     const [forms, setForms] = useState([]);
@@ -30,7 +31,7 @@ export default function FormSubmissionReport() {
             if (!user) return;  // wait until user is loaded
 
             try {
-                const response = await fetch(`http://localhost:5182/api/forms/GetALLForm`, {
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForm`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -56,7 +57,7 @@ export default function FormSubmissionReport() {
         const fetchFormDefinition = async () => {
             setLoading(true);
             try {
-                const response = await fetch(`http://localhost:5182/api/forms/GetALLForms/${selectedFormId}`);
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForms/${selectedFormId}`);
                 if (!response.ok) throw new Error("Unable to retirve the data may be there is no submission");
                 const data = await response.json();
 
@@ -77,7 +78,7 @@ export default function FormSubmissionReport() {
     // Fetch submissions for the selected form
     const fetchSubmissions = async (formId) => {
         try {
-            const response = await fetch(`http://localhost:5182/api/forms/${formId}/submissions`);
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/submissions`);
             if (!response.ok) throw new Error("Failed to fetch submissions");
             const data = await response.json();
             setSubmissions(data);

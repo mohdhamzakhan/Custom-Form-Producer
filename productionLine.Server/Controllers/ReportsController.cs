@@ -266,5 +266,83 @@ namespace productionLine.Server.Controllers
                 filters = template.Filters
             });
         }
+
+        // Add these new endpoints to your existing ReportsController.cs
+
+        [HttpGet("list")]  // Changed back to HttpGet
+        public async Task<IActionResult> GetReportsList(string username, bool includeShared = true)
+        {
+            try
+            {
+                var query = _context.ReportTemplates
+                    .AsQueryable();
+
+                // Only get reports created by the user
+                //query = query.Where(r => r.CreatedBy == username);
+
+                var reports = await query
+                    .Select(r => new
+                    {
+                        r.Id,
+                        r.Name,
+                        r.SharedWithRole,
+                        r.IncludeRemarks,
+                        //CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                        //UpdatedAt = r.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                        r.FormId
+                    })
+                    .ToListAsync();
+
+                return Ok(reports);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteReport(int id)
+        {
+            var report = await _context.Reports.FindAsync(id);
+
+            if (report == null)
+                return NotFound();
+
+            // Optional: Add authorization check
+            if (report.CreatedBy != User.Identity?.Name)
+                return Forbid();
+
+            _context.Reports.Remove(report);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+        [HttpGet("dropdown-options/{templateId}/{fieldLabel}")]
+        public async Task<IActionResult> GetDropdownOptions(int templateId, string fieldLabel)
+        {
+            var template = await _context.ReportTemplates
+                .Include(t => t.Fields)
+                .FirstOrDefaultAsync(t => t.Id == templateId);
+
+            if (template == null)
+                return NotFound("Template not found.");
+
+            var submissions = await _context.FormSubmissions
+                .Where(s => s.FormId == template.FormId)
+                .Include(s => s.SubmissionData)
+                .ToListAsync();
+
+            var distinctValues = submissions
+                .SelectMany(s => s.SubmissionData)
+                .Where(d => d.FieldLabel == fieldLabel)
+                .Select(d => d.FieldValue)
+                .Distinct()
+                .Where(v => !string.IsNullOrEmpty(v))
+                .ToList();
+
+            return Ok(distinctValues);
+        }
+
     }
 }

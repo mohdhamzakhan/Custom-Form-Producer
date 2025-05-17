@@ -1,8 +1,8 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState} from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import ReportDisplayOptions from "./ReportDisplayOptions";
-import useCalculatedValues from "./hooks/useCalculatedValues";
+import APP_CONSTANTS from "./store";
 
 export default function ReportViewer() {
     const { templateId } = useParams();
@@ -17,11 +17,12 @@ export default function ReportViewer() {
     const [exportOptions, setExportOptions] = useState({ format: 'excel' });
     const [isExporting, setIsExporting] = useState(false);
 
+
     useEffect(() => {
         const fetchTemplate = async () => {
             try {
                 setLoading(true);
-                const res = await axios.get(`http://localhost:5182/api/reports/template/${templateId}`);
+                const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${templateId}`);
                 setTemplate(res.data);
                 setFilters(res.data.filters || []);
                 setCalculatedFields(res.data.calculatedFields || []);
@@ -42,7 +43,7 @@ export default function ReportViewer() {
     const fetchFilteredReport = async () => {
         try {
             setLoading(true);
-            const res = await axios.post(`http://localhost:5182/api/reports/run/${templateId}`, runtimeFilters);
+            const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
             setReportData(res.data);
             setLoading(false);
         } catch (err) {
@@ -50,6 +51,30 @@ export default function ReportViewer() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!template || !filters.length) return;
+
+        const fetchDropdownOptions = async () => {
+            const updatedFilters = await Promise.all(filters.map(async (f) => {
+                if (f.type === "dropdown") {
+                    try {
+                        const res = await axios.get(
+                            `${APP_CONSTANTS.API_BASE_URL}/api/reports/dropdown-options/${templateId}/${encodeURIComponent(f.fieldLabel)}`
+                        );
+                        return { ...f, options: res.data };
+                    } catch (err) {
+                        console.error(`Failed to fetch options for ${f.fieldLabel}`);
+                    }
+                }
+                return f;
+            }));
+            setFilters(updatedFilters);
+        };
+
+        fetchDropdownOptions();
+    }, [filters.length, templateId]);
+
 
     const headers = reportData.length > 0 ? reportData[0].data.map(d => d.fieldLabel) : [];
 
@@ -75,7 +100,7 @@ export default function ReportViewer() {
             // This is a placeholder for the export API
             // You'll need to implement this in your backend
             const res = await axios.post(
-                `http://localhost:5182/api/reports/export/${templateId}`,
+                `${APP_CONSTANTS.API_BASE_URL}/api/reports/export/${templateId}`,
                 {
                     format: exportOptions.format,
                     filters: runtimeFilters,
@@ -194,15 +219,30 @@ export default function ReportViewer() {
                                 <label className="mb-1 font-medium">
                                     {f.fieldLabel} ({f.operator})
                                 </label>
-                                <input
-                                    type={f.type === "number" || f.type === "decimal" ? "number" : "text"}
-                                    placeholder={`Value for ${f.fieldLabel}`}
-                                    value={runtimeFilters[f.fieldLabel] || ''}
-                                    onChange={e => handleFilterChange(f.fieldLabel, e.target.value)}
-                                    className="border p-2 rounded"
-                                />
+
+                                {f.type === "dropdown" && Array.isArray(f.options) ? (
+                                    <select
+                                        value={runtimeFilters[f.fieldLabel] || ''}
+                                        onChange={e => handleFilterChange(f.fieldLabel, e.target.value)}
+                                        className="border p-2 rounded"
+                                    >
+                                        <option value="">-- Select --</option>
+                                        {f.options.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        type={f.type === "number" || f.type === "decimal" ? "number" : "text"}
+                                        placeholder={`Value for ${f.fieldLabel}`}
+                                        value={runtimeFilters[f.fieldLabel] || ''}
+                                        onChange={e => handleFilterChange(f.fieldLabel, e.target.value)}
+                                        className="border p-2 rounded"
+                                    />
+                                )}
                             </div>
                         ))}
+
                     </div>
 
                     <button
