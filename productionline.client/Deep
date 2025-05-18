@@ -1,0 +1,313 @@
+// In the dependentDropdown configuration section, update the parent column selection:
+{column.type === "dependentDropdown" && (
+  <div className="w-full space-y-4">
+    <div>
+      <label className="block text-sm font-medium mb-1">Parent Column</label>
+      <select
+        value={column.parentColumn || ""}
+        onChange={(e) => {
+          const updatedColumns = [...field.columns];
+          updatedColumns[colIndex] = {
+            ...updatedColumns[colIndex],
+            parentColumn: e.target.value,
+            dependentOptions: {}
+          };
+          updateField({ columns: updatedColumns });
+        }}
+        className="w-full border rounded p-2"
+      >
+        <option value="">Select Parent Column</option>
+        {field.columns
+          .filter(c => c.type === "dropdown" && c.id !== column.id)
+          .map(parentCol => (
+            <option key={parentCol.id} value={parentCol.name}>
+              {parentCol.name}
+            </option>
+          ))}
+      </select>
+    </div>
+
+    {/* Child options configuration */}
+    {column.parentColumn && (
+      <div className="space-y-2">
+        {field.columns
+          .find(c => c.name === column.parentColumn)
+          ?.options?.map(parentOption => (
+            <div key={parentOption} className="border p-2 rounded">
+              <div className="font-medium mb-2">When {column.parentColumn} is "{parentOption}"</div>
+              <textarea
+                value={(column.dependentOptions?.[parentOption] || []).join(",")}
+                onChange={(e) => {
+                  const values = e.target.value.split(",").map(v => v.trim());
+                  const updatedColumns = [...field.columns];
+                  updatedColumns[colIndex].dependentOptions[parentOption] = values;
+                  updateField({ columns: updatedColumns });
+                }}
+                placeholder="Enter comma-separated options"
+                className="w-full border rounded p-2"
+              />
+            </div>
+          ))}
+      </div>
+    )}
+  </div>
+)}
+
+
+
+
+// Update handleGridChange to clear dependent values
+const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
+  setFormValues(prev => {
+    const updatedRows = [...(prev[fieldId] || [])];
+    const field = formData.fields.find(f => f.id === fieldId);
+
+    if (entireRow) {
+      updatedRows[rowIndex] = entireRow;
+    } else {
+      updatedRows[rowIndex] = {
+        ...updatedRows[rowIndex],
+        [columnName]: value
+      };
+
+      // Clear dependent fields when parent changes
+      if (field) {
+        field.columns.forEach(col => {
+          if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
+            updatedRows[rowIndex][col.name] = "";
+          }
+        });
+      }
+    }
+
+    return { ...prev, [fieldId]: updatedRows };
+  });
+};
+
+// Update grid rendering for dependent dropdowns
+{col.type === "dependentDropdown" && (
+  <select
+    value={row[col.name] || ""}
+    onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+    className="border rounded px-2 py-1 w-full"
+    disabled={!row[col.parentColumn]}
+  >
+    <option value="">Select {col.name}</option>
+    {(col.dependentOptions?.[row[col.parentColumn]] || []).map(opt => (
+      <option key={opt} value={opt}>{opt}</option>
+    ))}
+  </select>
+)}
+
+
+
+
+// Update parseFieldValue to handle grid data
+const parseFieldValue = (fieldId, rawValue) => {
+  const field = formData?.fields?.find(f => f.id === fieldId);
+  
+  if (field?.type === "grid") {
+    try {
+      const rows = JSON.parse(rawValue);
+      return rows.map(row => {
+        const newRow = {};
+        field.columns.forEach(col => {
+          if (col.type === "dependentDropdown") {
+            // Ensure parent value exists before setting child value
+            newRow[col.name] = row[col.parentColumn] ? row[col.name] : "";
+          } else {
+            newRow[col.name] = row[col.name] || "";
+          }
+        });
+        return newRow;
+      });
+    } catch {
+      return [];
+    }
+  }
+  return rawValue;
+};
+
+
+
+
+// Ensure dependentOptions are properly saved
+const saveForm = async () => {
+  // ... existing code ...
+  const formData = {
+    // ... other fields ...
+    fields: formFields.map(field => ({
+      // ... other properties ...
+      columns: field.columns?.map(col => ({
+        ...col,
+        dependentOptions: col.dependentOptions || {},
+        options: col.type === "dropdown" ? col.options : undefined
+      }))
+    }))
+  };
+  // ... rest of save logic ...
+};
+
+
+
+
+
+{column.type === "dependentDropdown" && column.parentColumn && (
+  <div className="space-y-4">
+    {field.columns
+      .find(c => c.name === column.parentColumn)
+      ?.options?.map(parentOption => (
+        <div key={parentOption} className="border p-3 rounded-lg bg-gray-50">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-medium">Parent: {parentOption}</h4>
+            <span className="text-sm text-gray-500">
+              {column.dependentOptions?.[parentOption]?.length || 0} existing options
+            </span>
+          </div>
+
+          {/* Existing Child Options */}
+          <div className="space-y-2 mb-4">
+            {(column.dependentOptions?.[parentOption] || []).map((childOpt, childIndex) => (
+              <div key={childIndex} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={childOpt}
+                  onChange={(e) => {
+                    const updatedColumns = [...field.columns];
+                    const newOptions = [...updatedColumns[colIndex].dependentOptions[parentOption]];
+                    newOptions[childIndex] = e.target.value;
+                    updatedColumns[colIndex].dependentOptions[parentOption] = newOptions;
+                    updateField({ columns: updatedColumns });
+                  }}
+                  className="flex-1 p-1 border rounded"
+                />
+                <button
+                  onClick={() => {
+                    const updatedColumns = [...field.columns];
+                    const filtered = updatedColumns[colIndex]
+                      .dependentOptions[parentOption]
+                      .filter((_, i) => i !== childIndex);
+                    updatedColumns[colIndex].dependentOptions[parentOption] = filtered;
+                    updateField({ columns: updatedColumns });
+                  }}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add New Child Option */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="New child option"
+              className="flex-1 p-1 border rounded"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                  const updatedColumns = [...field.columns];
+                  const newChild = e.target.value.trim();
+                  updatedColumns[colIndex].dependentOptions[parentOption] = [
+                    ...(updatedColumns[colIndex].dependentOptions[parentOption] || []),
+                    newChild
+                  ];
+                  updateField({ columns: updatedColumns });
+                  e.target.value = '';
+                }
+              }}
+            />
+            <button
+              onClick={(e) => {
+                const input = e.target.previousElementSibling;
+                if (input.value.trim()) {
+                  const updatedColumns = [...field.columns];
+                  const newChild = input.value.trim();
+                  updatedColumns[colIndex].dependentOptions[parentOption] = [
+                    ...(updatedColumns[colIndex].dependentOptions[parentOption] || [],
+                    newChild
+                  ];
+                  updateField({ columns: updatedColumns });
+                  input.value = '';
+                }
+              }}
+              className="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        </div>
+      ))}
+  </div>
+)}
+
+
+
+
+// Update parseFieldValue to maintain parent-child relationships
+const parseFieldValue = (fieldId, rawValue) => {
+  const field = formData?.fields?.find(f => f.id === fieldId);
+  
+  if (field?.type === "grid") {
+    try {
+      const rows = JSON.parse(rawValue);
+      return rows.map(row => {
+        const validatedRow = {};
+        field.columns.forEach(col => {
+          // Only keep dependent dropdown values if parent exists
+          if (col.type === "dependentDropdown") {
+            validatedRow[col.name] = row[col.parentColumn] ? row[col.name] : "";
+          } else {
+            validatedRow[col.name] = row[col.name] || "";
+          }
+        });
+        return validatedRow;
+      });
+    } catch {
+      return [];
+    }
+  }
+  return rawValue;
+};
+
+
+
+
+useEffect(() => {
+  // Initialize preview values when loading existing data
+  const parentCol = field.columns?.find(col => col.type === "dependentDropdown");
+  if (parentCol?.parentColumn) {
+    const parentColumn = field.columns.find(c => c.name === parentCol.parentColumn);
+    if (parentColumn?.options?.length > 0) {
+      setPreviewParentValue(parentColumn.options[0]);
+      setPreviewChildOptions(
+        parentCol.dependentOptions?.[parentColumn.options[0]] || []
+      );
+    }
+  }
+}, [field.columns]);
+
+
+
+
+const fetchFormLayout = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/form-builder/link/${formLink}`);
+    const data = await response.json();
+
+    // Transform dependent dropdown options
+    const transformedFields = data.fields.map(field => ({
+      ...field,
+      columns: field.columns?.map(col => ({
+        ...col,
+        dependentOptions: col.dependentOptions || {},
+        // Convert API format to UI-compatible structure
+        options: col.type === 'dropdown' ? col.options : undefined
+      }))
+    }));
+
+    setFormFields(transformedFields);
+  } catch (error) {
+    console.error("Error loading form:", error);
+  }
+};
