@@ -29,5 +29,10 @@ namespace productionLine.Server.DTO
         public string? textColor { get; set; }
 
         public string? backgroundColor { get; set; }
+
+        public string? ParentColumn { get; set; }
+        public Dictionary<string, List<string>>? DependentOptions { get; set; }
+        public string? StartTime { get; set; }
+        public string? EndTime { get; set; }
     }
 }

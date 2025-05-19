@@ -2,7 +2,7 @@
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import ReportDisplayOptions from "./ReportDisplayOptions";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 export default function ReportViewer() {
     const { templateId } = useParams();

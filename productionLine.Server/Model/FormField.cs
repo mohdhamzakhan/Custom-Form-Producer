@@ -155,7 +155,16 @@ namespace productionLine.Server.Model
         public string? textColor { get; set; }
 
         [JsonPropertyName("backgroundColor")]
-        public string? backgroundColor { get; set; }    
+        public string? backgroundColor { get; set; }
+
+        [JsonPropertyName("parentColumn")]
+        public string? ParentColumn { get; set; }
+        [JsonPropertyName("dependentOptions")]
+        public Dictionary<string, List<string>>? DependentOptions { get; set; }
+        [JsonPropertyName("startTime")]
+        public string? StartTime { get; set; }
+        [JsonPropertyName("endTime")]
+        public string? EndTime { get; set; }
 
     }
 

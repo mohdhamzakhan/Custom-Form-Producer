@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 function LoginPage() {
     const [username, setUsername] = useState("");
@@ -27,7 +27,7 @@ function LoginPage() {
         setError("");
 
         try {
-            const response = await fetch("${APP_CONSTANTS.API_BASE_URL}/api/login", {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ username, password }),

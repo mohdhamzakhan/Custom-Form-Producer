@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Layout from "./Layout";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 export default function ApprovalPage() {
     const { submissionId } = useParams();

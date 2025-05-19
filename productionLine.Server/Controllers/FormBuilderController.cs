@@ -16,48 +16,6 @@ namespace productionLine.Server.Controllers
         {
             _context = context;
         }
-
-        // ✅ Save or Update a form (Create/Update Form Layout)
-        //[HttpPost]
-        //public async Task<IActionResult> SaveForm([FromBody] Form form)
-        //{
-        //    if (form == null)
-        //        return BadRequest("Form is null.");
-
-        //    if (form.Id > 0)
-        //    {
-        //        // Update Existing Form
-        //        var existingForm = await _context.Forms
-        //            .Include(f => f.Fields)
-        //            .Include(f => f.Approvers)
-        //            .FirstOrDefaultAsync(f => f.Id == form.Id);
-
-        //        if (existingForm == null)
-        //            return NotFound("Form not found.");
-
-        //        existingForm.Name = form.Name;
-        //        existingForm.FormLink = form.FormLink;
-
-        //        _context.FormFields.RemoveRange(existingForm.Fields);
-        //        _context.FormApprovers.RemoveRange(existingForm.Approvers);
-
-        //        existingForm.Fields = form.Fields;
-        //        existingForm.Approvers = form.Approvers;
-
-
-
-        //        await _context.SaveChangesAsync();
-        //        return Ok(existingForm);
-        //    }
-        //    else
-        //    {
-        //        // Create New Form
-        //        _context.Forms.Add(form);
-        //        await _context.SaveChangesAsync();
-        //        return Ok(form);
-        //    }
-        //}
-
         [HttpPost]
         public async Task<IActionResult> SaveForm([FromBody] Form form)
         {
@@ -139,24 +97,6 @@ namespace productionLine.Server.Controllers
             }
         }
 
-
-
-        // ✅ Get a form by link to edit it
-        //[HttpGet("{formLink}")]
-        //public async Task<IActionResult> GetFormByLink(string formLink)
-        //{
-        //    var form = await _context.Forms
-        //        .Include(f => f.Fields)
-        //        .Include(f => f.Approvers)
-        //        .FirstOrDefaultAsync(f => f.FormLink == formLink);
-
-        //    if (form == null)
-        //        return NotFound("Form not found.");
-
-        //    return Ok(form);
-        //}
-
-        // ✅ List all forms (optional if needed)
         [HttpGet]
         public async Task<IActionResult> GetAllForms()
         {
@@ -211,7 +151,8 @@ namespace productionLine.Server.Controllers
                     {
                         Id = rt.Id,
                         Operator = rt.Operator,
-                        Value = rt.Value
+                        Value = rt.Value,
+                        FormFieldId = rt.FormFieldId  // ✅ Only return ID, not object
                     }).ToList() ?? new List<RemarkTriggerDto>(),
                     Column = f.Columns?.Select(ct => new GridColumnDto
                     {
@@ -223,10 +164,17 @@ namespace productionLine.Server.Controllers
                         Min = ct.Min,
                         Type = ct.Type,
                         Width = ct.Width,
-                        backgroundColor =ct.backgroundColor,
-                        textColor =ct.textColor,
-                        Options = ct.Options ?? null
+                        backgroundColor = ct.backgroundColor,
+                        textColor = ct.textColor,
+                        Options = ct.Options ?? new List<string>(),
+
+                        // ✅ Add these lines:
+                        ParentColumn = ct.ParentColumn,
+                        DependentOptions = ct.DependentOptions,
+                        StartTime = ct.StartTime,
+                        EndTime = ct.EndTime
                     }).ToList() ?? new List<GridColumnDto>(),
+
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,
                     MaxRows = f.MaxRows,

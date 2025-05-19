@@ -2,7 +2,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import CalculatedFieldsEditor from "./CalculatedFieldsEditor";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 export default function ReportDesigner() {
     const [forms, setForms] = useState([]);

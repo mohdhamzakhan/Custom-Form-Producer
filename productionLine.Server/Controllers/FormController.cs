@@ -296,9 +296,15 @@ namespace productionLine.Server.Controllers
                         Min = ct.Min,
                         Type = ct.Type,
                         Width = ct.Width,
-                        backgroundColor=ct.backgroundColor,
+                        backgroundColor = ct.backgroundColor,
                         textColor = ct.textColor,
-                        Options = ct.Options ?? null
+                        Options = ct.Options ?? new List<string>(),
+
+                        // ✅ Add these lines:
+                        ParentColumn = ct.ParentColumn,
+                        DependentOptions = ct.DependentOptions,
+                        StartTime = ct.StartTime,
+                        EndTime = ct.EndTime
                     }).ToList() ?? new List<GridColumnDto>(),
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,

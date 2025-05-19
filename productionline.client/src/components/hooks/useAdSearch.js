@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import APP_CONSTANTS from "./store";
+import { APP_CONSTANTS } from "../store";
 
 const useAdSearch = () => {
     const [searchResults, setSearchResults] = useState([]);

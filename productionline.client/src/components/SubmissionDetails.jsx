@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 export default function SubmissionDetails() {
     const { submissionId } = useParams();

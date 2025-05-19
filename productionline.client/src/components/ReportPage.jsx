@@ -3,7 +3,7 @@ import DatePicker from "react-datepicker";
 import { useNavigate } from "react-router-dom";
 import "react-datepicker/dist/react-datepicker.css";
 import Layout from "./Layout";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 export default function ReportPage() {
     const [forms, setForms] = useState([]);

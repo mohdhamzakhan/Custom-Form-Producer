@@ -1,37 +1,44 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using productionLine.Server.Model;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using System;
 using Microsoft.IdentityModel.Tokens;
+using productionLine.Server.Model;
 using System.Text;
+
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure database
 builder.Services.AddDbContext<FormDbContext>(options =>
     options.UseOracle(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Enable CORS (important for frontend requests)
+// Configure CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        builder => builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
 });
+
+// Configure Swagger
 builder.Services.AddSwaggerGen();
-builder.Services.AddControllers().AddNewtonsoftJson();
-builder.Services.Configure<JsonOptions>(options =>
-{
-    options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-});
 
-
-// Add services to the container.
-
+// Configure controllers and JSON
 builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
     {
         options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
     });
 
+builder.Services.Configure<JsonOptions>(options =>
+{
+    options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+});
+
+// Configure JWT Authentication
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -49,36 +56,36 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-
 var app = builder.Build();
-app.UseCors(builder =>
-    builder.AllowAnyOrigin()
-           .AllowAnyMethod()
-           .AllowAnyHeader()
-);
 
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<FormDbContext>();
-    dbContext.Database.Migrate();
-}
+// Apply pending migrations
+//using (var scope = app.Services.CreateScope())
+//{
+//    var dbContext = scope.ServiceProvider.GetRequiredService<FormDbContext>();
+//    dbContext.Database.Migrate();
+//}
 
-// Enable CORS
+// Enable middleware pipeline
+
+// Enable CORS (before authentication and controllers)
 app.UseCors("AllowAll");
 
+// Serve static files
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// Configure the HTTP request pipeline.
-
-// Enable authentication
+// Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
-
-app.MapFallbackToFile("/index.html");
+// Enable Swagger
 app.UseSwagger();
 app.UseSwaggerUI();
+
+// Map API routes
+app.MapControllers();
+
+// Fallback for SPA routing
+app.MapFallbackToFile("/index.html");
 
 app.Run();

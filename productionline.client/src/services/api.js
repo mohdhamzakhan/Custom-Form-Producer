@@ -1,5 +1,5 @@
 import axios from "axios";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 const API_URL = `${APP_CONSTANTS.API_BASE_URL}/api/forms`; // Adjust if needed
 

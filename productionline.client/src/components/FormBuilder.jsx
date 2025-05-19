@@ -5,7 +5,7 @@ import { HTML5Backend } from "react-dnd-html5-backend";
 import Layout from "./Layout"
 import { useParams } from 'react-router-dom';
 import useAdSearch from "./hooks/useAdSearch";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -59,39 +59,7 @@ const FormBuilder = () => {
         }
     }, [searchTerm, searchAdDirectory]);
 
-    //const searchAdDirectory = async (term) => {
-    //    setIsSearching(true);
-    //    try {
-    //        const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/ad-search?term=${term}`);
 
-    //        let data;
-    //        try {
-    //            data = await response.json();
-    //        } catch (jsonError) {
-    //            console.error("Invalid JSON returned from server:", jsonError);
-    //            throw new Error("Invalid JSON response");
-    //        }
-
-    //        if (!response.ok) {
-    //            // Server returned an error (status 500 etc.)
-    //            console.error("Server error:", data.error || "Unknown error");
-    //            throw new Error(data.error || "Unknown server error");
-    //        }
-
-    //        setSearchResults(data);
-    //    } catch (error) {
-    //        console.error("Error searching AD:", error);
-    //        // Provide dummy data for testing
-    //        setSearchResults([
-    //            { id: "user1", name: "John Doe", type: "user", email: "john.doe@example.com" },
-    //            { id: "user2", name: "Jane Smith", type: "user", email: "jane.smith@example.com" },
-    //            { id: "group1", name: "Finance Department", type: "group", members: ["user1", "user3"] },
-    //            { id: "group2", name: "HR Team", type: "group", members: ["user2", "user4"] }
-    //        ]);
-    //    } finally {
-    //        setIsSearching(false);
-    //    }
-    //};
 
 
     const moveField = (dragIndex, hoverIndex) => {
@@ -159,13 +127,31 @@ const FormBuilder = () => {
                     columns: isGrid
                         ? (field.column || field.columns || []).map(col => ({
                             ...col,
-                            dependentOptions: col.dependentOptions || {},  // Ensure it exists
+                            type: col.type || "textbox",
+                            name: col.name || "",
+                            id: col.id || generateGuid(),
+                            width: col.width || "1fr",
+                            options: col.options || [],
+                            textColor: col.textColor || "#000000",
+                            backgroundColor: col.backgroundColor || "#ffffff",
+                            formula: col.formula || "",
+                            min: col.min ?? null,
+                            max: col.max ?? null,
+                            decimal: col.decimal ?? null,
+                            parentColumn: col.parentColumn || "",
+                            dependentOptions: col.dependentOptions || {},
+                            startTime: col.startTime || "",
+                            endTime: col.endTime || ""
                         }))
                         : undefined,
+
+
+
                     column: undefined, // Remove old key
                     formula: field.formula || "",
                     resultDecimal: field.resultDecimal || false,
                     fieldReferences: field.fieldReferencesJson || [],
+
                     remarkTriggers: field.remarkTriggers || [] // Ensure this exists
                 };
             });
@@ -243,7 +229,26 @@ const FormBuilder = () => {
                         fieldReferences: null,
                         options: Array.isArray(field.options) ? field.options : [],
                         requireRemarks: Array.isArray(field.requireRemarks) ? field.requireRemarks : [],
-                        remarkTriggers: Array.isArray(field.remarkTriggers) ? field.remarkTriggers : [],
+                        remarkTriggers: Array.isArray(field.remarkTriggers)
+                            ? field.remarkTriggers.map(trigger => ({
+                                ...trigger,
+                                formFieldId: field.id,
+                                formField: {
+                                    id: field.id,
+                                    type: field.type,
+                                    label: field.label || field.name,
+                                    width: field.width,
+                                    form: {
+                                        id: baseForm.id,
+                                        name: baseForm.name,
+                                        formLink: baseForm.formLink,
+                                        rowVersion: baseForm.rowVersion
+                                    }
+                                }
+                            }))
+                            : [],
+
+
                     };
 
                     // Handle grid type
@@ -570,15 +575,20 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
 
     useEffect(() => {
-        const parentCol = field.columns?.find(col => col.type === "dependentDropdown");
-        if (parentCol?.parentColumn) {
-            const firstOption = field.columns.find(c => c.name === parentCol.parentColumn)?.options?.[0];
+        const dependentDropdownCol = field.columns?.find(col => col.type === "dependentDropdown");
+
+        if (dependentDropdownCol?.parentColumn) {
+            const parentCol = field.columns.find(c => c.name === dependentDropdownCol.parentColumn);
+            const firstOption = parentCol?.options?.[0];
+
             setPreviewParentValue(firstOption || "");
-            if (firstOption) {
-                setPreviewChildOptions(parentCol.dependentOptions?.[firstOption] || []);
-            }
+            setPreviewChildOptions(
+                dependentDropdownCol.dependentOptions?.[firstOption] || []
+            );
         }
-    }, []);
+    }, [field.columns]);
+
+
 
     const ref = useRef(null);
     const [availableFields, setAvailableFields] = useState([]);
@@ -937,9 +947,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 {column.type === "dependentDropdown" && (
                                     <div className="w-full space-y-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                Parent Column Configuration
-                                            </label>
+                                            <label className="block text-sm font-medium mb-1">Parent Column</label>
                                             <select
                                                 value={column.parentColumn || ""}
                                                 onChange={(e) => {
@@ -947,155 +955,44 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     updatedColumns[colIndex] = {
                                                         ...updatedColumns[colIndex],
                                                         parentColumn: e.target.value,
-                                                        dependentOptions: {} // Reset dependent options when parent changes
+                                                        dependentOptions: {}
                                                     };
-                                                    updateField({ ...field, columns: updatedColumns });
-                                                    setPreviewChildOptions([]); // Reset preview
+                                                    updateField({ columns: updatedColumns });
                                                 }}
-                                                className="w-full px-3 py-2 border rounded-md"
+                                                className="w-full border rounded p-2"
                                             >
-                                                <option value="">Select parent column</option>
+                                                <option value="">Select Parent Column</option>
                                                 {field.columns
-                                                    .filter(col =>
-                                                        col.type === "dropdown" &&
-                                                        col.id !== column.id
-                                                    )
-                                                    .map(col => (
-                                                        <option key={col.id} value={col.name}>
-                                                            {col.name}
+                                                    .filter(c => c.type === "dropdown" && c.id !== column.id)
+                                                    .map(parentCol => (
+                                                        <option key={parentCol.id} value={parentCol.name}>
+                                                            {parentCol.name}
                                                         </option>
-                                                    ))
-                                                }
+                                                    ))}
                                             </select>
                                         </div>
 
+                                        {/* Child options configuration */}
                                         {column.parentColumn && (
-                                            <div className="bg-white border rounded-lg overflow-hidden">
-                                                <div className="p-4 bg-gray-50 border-b">
-                                                    <h4 className="font-medium">Configure Child Options</h4>
-                                                    <p className="text-sm text-gray-500">
-                                                        Define child options for each parent value
-                                                    </p>
-                                                </div>
-
-                                                <div className="p-3 max-h-96 overflow-y-auto">
-                                                    {field.columns
-                                                        .find(col => col.name === column.parentColumn)
-                                                        ?.options?.map(parentOption => (
-                                                            <div key={parentOption} className="mb-4 p-3 bg-gray-50 rounded-lg">
-                                                                <div className="flex items-center justify-between mb-2">
-                                                                    <label className="text-sm font-medium text-gray-700">
-                                                                        Parent: "{parentOption}"
-                                                                    </label>
-                                                                    <span className="text-xs text-gray-500">
-                                                                        {column.dependentOptions?.[parentOption]?.length || 0} child options
-                                                                    </span>
-                                                                </div>
-
-                                                                <div className="space-y-2">
-                                                                    {/* Existing child options */}
-                                                                    {column.dependentOptions?.[parentOption]?.map((childOption, idx) => (
-                                                                        <div key={idx} className="flex items-center gap-2">
-                                                                            <input
-                                                                                type="text"
-                                                                                value={childOption}
-                                                                                onChange={(e) => {
-                                                                                    const updatedColumns = [...field.columns];
-                                                                                    const options = [...(updatedColumns[colIndex].dependentOptions?.[parentOption] || [])];
-                                                                                    options[idx] = e.target.value;
-                                                                                    updatedColumns[colIndex] = {
-                                                                                        ...updatedColumns[colIndex],
-                                                                                        dependentOptions: {
-                                                                                            ...updatedColumns[colIndex].dependentOptions,
-                                                                                            [parentOption]: options
-                                                                                        }
-                                                                                    };
-                                                                                    updateField({ ...field, columns: updatedColumns });
-                                                                                }}
-                                                                                className="flex-1 px-3 py-2 border rounded-md"
-                                                                                placeholder={`Option for ${parentOption}`}
-                                                                            />
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    const updatedColumns = [...field.columns];
-                                                                                    const options = updatedColumns[colIndex].dependentOptions?.[parentOption]
-                                                                                        .filter((_, i) => i !== idx);
-                                                                                    updatedColumns[colIndex] = {
-                                                                                        ...updatedColumns[colIndex],
-                                                                                        dependentOptions: {
-                                                                                            ...updatedColumns[colIndex].dependentOptions,
-                                                                                            [parentOption]: options
-                                                                                        }
-                                                                                    };
-                                                                                    updateField({ ...field, columns: updatedColumns });
-                                                                                }}
-                                                                                className="text-red-500 hover:text-red-600"
-                                                                            >
-                                                                                <X size={16} />
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-
-                                                                    {/* Add new child option button */}
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const updatedColumns = [...field.columns];
-                                                                            const currentOptions = updatedColumns[colIndex].dependentOptions?.[parentOption] || [];
-                                                                            updatedColumns[colIndex] = {
-                                                                                ...updatedColumns[colIndex],
-                                                                                dependentOptions: {
-                                                                                    ...updatedColumns[colIndex].dependentOptions,
-                                                                                    [parentOption]: [...currentOptions, '']
-                                                                                }
-                                                                            };
-                                                                            updateField({ ...field, columns: updatedColumns });
-                                                                        }}
-                                                                        className="w-full px-4 py-2 text-sm bg-blue-50 text-blue-600 rounded-md border border-blue-200 hover:bg-blue-100 flex items-center justify-center gap-1"
-                                                                    >
-                                                                        <Plus size={14} />
-                                                                        Add option for "{parentOption}"
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                </div>
-
-                                                {/* Preview section */}
-                                                <div className="p-3 bg-gray-50 border-t">
-                                                    <label className="block text-xs font-medium text-gray-600 mb-2">Preview</label>
-                                                    <div className="space-y-2">
-
-
-                                                        <select
-                                                            className="w-full px-2 py-1.5 border rounded bg-white"
-                                                            onChange={(e) => {
-                                                                const selectedParentValue = e.target.value;
-                                                                setPreviewChildOptions(
-                                                                    column.dependentOptions?.[selectedParentValue] || []
-                                                                );
-                                                            }}
-                                                        >
-                                                            <option value="">Select {column.parentColumn}</option>
-                                                            {field.columns
-                                                                .find(col => col.name === column.parentColumn)
-                                                                ?.options?.map(opt => (
-                                                                    <option key={opt} value={opt}>{opt}</option>
-                                                                ))}
-                                                        </select>
-
-                                                        {/* dependent child */}
-                                                        <select className="w-full px-2 py-1.5 border rounded bg-white mt-2">
-                                                            <option value="">Select {column.name}</option>
-                                                            {previewChildOptions.map((opt, idx) => (
-                                                                <option key={idx}>{opt}</option>
-                                                            ))}
-                                                        </select>
-
-                                                    </div>
-                                                    <p className="mt-2 text-xs text-gray-500">
-                                                        The child dropdown will update based on the parent selection
-                                                    </p>
-                                                </div>
+                                            <div className="space-y-2">
+                                                {field.columns
+                                                    .find(c => c.name === column.parentColumn)
+                                                    ?.options?.map(parentOption => (
+                                                        <div key={parentOption} className="border p-2 rounded">
+                                                            <div className="font-medium mb-2">When {column.parentColumn} is "{parentOption}"</div>
+                                                            <textarea
+                                                                value={(column.dependentOptions?.[parentOption] || []).join(",")}
+                                                                onChange={(e) => {
+                                                                    const values = e.target.value.split(",").map(v => v.trim());
+                                                                    const updatedColumns = [...field.columns];
+                                                                    updatedColumns[colIndex].dependentOptions[parentOption] = values;
+                                                                    updateField({ columns: updatedColumns });
+                                                                }}
+                                                                placeholder="Enter comma-separated options"
+                                                                className="w-full border rounded p-2"
+                                                            />
+                                                        </div>
+                                                    ))}
                                             </div>
                                         )}
                                     </div>

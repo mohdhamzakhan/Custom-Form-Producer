@@ -3,8 +3,7 @@ import { useParams } from "react-router-dom";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useNavigate, useLocation } from 'react-router-dom';
-import { initializeDependentOptions, getDependentOptions } from './utils/dependentDropdownHelpers';
-import APP_CONSTANTS from "./store";
+import { APP_CONSTANTS } from "./store";
 
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
@@ -20,84 +19,75 @@ export default function DynamicForm() {
     const [fontSize, setFontSize] = useState(16); // default 16px
 
     const { formId } = useParams();
-    const navigate = useNavigate();
-    const location = useLocation();
+
 
     useEffect(() => {
         // In a real application, this would be an actual API call
         const fetchFormData = async () => {
             try {
-                const token = localStorage.getItem('token'); // Assuming you save JWT in localStorage
+                // Simulating API response - replace with actual fetch in production
+                const response = await fetch(
+                    `${APP_CONSTANTS.API_BASE_URL}/api/forms/link/${formId}`
+                );
+                if (!response.ok) throw new Error("Failed to fetch form data");
+                const data = await response.json();
+                console.log(data)
 
+                data.fields.forEach(field => {
+                    // Fix column → columns for grid fields
+                    if (field.type === "grid" && !field.columns && field.column) {
+                        field.columns = field.column;
+                    }
+                    field.columns = (field.columns || []).map(col => ({
+                        ...col,
+                        dependentOptions: col.dependentOptions || {}
+                    }));
+                });
+                // Using mock data for demonstration
 
-                if (!token) {
-                    // Redirect to login, and pass current location as `redirect` query param
-                    navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
-                }
-                else {
-                    // Simulating API response - replace with actual fetch in production
-                    const response = await fetch(
-                        `${APP_CONSTANTS.API_BASE_URL}/api/forms/link/${formId}`
-                    );
-                    if (!response.ok) throw new Error("Failed to fetch form data");
-                    const data = await response.json();
-                    console.log(data)
+                setFormData(data);
 
-                    data.fields.forEach(field => {
-                        // Fix column → columns for grid fields
-                        if (field.type === "grid" && !field.columns && field.column) {
-                            field.columns = field.column;
+                // Initialize form values and remarks based on field types
+                const initialValues = {};
+                const initialRemarks = {};
+
+                data.fields.forEach((field) => {
+                    if (field.type === "checkbox") {
+                        initialValues[field.id] = [];
+                    } else if (field.type === "radio") {
+                        initialValues[field.id] = "";
+                    } else if (field.type === "numeric") {
+                        initialValues[field.id] = "";
+                    } else if (field.type === "date") {
+                        initialValues[field.id] = "";
+                    } else if (field.type === "dropdown") {
+                        initialValues[field.id] = "";
+                    } else if (field.type === "grid") {
+                        // Ensure columns is properly set
+                        field.columns = field.columns || [];
+
+                        // Initialize grid with empty rows
+                        const rowCount = field.initialRows || 3;
+                        const rows = [];
+
+                        for (let i = 0; i < rowCount; i++) {
+                            const row = {};
+                            field.columns.forEach(col => {
+                                row[col.name] = "";
+                            });
+                            rows.push(row);
                         }
-                        field.columns = (field.columns || []).map(col => ({
-                            ...col,
-                            dependentOptions: col.dependentOptions || {}
-                        }));
-                    });
-                    // Using mock data for demonstration
 
-                    setFormData(data);
+                        initialValues[field.id] = rows;
+                    }
+                });
 
-                    // Initialize form values and remarks based on field types
-                    const initialValues = {};
-                    const initialRemarks = {};
+                setFormValues(initialValues);
+                setRemarks(initialRemarks);
+                setLoading(false);
 
-                    data.fields.forEach((field) => {
-                        if (field.type === "checkbox") {
-                            initialValues[field.id] = [];
-                        } else if (field.type === "radio") {
-                            initialValues[field.id] = "";
-                        } else if (field.type === "numeric") {
-                            initialValues[field.id] = "";
-                        } else if (field.type === "date") {
-                            initialValues[field.id] = "";
-                        } else if (field.type === "dropdown") {
-                            initialValues[field.id] = "";
-                        } else if (field.type === "grid") {
-                            // Ensure columns is properly set
-                            field.columns = field.columns || [];
+                await fetchRecentSubmissions();
 
-                            // Initialize grid with empty rows
-                            const rowCount = field.initialRows || 3;
-                            const rows = [];
-
-                            for (let i = 0; i < rowCount; i++) {
-                                const row = {};
-                                field.columns.forEach(col => {
-                                    row[col.name] = "";
-                                });
-                                rows.push(row);
-                            }
-
-                            initialValues[field.id] = rows;
-                        }
-                    });
-
-                    setFormValues(initialValues);
-                    setRemarks(initialRemarks);
-                    setLoading(false);
-
-                    await fetchRecentSubmissions();
-                }
             } catch (err) {
                 setError(err.message || "Failed to fetch form data");
                 setLoading(false);
@@ -128,23 +118,11 @@ export default function DynamicForm() {
     }, [formData]);
 
 
-
-    function evaluateFormula_(formula, formData) {
-        if (!formula) return "";
-
-        try {
-            const expression = formula.replace(/\{(.*?)\}/g, (_, name) => {
-                return parseFloat(formData[name] || 0);
-            });
-            return eval(expression);
-        } catch {
-            return "";
-        }
-    }
+    // Update handleGridChange to clear dependent values
     const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
-        console.log(columnName, value)
         setFormValues(prev => {
             const updatedRows = [...(prev[fieldId] || [])];
+            const field = formData.fields.find(f => f.id === fieldId);
 
             if (entireRow) {
                 updatedRows[rowIndex] = entireRow;
@@ -155,7 +133,6 @@ export default function DynamicForm() {
                 };
 
                 // Clear dependent fields when parent changes
-                const field = formData.fields.find(f => f.id === fieldId);
                 if (field) {
                     field.columns.forEach(col => {
                         if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
@@ -165,10 +142,7 @@ export default function DynamicForm() {
                 }
             }
 
-            return {
-                ...prev,
-                [fieldId]: updatedRows
-            };
+            return { ...prev, [fieldId]: updatedRows };
         });
     };
 
@@ -188,47 +162,6 @@ export default function DynamicForm() {
             return field.requireRemarks.includes(value);
         }
     };
-
-    const handleGridDependentDropdown = (field, row, col, rowIndex) => {
-        const parentValue = row[col.parentColumn];
-        const options = col.dependentOptions?.[parentValue] || [];
-        const style = {
-            color: col.textColor || "inherit",
-            backgroundColor: col.backgroundColor || "inherit"
-        };
-
-        return (
-            <div>
-                <select
-                    value={row[col.name] || ""}
-                    onChange={(e) => {
-                        const newValue = e.target.value;
-                        handleGridChange(field.id, rowIndex, col.name, newValue);
-                    }}
-                    className="border rounded px-2 py-1 w-full"
-                    disabled={!parentValue}
-                    style={style}
-                >
-                    <option value="">
-                        {!parentValue
-                            ? `Select ${col.parentColumn} first`
-                            : `Select ${col.name}`}
-                    </option>
-                    {options.map((option, i) => (
-                        <option key={i} value={option}>
-                            {option}
-                        </option>
-                    ))}
-                </select>
-                {!parentValue && (
-                    <p className="text-xs text-gray-500 mt-1">
-                        Please select {col.parentColumn} first
-                    </p>
-                )}
-            </div>
-        );
-    };
-
 
     const handleEditSubmission = async (submissionId) => {
         setIsModalOpen(false);
@@ -326,7 +259,6 @@ export default function DynamicForm() {
         });
     };
 
-    // Handle input change for text and numeric fields
     // Handle input change for text and numeric fields
     const handleInputChange = (fieldId, value, fieldType, field) => {
         // For numeric fields, validate and format the input
@@ -1219,13 +1151,6 @@ export default function DynamicForm() {
         }
     };
 
-
-    //const handleGridChange = (fieldId, rowIndex, columnName, value) => {
-    //    const updatedRows = [...(formValues[fieldId] || [])];
-    //    updatedRows[rowIndex] = { ...updatedRows[rowIndex], [columnName]: value };
-    //    setFormValues((prev) => ({ ...prev, [fieldId]: updatedRows }));
-    //};
-
     const addGridRow = (fieldId, columns) => {
         const newRow = {};
         (columns || []).forEach((col) => {
@@ -1272,32 +1197,6 @@ export default function DynamicForm() {
 
         return diff >= 0 ? `${diff}` : "Invalid";
     }
-
-    const handleChange = (columnName, value) => {
-        // Update the form values
-        const newValues = { ...formValues, [columnName]: value };
-
-        // Reset dependent dropdown values when parent changes
-        if (formData?.columns) {
-            formData.columns.forEach(column => {
-                if (column.type === 'dependentDropdown' && column.parentColumn === columnName) {
-                    newValues[column.name] = ''; // Reset child value
-                }
-            });
-        }
-
-        setFormValues(newValues);
-    };
-
-    const getDependentOptions = (column) => {
-        if (!column.parentColumn) return [];
-
-        const parentValue = formValues[column.parentColumn];
-        if (!parentValue) return [];
-
-        return column.dependentOptions?.[parentValue] || [];
-    };
-
 
     return (
         <div className="max-w-1xl mx-auto p-6 bg-white rounded-lg shadow-lg">

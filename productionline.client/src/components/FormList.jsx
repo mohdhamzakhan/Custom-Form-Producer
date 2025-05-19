@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import APP_CONSTANTS from "./store";
+import {APP_CONSTANTS} from "./store";
 
 const FormList = () => {
     const [forms, setForms] = useState([]);
