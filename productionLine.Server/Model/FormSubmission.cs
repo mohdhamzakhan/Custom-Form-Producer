@@ -30,6 +30,7 @@ namespace productionLine.Server.Model
         [JsonPropertyName("approvals")]
         public List<FormApproval> Approvals { get; set; } = new();
 
+
     }
 
     [Table("FF_FORMSUBMISSIONDATA")]

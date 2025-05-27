@@ -46,18 +46,28 @@ namespace productionLine.Server.Controllers
                 // Reassign fields and approvers, resetting IDs
                 foreach (var field in form.Fields)
                 {
-                    field.Id = Guid.NewGuid(); // Reset field ID
-                    field.FormId = existingForm.Id;
+                    if (field.Id == Guid.Empty)
+                        field.Id = Guid.NewGuid();
 
                     if (field.Columns != null)
                     {
                         foreach (var col in field.Columns)
                         {
-                            col.Id = Guid.NewGuid().ToString(); // Reset column ID
-                                                                // No need to set FormFieldId unless explicitly required
+                            if (string.IsNullOrWhiteSpace(col.Id))
+                                col.Id = Guid.NewGuid().ToString();
+                        }
+                    }
+
+                    // ✅ Important: Assign FK navigation for RemarkTriggers
+                    if (field.RemarkTriggers != null)
+                    {
+                        foreach (var trigger in field.RemarkTriggers)
+                        {
+                            trigger.FormField = field; // EF Core will use this to fill FormFieldId
                         }
                     }
                 }
+
 
                 foreach (var approver in form.Approvers)
                 {
@@ -73,26 +83,37 @@ namespace productionLine.Server.Controllers
             }
             else
             {
-                // Create New Form
-                _context.Forms.Add(form);
-
-                // Ensure GUIDs for new fields and columns are initialized
                 foreach (var field in form.Fields)
                 {
                     if (field.Id == Guid.Empty)
                         field.Id = Guid.NewGuid();
 
+                    field.Form = form;
+
                     if (field.Columns != null)
                     {
                         foreach (var col in field.Columns)
                         {
-                            if (col.Id == string.Empty)
+                            if (string.IsNullOrWhiteSpace(col.Id))
                                 col.Id = Guid.NewGuid().ToString();
+                        }
+                    }
+
+                    // ✅ Fix here: Remove embedded trigger.FormField (to avoid duplicate tracking)
+                    if (field.RemarkTriggers != null)
+                    {
+                        foreach (var trigger in field.RemarkTriggers)
+                        {
+                            trigger.FormFieldId = field.Id;  // Set FK manually
+                            trigger.FormField = null;        // Avoid EF tracking conflict
                         }
                     }
                 }
 
+                _context.Forms.Add(form);
+
                 await _context.SaveChangesAsync();
+
                 return Ok(form);
             }
         }

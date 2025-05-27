@@ -155,47 +155,94 @@ namespace productionLine.Server.Controllers
             //{
             //    _context.RemarkTrigger.RemoveRange(field.RemarkTriggers);
             //}
-            _context.FormFields.RemoveRange(existingForm.Fields);
+            // Get existing field IDs
+            var existingFieldIds = existingForm.Fields.Select(f => f.Id).ToHashSet();
+            var incomingFieldIds = form.Fields.Select(f => f.Id).ToHashSet();
 
-            // Add new fields
+            // Remove fields that are no longer present
+            var fieldsToRemove = existingForm.Fields.Where(f => !incomingFieldIds.Contains(f.Id)).ToList();
+            _context.FormFields.RemoveRange(fieldsToRemove);
+
+            // Update existing and add new fields
             foreach (var field in form.Fields)
             {
-                var newField = new FormField
+                var existingField = existingForm.Fields.FirstOrDefault(f => f.Id == field.Id);
+
+                if (existingField != null)
                 {
-                    Id = Guid.NewGuid(),
-                    FormId = id,
-                    Label = field.Label,
-                    Type = field.Type,
-                    Columns = field.Columns,
-                    ColumnsJson = field.ColumnsJson,
-                    Decimal = field.Decimal,
-                    FieldReferences = field.FieldReferences,
-                    FieldReferencesJson = field.FieldReferencesJson,
-                    Formula = field.Formula,
-                    InitialRows = field.InitialRows,
-                    MaxRows = field.MaxRows,
-                    MinRows = field.MinRows,
-                    Options = field.Options,
-                    Required = field.Required,
-                    Max = field.Max,
-                    Min = field.Min,
-                    Width = field.Width,
-                    RequiresRemarks = field.RequiresRemarks,
-                    Order = field.Order,
-                    ResultDecimal = field.ResultDecimal,
-                    OptionsJson = field.OptionsJson,
-                    RemarkTriggersJson = field.RemarkTriggersJson,
-                    RequireRemarksOutOfRange = field.RequireRemarksOutOfRange,
-                    RequiresRemarksJson = field.RequiresRemarksJson,
-                    RemarkTriggers = field.RemarkTriggers?.Select(rt => new RemarkTrigger
+                    // Update existing field
+                    existingField.Label = field.Label;
+                    existingField.Type = field.Type;
+                    existingField.Columns = field.Columns;
+                    existingField.ColumnsJson = field.ColumnsJson;
+                    existingField.Decimal = field.Decimal;
+                    existingField.FieldReferences = field.FieldReferences;
+                    existingField.FieldReferencesJson = field.FieldReferencesJson;
+                    existingField.Formula = field.Formula;
+                    existingField.InitialRows = field.InitialRows;
+                    existingField.MaxRows = field.MaxRows;
+                    existingField.MinRows = field.MinRows;
+                    existingField.Options = field.Options;
+                    existingField.Required = field.Required;
+                    existingField.Max = field.Max;
+                    existingField.Min = field.Min;
+                    existingField.Width = field.Width;
+                    existingField.RequiresRemarks = field.RequiresRemarks;
+                    existingField.Order = field.Order;
+                    existingField.ResultDecimal = field.ResultDecimal;
+                    existingField.OptionsJson = field.OptionsJson;
+                    existingField.RemarkTriggersJson = field.RemarkTriggersJson;
+                    existingField.RequireRemarksOutOfRange = field.RequireRemarksOutOfRange;
+                    existingField.RequiresRemarksJson = field.RequiresRemarksJson;
+
+                    // Update RemarkTriggers (optional: replace all or do granular updates)
+                    existingField.RemarkTriggers = field.RemarkTriggers?.Select(rt => new RemarkTrigger
                     {
                         Operator = rt.Operator,
                         Value = rt.Value
-                    }).ToList() ?? new List<RemarkTrigger>()
-                };
+                    }).ToList() ?? new List<RemarkTrigger>();
+                }
+                else
+                {
+                    // Add new field
+                    var newField = new FormField
+                    {
+                        Id = field.Id != Guid.Empty ? field.Id : Guid.NewGuid(),
+                        FormId = id,
+                        Label = field.Label,
+                        Type = field.Type,
+                        Columns = field.Columns,
+                        ColumnsJson = field.ColumnsJson,
+                        Decimal = field.Decimal,
+                        FieldReferences = field.FieldReferences,
+                        FieldReferencesJson = field.FieldReferencesJson,
+                        Formula = field.Formula,
+                        InitialRows = field.InitialRows,
+                        MaxRows = field.MaxRows,
+                        MinRows = field.MinRows,
+                        Options = field.Options,
+                        Required = field.Required,
+                        Max = field.Max,
+                        Min = field.Min,
+                        Width = field.Width,
+                        RequiresRemarks = field.RequiresRemarks,
+                        Order = field.Order,
+                        ResultDecimal = field.ResultDecimal,
+                        OptionsJson = field.OptionsJson,
+                        RemarkTriggersJson = field.RemarkTriggersJson,
+                        RequireRemarksOutOfRange = field.RequireRemarksOutOfRange,
+                        RequiresRemarksJson = field.RequiresRemarksJson,
+                        RemarkTriggers = field.RemarkTriggers?.Select(rt => new RemarkTrigger
+                        {
+                            Operator = rt.Operator,
+                            Value = rt.Value
+                        }).ToList() ?? new List<RemarkTrigger>()
+                    };
 
-                _context.FormFields.Add(newField);
+                    _context.FormFields.Add(newField);
+                }
             }
+
 
             _context.FormApprovers.RemoveRange(existingForm.Approvers);
             foreach (var approver in form.Approvers)
@@ -324,14 +371,17 @@ namespace productionLine.Server.Controllers
         public async Task<IActionResult> SubmitForm(int formId, [FromBody] FormSubmissionDTO submissionDTO)
         {
             if (formId != submissionDTO.FormId)
-            {
                 return BadRequest("Form ID in URL does not match the one in submission data");
-            }
 
             if (submissionDTO.SubmissionData == null || !submissionDTO.SubmissionData.Any())
-            {
                 return BadRequest("No form data provided");
-            }
+
+            var form = await _context.Forms
+                .Include(f => f.Approvers.OrderBy(a => a.Level))
+                .FirstOrDefaultAsync(f => f.Id == formId);
+
+            if (form == null)
+                return NotFound("Form not found");
 
             FormSubmission formSubmission;
 
@@ -340,36 +390,73 @@ namespace productionLine.Server.Controllers
             {
                 formSubmission = await _context.FormSubmissions
                     .Include(s => s.SubmissionData)
+                    .Include(s => s.Approvals)
                     .FirstOrDefaultAsync(s => s.Id == submissionDTO.SubmissionId.Value);
 
                 if (formSubmission == null)
                     return NotFound("Submission not found");
 
-                // Replace previous submission data
+                // Clear previous data
                 _context.FormSubmissionData.RemoveRange(formSubmission.SubmissionData);
+                _context.FormApprovals.RemoveRange(formSubmission.Approvals);
 
+                formSubmission.SubmittedAt = DateTime.Now;
                 formSubmission.SubmissionData = new List<FormSubmissionData>();
-                formSubmission.SubmittedAt = DateTime.Now; // optional: update timestamp
+                formSubmission.Approvals = new List<FormApproval>();
             }
             else
             {
                 // ✅ CREATE mode
                 formSubmission = new FormSubmission
                 {
-                    FormId = submissionDTO.FormId,
+                    FormId = formId,
                     SubmittedAt = DateTime.Now,
-                    SubmissionData = new List<FormSubmissionData>()
+                    SubmissionData = new List<FormSubmissionData>(),
+                    Approvals = new List<FormApproval>()
                 };
                 _context.FormSubmissions.Add(formSubmission);
             }
 
-            // Add field data
+            // Add form field data
             foreach (var data in submissionDTO.SubmissionData)
             {
                 formSubmission.SubmissionData.Add(new FormSubmissionData
                 {
                     FieldLabel = data.FieldLabel,
                     FieldValue = data.FieldValue
+                });
+            }
+
+            await _context.SaveChangesAsync(); // Save to generate formSubmission.Id
+
+            // 🔥 Handle approvals
+            if (form.Approvers == null || form.Approvers.Count == 0)
+            {
+                // Auto-approve if no approvers exist
+                formSubmission.Approvals.Add(new FormApproval
+                {
+                    ApprovalLevel = 0,
+                    ApproverId = 0,
+                    ApproverName = "System Approval",
+                    Status = "Approved",
+                    Comments = "Auto Approved",
+                    ApprovedAt = DateTime.Now // ✅ Required!
+                });
+            }
+            else
+            {
+                // Add Level 1 approver only with Pending status
+                var firstApprover = form.Approvers.First();
+                formSubmission.Approvals.Add(new FormApproval
+                {
+                    FormSubmissionId = formSubmission.Id,
+                    ApprovalLevel = 1,
+                    ApproverId = 1,
+                    ApproverName = "User Submission",
+                    Status = "_",
+                    Comments = "User Submission",
+                    ApprovedAt = DateTime.Now
+
                 });
             }
 
@@ -383,6 +470,7 @@ namespace productionLine.Server.Controllers
                     : "Form submitted successfully"
             });
         }
+
 
 
         // Assuming you have a controller like [Route("api/forms")]

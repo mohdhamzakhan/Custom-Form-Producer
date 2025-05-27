@@ -166,6 +166,9 @@ namespace productionLine.Server.Model
         [JsonPropertyName("endTime")]
         public string? EndTime { get; set; }
 
+        public ICollection<RemarkTrigger> RemarkTriggers { get; set; } = new List<RemarkTrigger>();
+
+
     }
 
 }

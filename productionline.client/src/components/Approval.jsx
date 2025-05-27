@@ -70,8 +70,9 @@ export default function ApprovalPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(approvalData),
             });
-
+            console.log(response)
             const data = await response.text();
+            console.log(data)
 
             if (!response.ok) {
                 console.error("Server responded with:", data);
@@ -220,6 +221,7 @@ export default function ApprovalPage() {
                     <div className="mt-6">
                         <h3 className="text-lg font-semibold mb-2">Important Fields</h3>
                         <div className="space-y-2">
+                            {console.log(processedData) }
                             {processedData.slice(0, 5).map((item, index) => (
                                 <div key={index}>
                                     <p className="text-gray-700">

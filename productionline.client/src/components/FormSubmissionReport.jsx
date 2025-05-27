@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "./Layout"
-import {APP_CONSTANTS} from "./store";
+import { APP_CONSTANTS } from "./store";
 
 export default function FormSubmissionReport() {
     const [forms, setForms] = useState([]);
@@ -131,6 +131,7 @@ export default function FormSubmissionReport() {
             });
         });
 
+
         return Object.values(grouped);
     };
 
@@ -230,7 +231,6 @@ export default function FormSubmissionReport() {
     function canUserApprove(submission, user) {
         // Make sure we have all the required data
         console.log(submission)
-        console.log(user)
         if (!submission || !submission.form || !submission.form.approvers || !user || user.length === 0) {
             return false;
         }
@@ -297,7 +297,7 @@ export default function FormSubmissionReport() {
 
 
 
-    
+
 
 
     return (
@@ -367,7 +367,11 @@ export default function FormSubmissionReport() {
                                             <td className="py-2 px-4 border-b">{formatDate(submission.submittedAt)}</td>
 
                                             <td className="py-2 px-4 border-b">
-                                                {canUserApprove(submission, user) ? (
+                                                {submission.approvals.length === 0 ? (
+                                                    <span className="text-blue-500 font-semibold">Not yet sent for approval</span>
+                                                ) : submission.approvals.length === 1 && submission.approvals[0].approverName === "System Approval" ? (
+                                                    <span className="text-green-600 font-semibold">Auto Approved</span>
+                                                ) : canUserApprove(submission, user) ? (
                                                     <button
                                                         onClick={() => navigate(`/submissions/${submission.id}/approve`)}
                                                         className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-sm"
@@ -391,6 +395,7 @@ export default function FormSubmissionReport() {
                                                     View Details
                                                 </button>
                                             </td>
+
 
 
 
