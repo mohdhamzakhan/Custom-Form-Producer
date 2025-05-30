@@ -304,7 +304,7 @@ namespace productionLine.Server.Controllers
                 .Include(f => f.Fields)
                 .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
                 .ThenInclude(field => field.RemarkTriggers)
-                .FirstOrDefaultAsync(f => f.FormLink == formLink);
+                .FirstOrDefaultAsync(f => f.FormLink.ToLower() == formLink.ToLower());
 
             if (form == null)
                 return NotFound("Form not found.");
@@ -445,20 +445,20 @@ namespace productionLine.Server.Controllers
             }
             else
             {
-                // Add Level 1 approver only with Pending status
-                var firstApprover = form.Approvers.First();
-                formSubmission.Approvals.Add(new FormApproval
+                // Add all approvers with status Pending
+                foreach (var approver in form.Approvers)
                 {
-                    FormSubmissionId = formSubmission.Id,
-                    ApprovalLevel = 1,
-                    ApproverId = 1,
-                    ApproverName = "User Submission",
-                    Status = "_",
-                    Comments = "User Submission",
-                    ApprovedAt = DateTime.Now
-
-                });
+                    formSubmission.Approvals.Add(new FormApproval
+                    {
+                        FormSubmissionId = formSubmission.Id,
+                        ApprovalLevel = approver.Level,
+                        ApproverId = 1, // Use actual ID if available
+                        ApproverName = approver.Name,
+                        Status = "Pending"
+                    });
+                }
             }
+
 
             await _context.SaveChangesAsync();
 
@@ -739,18 +739,26 @@ namespace productionLine.Server.Controllers
                     return NotFound("Submission not found");
 
                 // Add approval record
-                var approval = new FormApproval
-                {
-                    FormSubmissionId = submissionId,
-                    ApproverId = approvalDto.ApproverId,
-                    ApproverName = approvalDto.ApproverName,
-                    ApprovalLevel = approvalDto.Level,
-                    ApprovedAt = DateTime.Now,
-                    Comments = approvalDto.Comments,
-                    Status = approvalDto.Status // "Approved" or "Rejected"
-                };
+                // Find existing pending approval for the same level and approver
+                var existingApproval = await _context.FormApprovals
+                    .FirstOrDefaultAsync(a =>
+                        a.FormSubmissionId == submissionId &&
+                        a.ApprovalLevel == approvalDto.Level &&
+                        a.ApproverName == approvalDto.ApproverName &&
+                        a.Status == "Pending");
 
-                _context.FormApprovals.Add(approval);
+                if (existingApproval != null)
+                {
+                    existingApproval.Status = approvalDto.Status;
+                    existingApproval.ApprovedAt = DateTime.Now;
+                    existingApproval.Comments = approvalDto.Comments;
+                }
+                else
+                {
+                    // If no existing approval found, optionally add a fallback (or return error)
+                    return BadRequest("No pending approval found for this approver at this level.");
+                }
+
                 await _context.SaveChangesAsync();
 
                 return Ok(new { message = "Approval action recorded successfully" });
@@ -780,5 +788,21 @@ namespace productionLine.Server.Controllers
 
             return Ok(fields);
         }
+
+        [HttpPost("pending-submissions")]
+        public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
+        {
+            var pendingSubmissions = await _context.FormSubmissions
+                .Include(s => s.Form)
+                    .ThenInclude(f => f.Approvers)
+                .Include(s => s.Approvals)
+                .Include(s => s.SubmissionData)
+                .Where(s => s.Approvals.Any(a =>
+                    userNames.Contains(a.ApproverName) && a.Status == "Pending"))
+                .ToListAsync();
+
+            return Ok(pendingSubmissions);
+        }
+
     }
 }

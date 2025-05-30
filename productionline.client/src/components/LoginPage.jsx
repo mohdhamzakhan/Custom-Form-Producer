@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import {APP_CONSTANTS} from "./store";
+import { APP_CONSTANTS } from "./store";
 
 function LoginPage() {
     const [username, setUsername] = useState("");
@@ -35,23 +35,28 @@ function LoginPage() {
 
             if (response.ok) {
                 const data = await response.json();
+
                 // Store token
                 localStorage.setItem("meaiFormToken", data.token);
 
-                // Create and store user object, adapting to the response structure
+                // Add expiry timestamp (e.g. 24 hours = 86400000 ms)
+                const expiry = Date.now() + 86400000; // 1 day
+
                 const userData = {
                     username: data.username || username,
                     groups: data.groups || [],
-                    name: data.username || username // Using username as name since we don't have full name
+                    name: data.username || username,
+                    expiry: expiry // 👈 added expiry
                 };
 
                 localStorage.setItem("user", JSON.stringify(userData));
                 console.log("Login successful, user data stored:", userData);
-                const params = new URLSearchParams(location.search);
-                const redirectUrl = params.get('redirect') || '/mainpage'; // Default to home if no redirect param
 
+                const params = new URLSearchParams(location.search);
+                const redirectUrl = params.get('redirect') || '/mainpage';
                 navigate(redirectUrl);
-            } else {
+            }
+            else {
                 const errorData = await response.json();
                 setError(errorData.message || "Invalid username or password");
             }

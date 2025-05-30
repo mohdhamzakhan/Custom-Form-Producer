@@ -136,7 +136,7 @@ namespace productionLine.Server.Controllers
                                 .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
                 .ThenInclude(field => field.RemarkTriggers) // Load RemarkTriggers for each field
                 .Include(f => f.Approvers.OrderBy(a => a.Level)) // 👈 Include and order approvers
-                .FirstOrDefaultAsync(f => f.FormLink == formLink);
+                .FirstOrDefaultAsync(f => f.FormLink.ToLower() == formLink.ToLower());
 
             if (form == null)
                 return NotFound("Form not found.");

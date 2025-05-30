@@ -16,13 +16,25 @@ export default function ApprovalPage() {
     // Fetch current user
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
+
         if (storedUserData && storedUserData !== "undefined") {
             const storedUser = JSON.parse(storedUserData);
-            setUser(storedUser);
+
+            // ⏳ Check if session has expired
+            if (storedUser.expiry && Date.now() > storedUser.expiry) {
+                // Session expired
+                localStorage.removeItem("user");
+                localStorage.removeItem("meaiFormToken");
+                navigate(`/login?expired=true`);
+            } else {
+                const names = [storedUser.username, ...storedUser.groups];
+                setUser(names);
+            }
         } else {
             navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         }
-    }, [navigate]);
+    }, [navigate, location]);
+
 
     // Fetch submission + form details
     useEffect(() => {

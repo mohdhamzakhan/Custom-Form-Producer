@@ -1,8 +1,7 @@
-﻿import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+﻿import { useEffect, useState } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useParams } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
 
 export default function DynamicForm() {
@@ -96,6 +95,7 @@ export default function DynamicForm() {
 
         fetchFormData();
     }, []);
+
     useEffect(() => {
         if (!formData) return;
 
@@ -1026,64 +1026,83 @@ export default function DynamicForm() {
                                                             const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
 
                                                             return (
-                                                                <select
-                                                                    value={row[col.name] || ""}
-                                                                    onChange={(e) => {
-                                                                        const newValue = e.target.value;
-                                                                        const updatedRow = { ...row, [col.name]: newValue };
+                                                                <div>
+                                                                    <select
+                                                                        value={row[col.name] || ""}
+                                                                        onChange={(e) => {
+                                                                            const newValue = e.target.value;
+                                                                            const updatedRow = { ...row, [col.name]: newValue };
 
-                                                                        // Update the row with the new dependent dropdown value
-                                                                        handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
-                                                                    }}
-                                                                    disabled={!parentValue} // Disable if parent value is not selected
-                                                                    className="border rounded px-2 py-1 w-full"
-                                                                    style={{
-                                                                        color: col.textColor || "inherit",
-                                                                        backgroundColor: col.backgroundColor || "inherit"
-                                                                    }}
-                                                                >
-                                                                    <option value="">Select {col.name}</option>
-                                                                    {dependentOptions.map((opt, i) => (
-                                                                        <option key={i} value={opt}>
-                                                                            {opt}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
+                                                                            handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                        }}
+                                                                        disabled={!parentValue}
+                                                                        className="border rounded px-2 py-1 w-full"
+                                                                        style={{
+                                                                            color: col.textColor || "inherit",
+                                                                            backgroundColor: col.backgroundColor || "inherit"
+                                                                        }}
+                                                                    >
+                                                                        <option value="">Select {col.name}</option>
+                                                                        {dependentOptions.map((opt, i) => (
+                                                                            <option key={i} value={opt}>
+                                                                                {opt}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+
+                                                                    {row[col.name] && (
+                                                                        <div className="text-xs text-gray-600 mt-1">
+                                                                            You selected: <span className="font-semibold">{row[col.name]}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             );
+
                                                         }
 
                                                         if (col.type === "dropdown") {
                                                             return (
-                                                                <select
-                                                                    value={row[col.name] || ""}
-                                                                    onChange={(e) => {
-                                                                        const newValue = e.target.value;
-                                                                        const updatedRow = { ...row, [col.name]: newValue };
+                                                                <div>
+                                                                    <select
+                                                                        value={row[col.name] || ""}
+                                                                        onChange={(e) => {
+                                                                            const newValue = e.target.value;
+                                                                            const updatedRow = { ...row, [col.name]: newValue };
 
-                                                                        // Clear dependent fields
-                                                                        field.columns.forEach(depCol => {
-                                                                            if (depCol.type === "dependentDropdown" &&
-                                                                                depCol.parentColumn === col.name) {
-                                                                                updatedRow[depCol.name] = "";
-                                                                            }
-                                                                        });
+                                                                            // Clear dependent fields
+                                                                            field.columns.forEach(depCol => {
+                                                                                if (
+                                                                                    depCol.type === "dependentDropdown" &&
+                                                                                    depCol.parentColumn === col.name
+                                                                                ) {
+                                                                                    updatedRow[depCol.name] = "";
+                                                                                }
+                                                                            });
 
-                                                                        handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
-                                                                    }}
-                                                                    className="border rounded px-2 py-1 w-full"
-                                                                    style={{
-                                                                        color: col.textColor || "inherit",
-                                                                        backgroundColor: col.backgroundColor || "inherit"
-                                                                    }}
-                                                                >
-                                                                    <option value="">Select {col.name}</option>
-                                                                    {(col.options || []).map((opt, i) => (
-                                                                        <option key={i} value={opt}>
-                                                                            {opt}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
+                                                                            handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                        }}
+                                                                        className="border rounded px-2 py-1 w-full"
+                                                                        style={{
+                                                                            color: col.textColor || "inherit",
+                                                                            backgroundColor: col.backgroundColor || "inherit",
+                                                                        }}
+                                                                    >
+                                                                        <option value="">Select {col.name}</option>
+                                                                        {(col.options || []).map((opt, i) => (
+                                                                            <option key={i} value={opt}>
+                                                                                {opt}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+
+                                                                    {row[col.name] && (
+                                                                        <div className="text-xs text-gray-600 mt-1">
+                                                                            You selected: <span className="font-semibold">{row[col.name]}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             );
+
                                                         }
 
 

@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import Layout from "./Layout"
+import Layout from "./Layout";
 import { APP_CONSTANTS } from "./store";
 
 export default function FormSubmissionReport() {
@@ -11,31 +11,41 @@ export default function FormSubmissionReport() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [user, setUser] = useState(null);
+    const [viewMode, setViewMode] = useState("byForm");
+
     const navigate = useNavigate();
 
-    // Fetch available forms on component mount
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
+
         if (storedUserData && storedUserData !== "undefined") {
             const storedUser = JSON.parse(storedUserData);
-            const names = [storedUser.username, ...storedUser.groups]; // Combine user + groups
-            setUser(names);
+
+            // ⏳ Check if session has expired
+            if (storedUser.expiry && Date.now() > storedUser.expiry) {
+                // Session expired
+                localStorage.removeItem("user");
+                localStorage.removeItem("meaiFormToken");
+                navigate(`/login?expired=true`);
+            } else {
+                const names = [storedUser.username, ...storedUser.groups];
+                setUser(names);
+                fetchAllPendingSubmissions(names);
+            }
         } else {
             navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         }
-    }, [navigate, location]);  // <-- Add navigate and location here
+    }, [navigate, location]);
 
 
     useEffect(() => {
         const fetchForms = async () => {
-            if (!user) return;  // wait until user is loaded
+            if (!user) return;
 
             try {
                 const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForm`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(user)
                 });
 
@@ -47,24 +57,19 @@ export default function FormSubmissionReport() {
         };
 
         fetchForms();
-    }, [user]);  // <-- run when user is set
+    }, [user]);
 
-
-    // Fetch form definition when a form is selected
     useEffect(() => {
-        if (!selectedFormId) return;
+        if (!selectedFormId || viewMode !== "byForm") return;
 
         const fetchFormDefinition = async () => {
             setLoading(true);
             try {
                 const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForms/${selectedFormId}`);
-                if (!response.ok) throw new Error("Unable to retirve the data may be there is no submission");
+                if (!response.ok) throw new Error("Unable to retrieve form data");
+
                 const data = await response.json();
-
-
                 setFormDefinition(data);
-
-                // After getting the form definition, fetch submissions
                 fetchSubmissions(selectedFormId);
             } catch (err) {
                 setError(err.message || "Failed to load form definition");
@@ -75,7 +80,6 @@ export default function FormSubmissionReport() {
         fetchFormDefinition();
     }, [selectedFormId]);
 
-    // Fetch submissions for the selected form
     const fetchSubmissions = async (formId) => {
         try {
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/submissions`);
@@ -89,7 +93,23 @@ export default function FormSubmissionReport() {
         }
     };
 
-    // Handle form selection change
+    const fetchAllPendingSubmissions = async (userNames) => {
+        try {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/pending-submissions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(userNames)
+            });
+
+            if (!response.ok) throw new Error("Failed to fetch pending submissions");
+
+            const data = await response.json();
+            setSubmissions(data);
+        } catch (err) {
+            setError(err.message || "Failed to fetch pending approvals");
+        }
+    };
+
     const handleFormChange = (e) => {
         setSelectedFormId(e.target.value);
         setFormDefinition(null);
@@ -97,10 +117,8 @@ export default function FormSubmissionReport() {
         setError(null);
     };
 
-    // Group submission data by submission ID
     const groupSubmissionsBySubmissionId = () => {
         const grouped = {};
-
         submissions.forEach(submission => {
             if (!grouped[submission.id]) {
                 grouped[submission.id] = {
@@ -108,12 +126,11 @@ export default function FormSubmissionReport() {
                     submittedAt: submission.submittedAt,
                     data: {},
                     approvals: submission.approvals,
-                    form: submission.form  // Make sure this is included!
+                    form: submission.form
                 };
             }
 
             submission.submissionData.forEach(item => {
-                // Check if this is a remark field
                 if (item.fieldLabel.includes(' (Remark)')) {
                     const originalField = item.fieldLabel.replace(' (Remark)', '');
                     if (!grouped[submission.id].data[originalField]) {
@@ -131,172 +148,118 @@ export default function FormSubmissionReport() {
             });
         });
 
-
         return Object.values(grouped);
     };
 
-    // Format date for display
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
         return date.toLocaleString();
     };
 
-    // Get field label by ID
     const getFieldLabelById = (fieldId) => {
         if (!formDefinition || !formDefinition.fields) return fieldId;
-
         const field = formDefinition.fields.find(f => f.id === fieldId);
         return field ? field.label : fieldId;
     };
 
-    // View a specific submission in detail
     const viewSubmissionDetails = (submissionId) => {
         navigate(`/submissions/${submissionId}`);
     };
 
-    // Export submissions to CSV
     const exportToCSV = () => {
-        if (!submissions.length || !formDefinition) return;
+        if (!submissions.length || (viewMode === "byForm" && !formDefinition)) return;
 
         const groupedSubmissions = groupSubmissionsBySubmissionId();
-
-        // Get all unique field IDs across all submissions
         const allFieldIds = new Set();
+
         groupedSubmissions.forEach(submission => {
             Object.keys(submission.data).forEach(fieldId => {
                 allFieldIds.add(fieldId);
             });
         });
 
-        // Create CSV header
         const headers = ["Submission ID", "Submitted At", ...Array.from(allFieldIds).map(id => {
             const hasRemarks = groupedSubmissions.some(sub =>
-                sub.data[id] && sub.data[id].remark && sub.data[id].remark.trim() !== '');
-
+                sub.data[id]?.remark?.trim());
             return [
                 getFieldLabelById(id),
                 hasRemarks ? `${getFieldLabelById(id)} (Remarks)` : null
             ].filter(Boolean);
         }).flat()];
 
-        // Create CSV rows
         const rows = groupedSubmissions.map(submission => {
-            const row = [
-                submission.id,
-                formatDate(submission.submittedAt)
-            ];
-
-            // Add each field's value and remark (if any)
+            const row = [submission.id, formatDate(submission.submittedAt)];
             allFieldIds.forEach(fieldId => {
                 const fieldData = submission.data[fieldId] || { value: '', remark: '' };
                 row.push(fieldData.value);
-
-                // Check if any submission has a remark for this field
-                const hasRemarks = groupedSubmissions.some(sub =>
-                    sub.data[fieldId] && sub.data[fieldId].remark && sub.data[fieldId].remark.trim() !== '');
-
-                if (hasRemarks) {
-                    row.push(fieldData.remark);
-                }
+                const hasRemarks = groupedSubmissions.some(sub => sub.data[fieldId]?.remark?.trim());
+                if (hasRemarks) row.push(fieldData.remark);
             });
-
             return row;
         });
 
-        // Combine header and rows
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.join(','))
-        ].join('\n');
-
-        // Create and download the CSV file
+        const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', `${formDefinition.name}_submissions.csv`);
+        link.setAttribute('download', `${formDefinition?.name || "submissions"}_submissions.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     };
+
     const hasUserApproved = (submission) => {
         if (!submission.approvals || !user || user.length === 0) return false;
-
         return submission.approvals.some(approval =>
             user.includes(approval.approverName) && approval.status === "Approved"
         );
     };
 
     function canUserApprove(submission, user) {
-        // Make sure we have all the required data
-        console.log(submission)
-        if (!submission || !submission.form || !submission.form.approvers || !user || user.length === 0) {
-            return false;
-        }
+        if (!submission?.approvals || !user?.length) return false;
 
-        const formApprovers = submission.form.approvers || [];
-        const approvals = submission.approvals || [];
+        const formApprovers = submission.approvals.map(a => ({
+            name: a.approverName,
+            level: a.approvalLevel
+        }));
+        const approvals = submission.approvals;
 
-        // First, identify if the current user is an approver (either by username or group)
-        // user[0] is the username, the rest are groups
         const username = user[0];
         const userGroups = user.slice(1);
 
-        // Find if the user is an approver (either directly or via group)
         const matchingApprover = formApprovers.find(a =>
             a.name === username || userGroups.includes(a.name)
         );
-
-        if (!matchingApprover) {
-            return false; // User is not an approver
-        }
+        if (!matchingApprover) return false;
 
         const userLevel = matchingApprover.level;
 
-        // Check if the user has already approved this submission
-        const hasAlreadyApproved = approvals.some(approval =>
-            (approval.approverName === username || userGroups.includes(approval.approverName)) &&
-            approval.status === "Approved"
+        // ✅ Skip if already fully approved
+        const allApproved = approvals.every(a => a.status === "Approved");
+        if (allApproved) return false;
+
+        const hasAlreadyApproved = approvals.some(a =>
+            (a.approverName === username || userGroups.includes(a.approverName)) &&
+            a.status === "Approved"
         );
+        if (hasAlreadyApproved) return false;
 
-        if (hasAlreadyApproved) {
-            return false;
-        }
+        if (approvals.some(a => a.status === "Rejected")) return false;
 
-        // Check if any submission has been rejected
-        const hasBeenRejected = approvals.some(approval => approval.status === "Rejected");
-        if (hasBeenRejected) {
-            return false;
-        }
+        if (userLevel === 1) return true;
 
-        // For level 1, they can always approve if they haven't already
-        if (userLevel === 1) {
-            return true;
-        }
-
-        // For higher levels, check if ALL previous levels have at least one approval
         for (let level = 1; level < userLevel; level++) {
-            // Check if this level has at least one approval
-            const levelHasApproval = approvals.some(approval => {
-                // Find the approver that made this approval
-                const approvingUser = formApprovers.find(a => a.name === approval.approverName);
-                // Check if they are of the correct level and have approved
-                return approvingUser && approvingUser.level === level && approval.status === "Approved";
+            const levelHasApproval = approvals.some(a => {
+                const approvingUser = formApprovers.find(ap => ap.name === a.approverName);
+                return approvingUser && approvingUser.level === level && a.status === "Approved";
             });
-
-            if (!levelHasApproval) {
-                return false; // Missing approval for a previous level
-            }
+            if (!levelHasApproval) return false;
         }
 
-        // If we got here, all previous levels are approved and user hasn't approved yet
         return true;
     }
-
-
-
-
 
 
 
@@ -310,53 +273,79 @@ export default function FormSubmissionReport() {
                 </div>
             )}
 
-            <div className="mb-6">
-                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="formSelect">
-                    Select Form
-                </label>
-                <select
-                    id="formSelect"
-                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    value={selectedFormId}
-                    onChange={handleFormChange}
-                >
-                    <option value="">-- Select a form --</option>
-                    {forms.map(form => (
-                        <option key={form.id} value={form.id}>
-                            {form.name}
-                        </option>
-                    ))}
-                </select>
+            <div className="mb-6 border-b border-gray-300">
+                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${viewMode === "byForm"
+                            ? "border-blue-500 text-blue-600"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
+                        onClick={() => setViewMode("byForm")}
+                    >
+                        View by Form
+                    </button>
+                    <button
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${viewMode === "pendingOnly"
+                            ? "border-blue-500 text-blue-600"
+                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
+                        onClick={() => {
+                            setSelectedFormId("");
+                            setFormDefinition(null);
+                            setSubmissions([]);
+                            setError(null);
+                            setViewMode("pendingOnly");
+                            fetchAllPendingSubmissions(user);
+                        }}
+                    >
+                        My Pending Approvals
+                    </button>
+                </nav>
             </div>
 
-            {loading ? (
-                <div className="flex justify-center">
-                    <p>Loading...</p>
+            {viewMode === "byForm" && (
+                <div className="mb-6">
+                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="formSelect">
+                        Select Form
+                    </label>
+                    <select
+                        id="formSelect"
+                        className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
+                        value={selectedFormId}
+                        onChange={handleFormChange}
+                    >
+                        <option value="">-- Select a form --</option>
+                        {forms.map(form => (
+                            <option key={form.id} value={form.id}>{form.name}</option>
+                        ))}
+                    </select>
                 </div>
-            ) : selectedFormId && formDefinition ? (
+            )}
+
+            {loading ? (
+                <div className="flex justify-center"><p>Loading...</p></div>
+            ) : (viewMode === "pendingOnly" || (selectedFormId && formDefinition)) ? (
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-semibold">{formDefinition.name} Submissions</h2>
-                        {submissions.length > 0 && (
-                            <button
-                                onClick={exportToCSV}
-                                className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
-                            >
+                        <h2 className="text-xl font-semibold">
+                            {viewMode === "byForm" ? formDefinition?.name : "Pending Submissions"}
+                        </h2>
+                        {viewMode === "byForm" && submissions.length > 0 && formDefinition && (
+                            <button onClick={exportToCSV} className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
                                 Export to CSV
                             </button>
                         )}
                     </div>
 
                     {submissions.length === 0 ? (
-                        <p>No submissions found for this form.</p>
+                        <p>No submissions found.</p>
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="min-w-full bg-white border border-gray-200">
-                                <thead>
-                                    <tr className="bg-gray-100">
+                                <thead className="bg-gray-100">
+                                    <tr>
                                         <th className="text-left py-3 px-4 border-b">Submission ID</th>
                                         <th className="text-left py-3 px-4 border-b">Submitted At</th>
-                                        {/*<th className="text-left py-3 px-4 border-b">Fields</th>*/}
                                         <th className="text-left py-3 px-4 border-b">Actions</th>
                                     </tr>
                                 </thead>
@@ -365,12 +354,17 @@ export default function FormSubmissionReport() {
                                         <tr key={submission.id} className="hover:bg-gray-50">
                                             <td className="py-2 px-4 border-b">{submission.id}</td>
                                             <td className="py-2 px-4 border-b">{formatDate(submission.submittedAt)}</td>
-
                                             <td className="py-2 px-4 border-b">
                                                 {submission.approvals.length === 0 ? (
                                                     <span className="text-blue-500 font-semibold">Not yet sent for approval</span>
                                                 ) : submission.approvals.length === 1 && submission.approvals[0].approverName === "System Approval" ? (
                                                     <span className="text-green-600 font-semibold">Auto Approved</span>
+                                                ) : submission.approvals.every(a => a.status === "Approved") ? (
+                                                    <span className="text-green-600 font-semibold">Approved</span>
+                                                ) : submission.approvals.some(a => a.status === "Rejected") ? (
+                                                    <span className="text-red-600 font-semibold">
+                                                        Rejected by {submission.approvals.find(a => a.status === "Rejected")?.approverName}
+                                                    </span>
                                                 ) : canUserApprove(submission, user) ? (
                                                     <button
                                                         onClick={() => navigate(`/submissions/${submission.id}/approve`)}
@@ -378,15 +372,14 @@ export default function FormSubmissionReport() {
                                                     >
                                                         Approve
                                                     </button>
-                                                ) : hasUserApproved(submission) ? (
-                                                    <span className="text-green-600 font-semibold">Approved</span>
-                                                ) : submission.approvals.some(a => a.status === "Rejected") ? (
-                                                    <span className="text-red-600 font-semibold">
-                                                        Rejected by {submission.approvals.find(a => a.status === "Rejected")?.approverName}
+                                                ) : submission.approvals.some(a => a.status === "Pending") ? (
+                                                    <span className="text-yellow-600 font-semibold">
+                                                        Pending at {submission.approvals.find(a => a.status === "Pending")?.approverName || 'next approver'}
                                                     </span>
                                                 ) : (
                                                     <span className="text-gray-400 font-semibold">Waiting for previous approval</span>
                                                 )}
+
 
                                                 <button
                                                     onClick={() => viewSubmissionDetails(submission.id)}
@@ -395,10 +388,6 @@ export default function FormSubmissionReport() {
                                                     View Details
                                                 </button>
                                             </td>
-
-
-
-
                                         </tr>
                                     ))}
                                 </tbody>

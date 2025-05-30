@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Configuration;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -167,8 +168,5 @@ namespace productionLine.Server.Model
         public string? EndTime { get; set; }
 
         public ICollection<RemarkTrigger> RemarkTriggers { get; set; } = new List<RemarkTrigger>();
-
-
     }
-
 }

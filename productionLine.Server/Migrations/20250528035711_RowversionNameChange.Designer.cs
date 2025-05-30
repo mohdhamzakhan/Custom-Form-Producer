@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250528035711_RowversionNameChange")]
+    partial class RowversionNameChange
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -68,7 +71,7 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("APPROVALLEVEL");
 
-                    b.Property<DateTime?>("ApprovedAt")
+                    b.Property<DateTime>("ApprovedAt")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("APPROVALAT");
 
@@ -82,6 +85,7 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("APPROVERNAME");
 
                     b.Property<string>("Comments")
+                        .IsRequired()
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("COMMENTS");
 

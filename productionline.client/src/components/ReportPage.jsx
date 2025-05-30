@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import DatePicker from "react-datepicker";
 import { useNavigate } from "react-router-dom";
 import "react-datepicker/dist/react-datepicker.css";
@@ -17,14 +17,25 @@ export default function ReportPage() {
 
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
+
         if (storedUserData && storedUserData !== "undefined") {
             const storedUser = JSON.parse(storedUserData);
-            const names = [storedUser.username, ...storedUser.groups]; // Combine user + groups
-            setUser(names);
+
+            // ⏳ Check if session has expired
+            if (storedUser.expiry && Date.now() > storedUser.expiry) {
+                // Session expired
+                localStorage.removeItem("user");
+                localStorage.removeItem("meaiFormToken");
+                navigate(`/login?expired=true`);
+            } else {
+                const names = [storedUser.username, ...storedUser.groups];
+                setUser(names);
+            }
         } else {
             navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         }
-    }, [navigate, location]);  // <-- Add navigate and location here
+    }, [navigate, location]);
+
 
     useEffect(() => {
         // Fetch available forms to populate dropdown

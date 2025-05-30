@@ -47,14 +47,8 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
-                <Route
-                    path="/form/:formId"
-                    element={
-                        <ProtectedRoute>        
-                            <DynamicForm />
-                        </ProtectedRoute>
-                    }
-                />
+                <Route path="/form/:formId" element={<DynamicForm />} />
+
                 <Route
                     path="/reports"
                     element={

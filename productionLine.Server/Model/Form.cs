@@ -23,6 +23,7 @@ namespace productionLine.Server.Model
         public string FormLink { get; set; }  // Unique link to access the form
 
         [Timestamp]
+        [Column("ROWVERSION")]
         public byte[] RowVersion { get; set; }
 
         [NotMapped]

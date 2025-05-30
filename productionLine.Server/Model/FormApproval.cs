@@ -26,10 +26,10 @@ namespace productionLine.Server.Model
         public int ApprovalLevel { get; set; }  // Optional: for multi-level approvals
 
         [Column("APPROVALAT")]
-        public DateTime ApprovedAt { get; set; }
+        public DateTime? ApprovedAt { get; set; }
 
         [Column("COMMENTS")]
-        public string Comments { get; set; }
+        public string? Comments { get; set; }
 
         [Column("STATUS")]
         public string Status { get; set; }  // Approved / Rejected
