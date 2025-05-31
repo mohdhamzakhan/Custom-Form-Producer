@@ -1,11 +1,12 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
-import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown, Copy } from "lucide-react";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import Layout from "./Layout"
 import { useParams } from 'react-router-dom';
 import useAdSearch from "./hooks/useAdSearch";
-import {APP_CONSTANTS} from "./store";
+import { APP_CONSTANTS } from "./store";
+import DateFieldDesigner from './DateFieldDesigner';
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -35,11 +36,17 @@ const FormBuilder = () => {
     const { searchResults, isSearching, error, searchAdDirectory } = useAdSearch();
 
 
+    // New state for copy format feature
+    const [showCopyFormat, setShowCopyFormat] = useState(false);
+    const [copyFormLink, setCopyFormLink] = useState("");
+    const [availableForms, setAvailableForms] = useState([]);
+    const [loadingForms, setLoadingForms] = useState(false);
 
 
 
     useEffect(() => {
         fetchFormLayout();
+        fetchAvailableForms();
     }, []);
 
     useEffect(() => {
@@ -60,7 +67,92 @@ const FormBuilder = () => {
     }, [searchTerm, searchAdDirectory]);
 
 
+    const fetchAvailableForms = async () => {
+        setLoadingForms(true);
+        try {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms`);
+            if (response.ok) {
+                const forms = await response.json();
+                setAvailableForms(forms);
+            }
+        } catch (error) {
+            console.error("Error fetching available forms:", error);
+        } finally {
+            setLoadingForms(false);
+        }
+    };
 
+    const copyFormatFromForm = async (sourceFormLink) => {
+        if (!sourceFormLink) {
+            alert("Please enter a form link to copy from.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/form-builder/link/${encodeURIComponent(sourceFormLink)}`);
+            let data;
+
+            try {
+                data = await response.json();
+            } catch (jsonErr) {
+                const text = await response.text();
+                console.error("Non-JSON error from API:", text);
+                alert("Failed to load form format. Check console for details.");
+                return;
+            }
+
+            // Transform the fields similar to fetchFormLayout but generate new IDs
+            const transformedFields = (data.fields || []).map((field, index) => {
+                const isGrid = field.type === "grid";
+
+                return {
+                    ...field,
+                    id: generateGuid(), // Generate new ID to avoid conflicts
+                    order: index, // Reset order
+                    columns: isGrid
+                        ? (field.column || field.columns || []).map(col => ({
+                            ...col,
+                            type: col.type || "textbox",
+                            name: col.name || "",
+                            id: generateGuid(), // New ID for columns too
+                            width: col.width || "1fr",
+                            options: col.options || [],
+                            textColor: col.textColor || "#000000",
+                            backgroundColor: col.backgroundColor || "#ffffff",
+                            formula: col.formula || "",
+                            min: col.min ?? null,
+                            max: col.max ?? null,
+                            decimal: col.decimal ?? null,
+                            parentColumn: col.parentColumn || "",
+                            dependentOptions: col.dependentOptions || {},
+                            startTime: col.startTime || "",
+                            endTime: col.endTime || ""
+                        }))
+                        : undefined,
+                    column: undefined,
+                    formula: field.formula || "",
+                    resultDecimal: field.resultDecimal || false,
+                    fieldReferences: field.fieldReferencesJson || [],
+                    remarkTriggers: field.remarkTriggers || []
+                };
+            });
+
+            // Sort fields by their order property
+            const sortedFields = transformedFields.sort((a, b) => a.order - b.order);
+
+            // Copy the format but keep current form name and ID
+            setFormFields(sortedFields);
+            setApprovers(data.approvers || []); // Optionally copy approvers too
+
+            alert(`Successfully copied format from "${data.name}". You can now modify and save as a new form.`);
+            setShowCopyFormat(false);
+            setCopyFormLink("");
+
+        } catch (error) {
+            console.error("Error copying form format:", error);
+            alert("Failed to copy form format from server.");
+        }
+    };
 
     const moveField = (dragIndex, hoverIndex) => {
         setFormFields((prevFields) => {
@@ -349,6 +441,9 @@ const FormBuilder = () => {
                 maxRows: 10,
                 initialRows: 3,
             }),
+            ...(type === "date" && {
+                showDayInTextbox: false, // user-controlled option
+            }),
         };
         setFormFields([...formFields, newField]);
     };
@@ -398,6 +493,14 @@ const FormBuilder = () => {
                                 onChange={(e) => setFormName(e.target.value)}
                                 className="w-1/2 py-2 px-3 border rounded text-lg"
                             />
+
+                            <button
+                                onClick={() => setShowCopyFormat(!showCopyFormat)}
+                                className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                            >
+                                <Copy size={16} />
+                                Copy Format
+                            </button>
                             <button
                                 onClick={saveForm}
                                 className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
@@ -407,6 +510,61 @@ const FormBuilder = () => {
                             </button>
                         </div>
                     </div>
+
+                    {/* Copy Format Section */}
+                    {showCopyFormat && (
+                        <div className="mb-6 bg-green-50 p-4 rounded border">
+                            <h3 className="text-lg font-semibold mb-3">Copy Format from Existing Form</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Enter Form Link:</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={copyFormLink}
+                                            onChange={(e) => setCopyFormLink(e.target.value)}
+                                            placeholder="Enter form link or form name"
+                                            className="flex-1 px-3 py-2 border rounded"
+                                        />
+                                        <button
+                                            onClick={() => copyFormatFromForm(copyFormLink)}
+                                            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                                        >
+                                            Copy
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Available Forms Dropdown */}
+                                {availableForms.length > 0 && (
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Or select from existing forms:</label>
+                                        <select
+                                            value=""
+                                            onChange={(e) => {
+                                                if (e.target.value) {
+                                                    setCopyFormLink(e.target.value);
+                                                }
+                                            }}
+                                            className="w-full px-3 py-2 border rounded"
+                                        >
+                                            <option value="">Select a form to copy...</option>
+                                            {availableForms.map(form => (
+                                                <option key={form.id} value={form.formLink}>
+                                                    {form.name} ({form.formLink})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div className="text-sm text-gray-600">
+                                    <strong>Note:</strong> This will copy the field structure and configuration from another form.
+                                    Your current fields will be replaced. The form name and ID will remain unchanged.
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Approval Hierarchy Section */}
                     <div className="mb-6">
@@ -690,6 +848,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
         updateField({ remarkTriggers: updatedTriggers });
     };
 
+
+
     return (
         <div
             ref={ref}
@@ -770,6 +930,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </p>
                 </div>
             )}
+
+           
 
             {field.type === "grid" && (
                 <div className="mt-4">
@@ -1315,6 +1477,22 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 </div>
                             ))}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {field.type === "date" && (
+                <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                        <input
+                            type="checkbox"
+                            checked={field.showDayInTextbox || false}
+                            onChange={(e) => updateField({ showDayInTextbox: e.target.checked })}
+                            className="h-4 w-4"
+                        />
+                        <label className="text-sm text-gray-600">
+                            Show day in textbox
+                        </label>
                     </div>
                 </div>
             )}

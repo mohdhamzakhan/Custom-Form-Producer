@@ -21,6 +21,15 @@ namespace productionLine.Server.Controllers
             _context = context;
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetAllFormName()
+        {
+            var forms = await _context.Forms
+    .Select(f => new { f.Id, f.Name, f.FormLink })
+    .ToListAsync();
+            return Ok(forms);
+        }
+
         // ✅ Save a new form (with unique link)
         [HttpPost]
         public async Task<IActionResult> CreateForm([FromBody] Form form)

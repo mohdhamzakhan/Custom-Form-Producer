@@ -639,6 +639,11 @@ export default function DynamicForm() {
         setEditingSubmissionId(null);
     };
 
+    const getDayName = (date) => {
+        if (!date) return "";
+        return date.toLocaleDateString(undefined, { weekday: "long" });
+    };
+
 
     // Render different field types
     const renderField = (field) => {
@@ -850,22 +855,37 @@ export default function DynamicForm() {
                             {field.label}{" "}
                             {field.required && <span className="text-red-500">*</span>}
                         </label>
-                        <DatePicker
-                            className="border p-2 w-full"
-                            selected={formValues[field.id] || null}
-                            onChange={(date) =>
-                                handleInputChange(field.id, date, field.type, field)
-                            }
-                            dateFormat="dd/MM/yyyy"
-                            placeholderText="DD/MM/YYYY"
-                        />
+
+                        {/* Wrap datepicker and day textbox in a vertical flex container */}
+                        <div className="flex flex-col gap-1">
+                            <DatePicker
+                                className="border p-2 w-full"
+                                selected={formValues[field.id] || null}
+                                onChange={(date) =>
+                                    handleInputChange(field.id, date, field.type, field)
+                                }
+                                dateFormat="dd/MM/yyyy"
+                                placeholderText="DD/MM/YYYY"
+                            />
+
+                            <input
+                                type="text"
+                                className="border p-1 w-24 text-center bg-gray-100 cursor-not-allowed text-sm"
+                                value={getDayName(formValues[field.id])}
+                                disabled
+                                aria-label="Day of the week"
+                            />
+                        </div>
+
                         {formErrors[field.id] && (
-                            <p className="text-red-500 text-xs mt-1">
-                                {formErrors[field.id]}
-                            </p>
+                            <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
                         )}
                     </div>
                 );
+
+
+
+
 
             case "radio":
                 return (
