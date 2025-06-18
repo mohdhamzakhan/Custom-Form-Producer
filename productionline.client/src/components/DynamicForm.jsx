@@ -446,67 +446,63 @@ export default function DynamicForm() {
     // Validate the form
     const validateForm = () => {
         const errors = {};
-
         if (!formData) return errors;
 
         formData.fields.forEach((field) => {
             const value = formValues[field.id];
 
-            // Check required fields
+            // General required field validation
             if (field.required) {
-                if (
-                    field.type === "checkbox" &&
-                    (!Array.isArray(value) || value.length === 0)
-                ) {
+                if (field.type === "checkbox" && (!Array.isArray(value) || value.length === 0)) {
                     errors[field.id] = `${field.label} is required`;
                 } else if (field.type === "radio" && (!value || value.trim() === "")) {
                     errors[field.id] = `${field.label} is required`;
-                } else if (
-                    (field.type === "dropdown" || field.type === "textbox") &&
-                    (!value || value.trim() === "")
-                ) {
+                } else if ((field.type === "dropdown" || field.type === "textbox") && (!value || value.trim() === "")) {
                     errors[field.id] = `${field.label} is required`;
                 } else if (field.type === "numeric" && value === "") {
+                    errors[field.id] = `${field.label} is required`;
+                } else if (field.type === "date" && !value) {
                     errors[field.id] = `${field.label} is required`;
                 }
             }
 
-            // Validate numeric fields
+            // Grid column-level required validation
+            if (field.type === "grid" && field.columns?.length > 0) {
+                const rows = formValues[field.id] || [];
+                rows.forEach((row, rowIndex) => {
+                    field.columns.forEach((col) => {
+                        if (col.required && (!row[col.name] || row[col.name].toString().trim() === "")) {
+                            const errorKey = `${field.id}_${rowIndex}_${col.name}`;
+                            errors[errorKey] = `${col.label || col.name} is required in row ${rowIndex + 1}`;
+                        }
+                    });
+                });
+            }
+
+            // Numeric constraints
             if (field.type === "numeric" && value !== "") {
                 const numValue = parseFloat(value);
-
                 if (isNaN(numValue)) {
                     errors[field.id] = "Please enter a valid number";
                 } else {
                     if (field.isDecimal === false && !Number.isInteger(numValue)) {
                         errors[field.id] = "Please enter a whole number";
                     }
-
                     if (field.min !== null && numValue < field.min) {
                         errors[field.id] = `Value must be at least ${field.min}`;
                     }
-
                     if (field.max !== null && numValue > field.max) {
                         errors[field.id] = `Value must be at most ${field.max}`;
                     }
                 }
-
-                // Check remark triggers for numeric fields
-                if (
-                    checkRemarkTriggers(field, value) &&
-                    (!remarks[field.id] || remarks[field.id].trim() === "")
-                ) {
-                    errors[`${field.id}_remark`] = "Remark is required for this value";
-                }
             }
 
-            // Check if remarks are required for selected values
-            if (
-                needsRemark(field, value) &&
-                (!remarks[field.id] || remarks[field.id].trim() === "")
-            ) {
-                errors[`${field.id}_remark`] =
-                    "Remark is required for selected option(s)";
+            // Remarks validation (as already handled)
+            if (checkRemarkTriggers(field, value) && (!remarks[field.id] || remarks[field.id].trim() === "")) {
+                errors[`${field.id}_remark`] = "Remark is required for this value";
+            }
+            if (needsRemark(field, value) && (!remarks[field.id] || remarks[field.id].trim() === "")) {
+                errors[`${field.id}_remark`] = "Remark is required for selected option(s)";
             }
         });
 
@@ -1127,15 +1123,22 @@ export default function DynamicForm() {
 
 
                                                         return (
-                                                            <input
-                                                                type="text"
-                                                                value={row[col.name] || ""}
-                                                                onChange={(e) =>
-                                                                    handleGridChange(field.id, rowIndex, col.name, e.target.value)
-                                                                }
-                                                                className="border rounded px-2 py-1 w-full"
-                                                                style={style}
-                                                            />
+                                                            <div>
+                                                                <input
+                                                                    type="text"
+                                                                    value={row[col.name] || ""}
+                                                                    onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                                    className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
+                                                                        }`}
+                                                                    style={style}
+                                                                />
+                                                                {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                    <p className="text-red-500 text-xs mt-1">
+                                                                        {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+
                                                         );
                                                     })()}
 

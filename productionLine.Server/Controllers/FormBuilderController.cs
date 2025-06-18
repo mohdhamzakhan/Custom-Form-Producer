@@ -20,103 +20,91 @@ namespace productionLine.Server.Controllers
         public async Task<IActionResult> SaveForm([FromBody] Form form)
         {
             if (form == null)
+            {
                 return BadRequest("Form is null.");
-
+            }
             if (form.Id > 0)
             {
-                // Update Existing Form
-                var existingForm = await _context.Forms
-                    .Include(f => f.Fields)
-                        .ThenInclude(f => f.Columns)
-                    .Include(f => f.Fields)
-                        .ThenInclude(f => f.RemarkTriggers)
-                    .Include(f => f.Approvers)
-                    .FirstOrDefaultAsync(f => f.Id == form.Id);
-
+                Form existingForm = await _context.Forms.Include((Form f) => f.Fields)
+                    .ThenInclude((FormField f) => f.Columns).Include((Form f) => f.Fields)
+                    .ThenInclude((FormField f) => f.RemarkTriggers)
+                    .Include((Form f) => f.Approvers)
+                    .FirstOrDefaultAsync((Form f) => f.Id == form.Id);
                 if (existingForm == null)
+                {
                     return NotFound("Form not found.");
-
+                }
                 existingForm.Name = form.Name;
                 existingForm.FormLink = form.FormLink;
-
-                // Remove existing fields and approvers
                 _context.FormFields.RemoveRange(existingForm.Fields);
                 _context.FormApprovers.RemoveRange(existingForm.Approvers);
-
-                // Reassign fields and approvers, resetting IDs
-                foreach (var field in form.Fields)
+                foreach (FormField field in form.Fields)
                 {
                     if (field.Id == Guid.Empty)
+                    {
                         field.Id = Guid.NewGuid();
-
+                    }
                     if (field.Columns != null)
                     {
-                        foreach (var col in field.Columns)
+                        foreach (GridColumn col in field.Columns)
                         {
                             if (string.IsNullOrWhiteSpace(col.Id))
+                            {
                                 col.Id = Guid.NewGuid().ToString();
+                            }
                         }
                     }
-
-                    // ✅ Important: Assign FK navigation for RemarkTriggers
-                    if (field.RemarkTriggers != null)
+                    if (field.RemarkTriggers == null)
                     {
-                        foreach (var trigger in field.RemarkTriggers)
-                        {
-                            trigger.FormField = field; // EF Core will use this to fill FormFieldId
-                        }
+                        continue;
+                    }
+                    foreach (RemarkTrigger trigger in field.RemarkTriggers)
+                    {
+                        trigger.FormField = field;
                     }
                 }
-
-
-                foreach (var approver in form.Approvers)
+                foreach (FormApprover approver in form.Approvers)
                 {
-                    approver.Id = 0; // Reset approver ID (assuming int)
+                    approver.Id = 0;
                     approver.FormId = existingForm.Id;
                 }
-
                 existingForm.Fields = form.Fields;
                 existingForm.Approvers = form.Approvers;
-
                 await _context.SaveChangesAsync();
                 return Ok(existingForm);
             }
-            else
+            foreach (FormField field2 in form.Fields)
             {
-                foreach (var field in form.Fields)
+                if (field2.Id == Guid.Empty)
                 {
-                    if (field.Id == Guid.Empty)
-                        field.Id = Guid.NewGuid();
-
-                    field.Form = form;
-
-                    if (field.Columns != null)
+                    field2.Id = Guid.NewGuid();
+                }
+                field2.Form = form;
+                if (field2.Columns != null)
+                {
+                    foreach (GridColumn col2 in field2.Columns)
                     {
-                        foreach (var col in field.Columns)
+                        if (string.IsNullOrWhiteSpace(col2.Id))
                         {
-                            if (string.IsNullOrWhiteSpace(col.Id))
-                                col.Id = Guid.NewGuid().ToString();
-                        }
-                    }
-
-                    // ✅ Fix here: Remove embedded trigger.FormField (to avoid duplicate tracking)
-                    if (field.RemarkTriggers != null)
-                    {
-                        foreach (var trigger in field.RemarkTriggers)
-                        {
-                            trigger.FormFieldId = field.Id;  // Set FK manually
-                            trigger.FormField = null;        // Avoid EF tracking conflict
+                            col2.Id = Guid.NewGuid().ToString();
                         }
                     }
                 }
-
-                _context.Forms.Add(form);
-
-                await _context.SaveChangesAsync();
-
-                return Ok(form);
+                if (field2.RemarkTriggers == null)
+                {
+                    continue;
+                }
+                foreach (RemarkTrigger trigger2 in field2.RemarkTriggers)
+                {
+                    trigger2.FormFieldId = field2.Id;
+                    trigger2.FormField = null;
+                }
             }
+            _context.Forms.Add(form);
+            await _context.SaveChangesAsync();
+            return Ok(form);
         }
+
 
         [HttpGet]
         public async Task<IActionResult> GetAllForms()
@@ -131,23 +119,19 @@ namespace productionLine.Server.Controllers
         [HttpGet("link/{formLink}")]
         public async Task<IActionResult> GetFormByLink(string formLink)
         {
-            var form = await _context.Forms
-                .Include(f => f.Fields) // Load related fields
-                                .Include(f => f.Fields.OrderBy(field => field.Order)) // Order by the new field
-                .ThenInclude(field => field.RemarkTriggers) // Load RemarkTriggers for each field
-                .Include(f => f.Approvers.OrderBy(a => a.Level)) // 👈 Include and order approvers
-                .FirstOrDefaultAsync(f => f.FormLink.ToLower() == formLink.ToLower());
-
+            Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
+                .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+                .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
             if (form == null)
+            {
                 return NotFound("Form not found.");
-
-            // Map to DTO
-            var formDto = new FormDto
+            }
+            FormDto formDto = new FormDto
             {
                 Id = form.Id,
                 FormLink = form.FormLink,
                 Name = form.Name,
-                Approvers = form.Approvers?.Select(a => new ApproverDto
+                Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
                 {
                     Id = a.Id,
                     AdObjectId = a.AdObjectId,
@@ -155,11 +139,11 @@ namespace productionLine.Server.Controllers
                     Email = a.Email,
                     Type = a.Type,
                     Level = a.Level
-                }).ToList() ?? new List<ApproverDto>(),
-                Fields = form.Fields.Select(f => new FieldDto
+                }).ToList() ?? new List<ApproverDto>()),
+                Fields = form.Fields.Select((FormField f) => new FieldDto
                 {
                     Id = f.Id,
-                    Name = f.Label, // fixed: using field name, not form name
+                    Name = f.Label,
                     Type = f.Type,
                     Label = f.Label,
                     Options = f.Options,
@@ -168,14 +152,14 @@ namespace productionLine.Server.Controllers
                     RequireRemarks = f.RequiresRemarks,
                     IsDecimal = f.Decimal,
                     Max = f.Max,
-                    RemarkTriggers = f.RemarkTriggers?.Select(rt => new RemarkTriggerDto
+                    RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
                         Operator = rt.Operator,
                         Value = rt.Value,
-                        FormFieldId = rt.FormFieldId  // ✅ Only return ID, not object
-                    }).ToList() ?? new List<RemarkTriggerDto>(),
-                    Column = f.Columns?.Select(ct => new GridColumnDto
+                        FormFieldId = rt.FormFieldId
+                    }).ToList() ?? new List<RemarkTriggerDto>()),
+                    Column = (f.Columns?.Select((GridColumn ct) => new GridColumnDto
                     {
                         Formula = ct.Formula,
                         Name = ct.Name,
@@ -187,15 +171,13 @@ namespace productionLine.Server.Controllers
                         Width = ct.Width,
                         backgroundColor = ct.backgroundColor,
                         textColor = ct.textColor,
-                        Options = ct.Options ?? new List<string>(),
-
-                        // ✅ Add these lines:
+                        Options = (ct.Options ?? new List<string>()),
                         ParentColumn = ct.ParentColumn,
                         DependentOptions = ct.DependentOptions,
                         StartTime = ct.StartTime,
-                        EndTime = ct.EndTime
-                    }).ToList() ?? new List<GridColumnDto>(),
-
+                        EndTime = ct.EndTime,
+                        Required = ct.Required
+                    }).ToList() ?? new List<GridColumnDto>()),
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,
                     MaxRows = f.MaxRows,
@@ -204,7 +186,6 @@ namespace productionLine.Server.Controllers
                     FieldReferencesJson = f.FieldReferencesJson
                 }).ToList()
             };
-
             return Ok(formDto);
         }
     }

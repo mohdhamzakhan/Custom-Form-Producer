@@ -1056,6 +1056,20 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         placeholder="1fr"
                                     />
                                 </div>
+                                <div className="w-full md:w-1/6 mb-2">
+                                    <label className="block text-xs text-gray-500 mb-1">Required</label>
+                                    <input
+                                        type="checkbox"
+                                        checked={column.required || false}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...(field.columns || [])];
+                                            updatedColumns[colIndex].required = e.target.checked;
+                                            updateField({ ...field, columns: updatedColumns });
+                                        }}
+                                        className="h-4 w-4"
+                                    />
+                                </div>
+
 
                                 {column.type === "calculation" && (
                                     <div className="w-full mt-2">
@@ -1274,6 +1288,9 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 </div>
                             </div>
                         ))}
+
+                        
+
 
                         <button
                             onClick={() => {

@@ -166,6 +166,8 @@ namespace productionLine.Server.Model
         public string? StartTime { get; set; }
         [JsonPropertyName("endTime")]
         public string? EndTime { get; set; }
+        [JsonPropertyName("required")]
+        public bool? Required { get; set; }
 
         public ICollection<RemarkTrigger> RemarkTriggers { get; set; } = new List<RemarkTrigger>();
     }

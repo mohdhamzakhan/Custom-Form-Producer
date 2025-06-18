@@ -34,5 +34,6 @@ namespace productionLine.Server.DTO
         public Dictionary<string, List<string>>? DependentOptions { get; set; }
         public string? StartTime { get; set; }
         public string? EndTime { get; set; }
+        public bool? Required { get; set; }
     }
 }
