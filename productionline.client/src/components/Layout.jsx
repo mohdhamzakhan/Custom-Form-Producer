@@ -45,7 +45,7 @@ export default function Layout({ children }) {
     // Default navigation links
     const defaultLinks = [
         { name: "Dashboard", path: "/Mainpage" },
-        { name: "Reports", path: "/reports" }
+        { name: "Approval", path: "/reports" }
     ];
 
     // Add IT-specific links if user is in Sanand-IT group
@@ -57,10 +57,9 @@ export default function Layout({ children }) {
         ]
         : defaultLinks;
 
-    navLinks = (user?.groups?.includes("SANAND-PROD") || user?.groups?.includes("SANAND-IT"))
+    navLinks = (user?.groups?.includes("Custom-Form_Creators") || user?.groups?.includes("SANAND-IT"))
         ? [
             ...defaultLinks,
-            { name: "Production Report", path: "/ProductionReport" },
             { name: "Create Form", path: "/formbuilder" }
         ]
         : defaultLinks;

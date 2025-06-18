@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from "react";
-import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown, Copy } from "lucide-react";
+import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown, Copy, Trash } from "lucide-react";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import Layout from "./Layout"
@@ -80,6 +80,11 @@ const FormBuilder = () => {
         } finally {
             setLoadingForms(false);
         }
+    };
+
+    const handleClearForm = () => {
+        localStorage.removeItem("formBuilderFields");
+        setFormFields([]); // Optional: Reset state if needed
     };
 
     const copyFormatFromForm = async (sourceFormLink) => {
@@ -499,14 +504,21 @@ const FormBuilder = () => {
                                 className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
                             >
                                 <Copy size={16} />
-                                Copy Format
+                                Copy
                             </button>
                             <button
                                 onClick={saveForm}
                                 className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                             >
                                 <Save size={16} />
-                                Save Layout
+                                Save
+                            </button>
+                            <button
+                                onClick={handleClearForm}
+                                className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                            >
+                                <Trash size={16} />
+                                Clear
                             </button>
                         </div>
                     </div>
