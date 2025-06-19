@@ -10,54 +10,81 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 export default function ReportCharts({ submissionData, fields, selectedFields }) {
     const [chartData, setChartData] = useState([]);
     const [chartType, setChartType] = useState('bar');
-    const [selectedMetric, setSelectedMetric] = useState(""); // grid column or field
+    const [selectedMetrics, setSelectedMetrics] = useState([]);
 
     useEffect(() => {
-        if (!submissionData.length || !selectedMetric) return;
+        if (!submissionData.length || !selectedMetrics.length) return;
 
         const rows = [];
 
-        submissionData.forEach((submission) => {
-            selectedFields.forEach(fieldId => {
-                const field = fields.find(f => f.id === fieldId);
-                const baseFieldId = fieldId.split(":")[0];
-                const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+        submissionData.forEach((submission, index) => {
+            const row = { name: `Row ${index + 1}` };
 
-                if (fieldData?.fieldValue) {
-                    try {
-                        const parsed = JSON.parse(fieldData.fieldValue);
+            selectedMetrics.forEach(metric => {
+                selectedFields.forEach(fieldId => {
+                    const field = fields.find(f => f.id === fieldId);
+                    const baseFieldId = fieldId.split(":")[0];
+                    const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
 
-                        if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                            parsed.forEach(row => {
-                                if (row[selectedMetric]) {
-                                    rows.push({ name: row["Model No"] || "Row", value: Number(row[selectedMetric]) || 0 });
+                    if (fieldData?.fieldValue) {
+                        try {
+                            const parsed = JSON.parse(fieldData.fieldValue);
+
+                            if (Array.isArray(parsed) && typeof parsed[0] === "object") {
+                                const values = parsed.map(row => Number(row[metric]) || 0);
+                                if (values.length > 0) {
+                                    row[metric] = values.reduce((a, b) => a + b, 0);
                                 }
-                            });
-                        } else if (field.label === selectedMetric) {
-                            rows.push({ name: field.label, value: Number(parsed) || 0 });
-                        }
-                    } catch {
-                        if (field.label === selectedMetric) {
-                            rows.push({ name: field.label, value: Number(fieldData.fieldValue) || 0 });
+                            } else if (field.label === metric) {
+                                row[metric] = Number(parsed) || 0;
+                            }
+                        } catch {
+                            if (field.label === metric) {
+                                row[metric] = Number(fieldData.fieldValue) || 0;
+                            }
                         }
                     }
-                }
+                });
             });
+
+            rows.push(row);
         });
 
         setChartData(rows);
-    }, [submissionData, fields, selectedFields, selectedMetric]);
+    }, [submissionData, fields, selectedFields, selectedMetrics]);
+
 
     const renderChart = () => {
         if (!chartData.length) return <p className="text-gray-400">No data available</p>;
 
         switch (chartType) {
+            case 'line':
+                return (
+                    <LineChart width={600} height={350} data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        {selectedMetrics.map((metric, idx) => (
+                            <Line
+                                key={metric}
+                                type="monotone"
+                                dataKey={metric}
+                                stroke={COLORS[idx % COLORS.length]}
+                            />
+                        ))}
+                    </LineChart>
+                );
             case 'pie':
+                if (selectedMetrics.length !== 1) {
+                    return <p className="text-red-500">Select one metric for pie chart</p>;
+                }
                 return (
                     <PieChart width={400} height={300}>
                         <Pie
                             data={chartData}
-                            dataKey="value"
+                            dataKey={selectedMetrics[0]}
                             nameKey="name"
                             outerRadius={100}
                             fill="#8884d8"
@@ -71,30 +98,22 @@ export default function ReportCharts({ submissionData, fields, selectedFields })
                         <Legend />
                     </PieChart>
                 );
-            case 'line':
-                return (
-                    <LineChart width={500} height={300} data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="value" stroke="#8884d8" />
-                    </LineChart>
-                );
             default:
                 return (
-                    <BarChart width={500} height={300} data={chartData}>
+                    <BarChart width={600} height={350} data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="name" />
                         <YAxis />
                         <Tooltip />
                         <Legend />
-                        <Bar dataKey="value" fill="#82ca9d" />
+                        {selectedMetrics.map((metric, idx) => (
+                            <Bar key={metric} dataKey={metric} fill={COLORS[idx % COLORS.length]} />
+                        ))}
                     </BarChart>
                 );
         }
     };
+
 
     const metricOptions = [];
 
@@ -114,15 +133,20 @@ export default function ReportCharts({ submissionData, fields, selectedFields })
         <div className="border rounded p-4 mt-4 bg-white">
             <div className="flex items-center gap-4 mb-4">
                 <select
-                    value={selectedMetric}
-                    onChange={(e) => setSelectedMetric(e.target.value)}
-                    className="border p-2 rounded"
+                    multiple
+                    className="border p-2 rounded h-32"
+                    value={selectedMetrics}
+                    onChange={(e) => {
+                        const selected = Array.from(e.target.selectedOptions, o => o.value);
+                        setSelectedMetrics(selected);
+                    }}
                 >
-                    <option value="">Select Metric</option>
+                    <option value="">Select Metrics</option>
                     {metricOptions.map((label, idx) => (
                         <option key={idx} value={label}>{label}</option>
                     ))}
                 </select>
+
 
                 <select
                     value={chartType}

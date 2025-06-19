@@ -4,6 +4,7 @@ import axios from "axios";
 import { ChevronRight, ChevronDown, Users, Download, BarChart3, FileText, Plus, X, Search, User, UserCheck } from "lucide-react";
 import { APP_CONSTANTS } from "./store";
 import useAdSearch from "./hooks/useAdSearch"
+import ReportCharts from "./ReportCharts"
 
 // Mock calculated fields editor
 const CalculatedFieldsEditor = ({ calculatedFields, setCalculatedFields, selectedFields, fields }) => {
@@ -264,6 +265,10 @@ export default function EnhancedReportDesigner() {
     const [availableRoles, setAvailableRoles] = useState([]);
     const [selectedUsers, setSelectedUsers] = useState([]);
     const [submissionData, setSubmissionData] = useState([]);
+    const [chartConfig, setChartConfig] = useState({
+        type: "line",
+        metrics: []  // now an array
+    });
 
 
     // UI state for left panel
@@ -513,7 +518,8 @@ export default function EnhancedReportDesigner() {
                 description: c.description || "",
                 format: c.format || "decimal",
                 precision: c.precision || 2
-            }))
+            })),
+            chartConfig: chartConfig.metrics?.length > 0 ? chartConfig : null
         };
 
         try {
@@ -704,6 +710,9 @@ export default function EnhancedReportDesigner() {
                     )}
                 </div>
 
+                
+
+
                 {/* Filters */}
                 <div className="border-b">
                     <div
@@ -834,6 +843,48 @@ export default function EnhancedReportDesigner() {
                         selectedFields={selectedFields}
                         fields={fields}
                     />
+
+                    <div className="mb-6 bg-white p-4 border rounded">
+                        <h3 className="font-semibold mb-3">Chart Builder</h3>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm mb-1">Chart Type</label>
+                                <select
+                                    className="w-full border p-2 rounded"
+                                    value={chartConfig.type}
+                                    onChange={(e) => setChartConfig({ ...chartConfig, type: e.target.value })}
+                                >
+                                    <option value="bar">Bar</option>
+                                    <option value="line">Line</option>
+                                    <option value="pie">Pie</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm mb-1">Chart Metrics (Multiple Allowed)</label>
+                                <select
+                                    multiple
+                                    className="w-full border p-2 rounded h-32"
+                                    value={chartConfig.metrics}
+                                    onChange={(e) => {
+                                        const selected = Array.from(e.target.selectedOptions, opt => opt.value);
+                                        setChartConfig({ ...chartConfig, metrics: selected });
+                                    }}
+                                >
+                                    {selectedFields.map(fid => {
+                                        const field = fields.find(f => f.id === fid);
+                                        return <option key={fid} value={field?.label}>{field?.label}</option>;
+                                    })}
+                                    {calculatedFields.map((cf, idx) => (
+                                        <option key={`cf-${idx}`} value={cf.label}>{cf.label}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">Hold Ctrl (Windows) or Cmd (Mac) to select multiple</p>
+                            </div>
+
+                        </div>
+                    </div>
 
                     {/* Filters Section */}
                     <div className="mb-6 bg-white p-6 rounded-lg shadow">
@@ -1034,11 +1085,14 @@ export default function EnhancedReportDesigner() {
                                                     const formula = calcField.formula;
                                                     const precision = calcField.precision ?? 2;
                                                     let computedFormula = formula;
-                                                    const sumRegex = /SUM\(([^)]+)\)/gi;
 
+                                                    const functionRegex = /(SUM|AVG|MIN|MAX)\(([^)]+)\)/gi;
                                                     let match;
-                                                    while ((match = sumRegex.exec(formula)) !== null) {
-                                                        const fullLabel = match[1].trim();
+
+                                                    while ((match = functionRegex.exec(formula)) !== null) {
+                                                        const func = match[1].toUpperCase();
+                                                        const fullLabel = match[2].trim();
+
                                                         const field = fields.find(f => f.label === fullLabel);
                                                         if (!field) {
                                                             computedFormula = computedFormula.replace(match[0], "0");
@@ -1055,12 +1109,28 @@ export default function EnhancedReportDesigner() {
                                                                 ? parsed.map(row => Number(row[columnName]) || 0)
                                                                 : [];
 
-                                                            const sum = values.reduce((a, b) => a + b, 0);
-                                                            computedFormula = computedFormula.replace(match[0], sum);
+                                                            let result = 0;
+                                                            switch (func) {
+                                                                case "SUM":
+                                                                    result = values.reduce((a, b) => a + b, 0);
+                                                                    break;
+                                                                case "AVG":
+                                                                    result = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+                                                                    break;
+                                                                case "MIN":
+                                                                    result = values.length ? Math.min(...values) : 0;
+                                                                    break;
+                                                                case "MAX":
+                                                                    result = values.length ? Math.max(...values) : 0;
+                                                                    break;
+                                                            }
+
+                                                            computedFormula = computedFormula.replace(match[0], result);
                                                         } catch {
                                                             computedFormula = computedFormula.replace(match[0], "0");
                                                         }
                                                     }
+
 
                                                     try {
                                                         const result = eval(computedFormula);
