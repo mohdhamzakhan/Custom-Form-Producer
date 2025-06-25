@@ -139,10 +139,8 @@ namespace productionLine.Server.Controllers
         {
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors)
-                                              .Select(e => e.ErrorMessage)
-                                              .ToList();
-                return BadRequest(new { message = "Model validation failed", errors });
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                return BadRequest(new { message = "Invalid model", errors });
             }
 
             if (string.IsNullOrWhiteSpace(dto.Name) || dto.Fields.Count == 0)
@@ -166,6 +164,7 @@ namespace productionLine.Server.Controllers
                 template.IncludeRemarks = dto.IncludeRemarks;
                 template.SharedWithRole = dto.SharedWithRole;
 
+
                 _context.ReportFields.RemoveRange(template.Fields);
                 _context.ReportFilters.RemoveRange(template.Filters);
 
@@ -183,6 +182,14 @@ namespace productionLine.Server.Controllers
                     Value = f.Value,
                     Type = f.Type
                 }).ToList();
+                template.CalculatedFields = dto.CalculatedFields?.Any() == true
+    ? JsonSerializer.Serialize(dto.CalculatedFields)
+    : null;
+
+                template.ChartConfig = dto.ChartConfig != null
+                    ? JsonSerializer.Serialize(dto.ChartConfig)
+                    : null;
+
             }
             else
             {
@@ -207,7 +214,9 @@ namespace productionLine.Server.Controllers
                         Operator = f.Operator,
                         Value = f.Value,
                         Type = f.Type
-                    }).ToList()
+                    }).ToList(),
+                    CalculatedFields = JsonSerializer.Serialize(dto.CalculatedFields ?? new List<CalculatedField>()),
+                    ChartConfig = JsonSerializer.Serialize(dto.ChartConfig ?? new object())
                 };
 
                 _context.ReportTemplates.Add(template);
@@ -268,81 +277,105 @@ namespace productionLine.Server.Controllers
         private List<object> GetExpandedGridData(FormSubmission sub, ICollection<ReportField> reportFields, List<FormField> formFields)
         {
             var result = new List<object>();
-            var gridFields = reportFields.Where(f => f.FieldLabel.Contains("→")).ToList();
+
+            // Group fields into grid sections and normal fields
+            var gridFieldGroups = reportFields
+                .Where(f => f.FieldLabel.Contains("→"))
+                .GroupBy(f => f.FieldLabel.Split("→")[0].Trim())
+                .ToList();
+
             var normalFields = reportFields.Where(f => !f.FieldLabel.Contains("→")).ToList();
 
-            // Get the primary grid field to determine row count
-            var primaryGridField = gridFields.FirstOrDefault();
-            if (primaryGridField == null) return result;
-
-            var parts = primaryGridField.FieldLabel.Split("→", StringSplitOptions.TrimEntries);
-            var parentLabel = parts[0];
-            var formField = formFields.FirstOrDefault(f => f.Label == parentLabel);
-
-            if (formField == null) return result;
-
-            var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
-            if (match == null || string.IsNullOrWhiteSpace(match.FieldValue)) return result;
-
-            try
+            // 1. Build dictionary of normal field values
+            var normalValues = new Dictionary<string, string>();
+            foreach (var field in normalFields)
             {
-                var rows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(match.FieldValue);
-
-                // Create a row for each grid item
-                for (int i = 0; i < rows.Count; i++)
+                var formField = formFields.FirstOrDefault(f => f.Label == field.FieldLabel);
+                if (formField != null)
                 {
-                    var expandedRow = new
+                    var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
+                    if (match != null)
                     {
-                        submissionId = sub.Id,
-                        submittedAt = sub.SubmittedAt,
-                        gridRowIndex = i + 1, // Add row index for reference
-                        data = reportFields.Select(reportField =>
-                        {
-                            string value = "-";
-                            var fieldId = reportField.FieldLabel;
-
-                            if (fieldId.Contains("→")) // Grid column
-                            {
-                                var gridParts = fieldId.Split("→", StringSplitOptions.TrimEntries);
-                                var gridParentLabel = gridParts[0];
-                                var columnName = gridParts[1];
-
-                                // Get value from current row
-                                if (rows[i].TryGetValue(columnName, out var val))
-                                {
-                                    value = val?.ToString() ?? "-";
-                                }
-                            }
-                            else // Normal field - repeat for each grid row
-                            {
-                                var normalFormField = formFields.FirstOrDefault(f => f.Label == fieldId);
-                                if (normalFormField != null)
-                                {
-                                    var normalMatch = sub.SubmissionData
-                                                       .FirstOrDefault(d => d.FieldLabel == normalFormField.Id.ToString());
-                                    if (normalMatch != null) value = normalMatch.FieldValue ?? "-";
-                                }
-                            }
-
-                            return new
-                            {
-                                fieldLabel = reportField.FieldLabel,
-                                value = value
-                            };
-                        }).ToList()
-                    };
-
-                    result.Add(expandedRow);
+                        normalValues[field.FieldLabel] = match.FieldValue ?? "-";
+                    }
                 }
             }
-            catch (JsonException)
+
+            // 2. Build dictionary of grid field rows per group (e.g., "Production Details", "Operator Details")
+            var gridRowsPerGroup = new Dictionary<string, List<Dictionary<string, object>>>();
+            int maxRowCount = 0;
+
+            foreach (var group in gridFieldGroups)
             {
-                // If JSON parsing fails, return empty result
-                return result;
+                var sectionName = group.Key;
+                var formField = formFields.FirstOrDefault(f => f.Label == sectionName);
+                if (formField == null) continue;
+
+                var submissionData = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
+                if (submissionData == null || string.IsNullOrWhiteSpace(submissionData.FieldValue)) continue;
+
+                try
+                {
+                    var rows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(submissionData.FieldValue);
+                    gridRowsPerGroup[sectionName] = rows;
+                    maxRowCount = Math.Max(maxRowCount, rows.Count);
+                }
+                catch
+                {
+                    // skip invalid grid JSON
+                    continue;
+                }
+            }
+
+            // 3. Merge all grid and normal field values by row
+            for (int rowIndex = 0; rowIndex < maxRowCount; rowIndex++)
+            {
+                var rowData = new List<object>();
+
+                // Add normal (flat) fields to every row
+                foreach (var field in normalFields)
+                {
+                    rowData.Add(new
+                    {
+                        fieldLabel = field.FieldLabel,
+                        value = normalValues.ContainsKey(field.FieldLabel) ? normalValues[field.FieldLabel] : "-"
+                    });
+                }
+
+                // Add grid fields from each group
+                foreach (var group in gridFieldGroups)
+                {
+                    var sectionName = group.Key;
+                    if (!gridRowsPerGroup.ContainsKey(sectionName)) continue;
+
+                    var rows = gridRowsPerGroup[sectionName];
+                    var row = rowIndex < rows.Count ? rows[rowIndex] : null;
+
+                    foreach (var field in group)
+                    {
+                        var columnName = field.FieldLabel.Split("→")[1].Trim();
+                        var value = row != null && row.TryGetValue(columnName, out var val) ? val?.ToString() ?? "-" : "-";
+
+                        rowData.Add(new
+                        {
+                            fieldLabel = field.FieldLabel,
+                            value = value
+                        });
+                    }
+                }
+
+                result.Add(new
+                {
+                    submissionId = sub.Id,
+                    submittedAt = sub.SubmittedAt,
+                    gridRowIndex = rowIndex + 1,
+                    data = rowData
+                });
             }
 
             return result;
         }
+
 
         private object CreateSingleRow(FormSubmission sub, ICollection<ReportField> reportFields, List<FormField> formFields)
         {
@@ -443,14 +476,14 @@ namespace productionLine.Server.Controllers
                 }).ToList(),
                 filters = template.Filters,
                 sharedWithRole = !string.IsNullOrEmpty(template.SharedWithRole)
-                    ? JsonSerializer.Deserialize<List<string>>(template.SharedWithRole)
-                    : new List<string>(),
-                calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
+    ? JsonSerializer.Deserialize<List<string>>(template.SharedWithRole)
+    : new List<string>(),
+            calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
     ? JsonSerializer.Deserialize<List<CalculatedField>>(template.CalculatedFields)
     : new List<CalculatedField>(),
 
                 chartConfig = !string.IsNullOrEmpty(template.ChartConfig)
-    ? JsonSerializer.Deserialize<object>(template.ChartConfig)
+    ? JsonSerializer.Deserialize<ChartConfig>(template.ChartConfig)
     : null
 
             });

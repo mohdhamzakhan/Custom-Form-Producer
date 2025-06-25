@@ -318,7 +318,7 @@ export default function EnhancedReportDesigner() {
 
         axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`).then((res) => {
             const data = res.data;
-
+            console.log(data)
             setTemplateName(data.name);
             setSelectedFormId(data.formId);
             setOptions((prev) => ({
@@ -336,8 +336,20 @@ export default function EnhancedReportDesigner() {
                 type: f.type,
                 order: f.order,
             })));
+            console.log(data.filters)
+            const loadedFilters = data.filters.map((f, index) => {
+                const matchingField = fields.find(field => field.label === f.fieldLabel);
+                return {
+                    id: index + 1,
+                    field: matchingField?.id || "",           // 🔧 use id for select
+                    label: matchingField?.label || f.fieldLabel,
+                    type: matchingField?.type || f.type || "text",
+                    condition: f.operator || "",
+                    value: f.value || ""
+                };
+            });
 
-            setFilters(data.filters || []);
+            setFilters(loadedFilters || []);
             setCalculatedFields(data.calculatedFields || []);
             setChartConfig(data.chartConfig || null);
         });
@@ -443,7 +455,7 @@ export default function EnhancedReportDesigner() {
         loadFormFields();
     }, [selectedFormId]);
 
-     //Your original handleFormChange function
+    //Your original handleFormChange function
     const handleFormChange = async (e) => {
         const formId = e.target.value;
         setSelectedFormId(formId);
@@ -493,7 +505,7 @@ export default function EnhancedReportDesigner() {
         }
     };
 
-     //Your original filter functions
+    //Your original filter functions
     const addFilter = () => {
         setFilters([...filters, {
             id: Date.now(),  // <-- Unique ID
@@ -506,19 +518,12 @@ export default function EnhancedReportDesigner() {
     };
 
 
-    const updateFilter = (index, key, value) => {
-        const updated = [...filters];
-        updated[index][key] = value;
+    const updateFilter = (id, updates) => {
+        setFilters((prev) =>
+            prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+        );
+    };;
 
-        // Update type and label when field changes
-        if (key === "field") {
-            const fieldMeta = fields.find(f => f.id === value);
-            updated[index].type = fieldMeta?.type || "text";
-            updated[index].label = fieldMeta?.label || "";
-        }
-
-        setFilters(updated);
-    };
 
     const removeFilter = (idToRemove) => {
         setFilters(filters.filter(f => f.id !== idToRemove));
@@ -543,6 +548,7 @@ export default function EnhancedReportDesigner() {
         // Mock preview functionality
         alert("Opening report preview...");
     };
+
     const saveTemplate = async () => {
         // Validation
         if (!templateName.trim()) {
@@ -573,8 +579,19 @@ export default function EnhancedReportDesigner() {
             return;
         }
 
+        const filtersToSave = filters.map(f => {
+            const matchedField = fields.find(field => field.id === f.field);
+            console.log(matchedField)
+            return {
+                fieldLabel: matchedField?.id || f.field,    // REQUIRED to match on load
+                operator: f.condition,
+                value: f.value,
+                type: matchedField?.type || f.type || "text"
+            };
+        });
         // Prepare payload
         const payload = {
+            Id: reportId ? parseInt(reportId) : 0,
             formId: parseInt(selectedFormId),
             name: templateName,
             createdBy: localStorage.getItem("user")
@@ -583,7 +600,9 @@ export default function EnhancedReportDesigner() {
             includeApprovals: options.includeApprovals,
             includeRemarks: options.includeRemarks,
             isShared: options.isShared,
-            sharedWithRole: options.isShared ? options.sharedWithRoles : null,
+            sharedWithRole: options.isShared && options.sharedWithRoles?.length
+                ? JSON.stringify(options.sharedWithRoles)
+                : null,
             fields: selectedFields.map((fieldId, index) => {
                 const field = fields.find(f => f.id === fieldId);
                 return {
@@ -592,13 +611,7 @@ export default function EnhancedReportDesigner() {
                     order: index
                 };
             }),
-            filters: filters.map(f => ({
-                fieldId: f.field,
-                fieldLabel: f.label,
-                operator: f.condition,
-                value: f.value,
-                type: f.type
-            })),
+            filters: filtersToSave,
             calculatedFields: calculatedFields.map(c => ({
                 label: c.label,
                 formula: c.formula,
@@ -606,9 +619,9 @@ export default function EnhancedReportDesigner() {
                 format: c.format || "decimal",
                 precision: c.precision || 2
             })),
-            chartConfig: chartConfig.metrics?.length > 0 ? chartConfig : null
+            chartConfig: chartConfig?.metrics?.length > 0 ? chartConfig : null
         };
-        
+        console.log(payload)
         try {
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
                 method: "POST",
@@ -638,23 +651,23 @@ export default function EnhancedReportDesigner() {
     };
 
     useEffect(() => {
-    const fetchApprovedSubmissions = async () => {
-        if (!selectedFormId) return;
+        const fetchApprovedSubmissions = async () => {
+            if (!selectedFormId) return;
 
-        try {
-            const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${selectedFormId}/submissions`);
-            const data = await res.json();
+            try {
+                const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${selectedFormId}/submissions`);
+                const data = await res.json();
 
-            const approvedOnly = data.filter(s =>
-                s.approvals && s.approvals.every(a => a.status === "Approved")
-            );
-            setSubmissionData(approvedOnly);
-        } catch (err) {
-            console.error("Error fetching submissions", err);
-        }
-    };
+                const approvedOnly = data.filter(s =>
+                    s.approvals && s.approvals.every(a => a.status === "Approved")
+                );
+                setSubmissionData(approvedOnly);
+            } catch (err) {
+                console.error("Error fetching submissions", err);
+            }
+        };
 
-    fetchApprovedSubmissions();
+        fetchApprovedSubmissions();
     }, [selectedFormId]);
 
     // Helper to group selected fields by their grid parent
@@ -715,7 +728,7 @@ export default function EnhancedReportDesigner() {
                     {leftPanelExpanded.availableFields && (
                         <div className="px-4 pb-4">
                             <div className="space-y-2 max-h-60 overflow-y-auto">
-                                {fields.map((field,idx) => (
+                                {fields.map((field, idx) => (
                                     <label
                                         key={field.id || idx}
                                         className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
@@ -759,24 +772,24 @@ export default function EnhancedReportDesigner() {
                                 <p className="text-gray-500 text-sm italic">No fields selected</p>
                             ) : (
                                 <div className="space-y-1">
-                                        {selectedFields.map((fieldId) => {
-                                            const field = fields.find(f => f.id === fieldId);
-                                            if (!field) return null;
-                                            return (
-                                                <div key={fieldId} className="flex items-center justify-between p-2 bg-blue-50 rounded">
-                                                    <div>
-                                                        <div className="font-medium text-sm">{field.label}</div>
-                                                        <div className="text-xs text-gray-500">{field.type}</div>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => toggleField(fieldId)}
-                                                        className="text-red-500 hover:text-red-700"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
+                                    {selectedFields.map((fieldId) => {
+                                        const field = fields.find(f => f.id === fieldId);
+                                        if (!field) return null;
+                                        return (
+                                            <div key={fieldId} className="flex items-center justify-between p-2 bg-blue-50 rounded">
+                                                <div>
+                                                    <div className="font-medium text-sm">{field.label}</div>
+                                                    <div className="text-xs text-gray-500">{field.type}</div>
                                                 </div>
-                                            );
-                                        })}
+                                                <button
+                                                    onClick={() => toggleField(fieldId)}
+                                                    className="text-red-500 hover:text-red-700"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -828,7 +841,7 @@ export default function EnhancedReportDesigner() {
                     )}
                 </div>
 
-                
+
 
 
                 {/* Filters */}
@@ -1015,35 +1028,55 @@ export default function EnhancedReportDesigner() {
                                 {filters.map((filter) => (
                                     <div key={filter.id} className="flex gap-3 items-center p-3 border rounded">
                                         <select
-                                            value={filter.field}
-                                            onChange={(e) => updateFilter(filter.id, "field", e.target.value)}
-                                            className="border p-2 rounded flex-1"
+                                            value={filter.fieldLabel}
+                                            onChange={(e) => {
+                                                const selected = fields.find(f => f.id === e.target.value);
+                                                updateFilter(filter.id, {
+                                                    field: selected.id,
+                                                    label: selected.label,
+                                                    type: selected.type,
+                                                    condition: "", // reset condition
+                                                    value: ""
+                                                });
+                                            }}
                                         >
                                             <option value="">Select Field</option>
-                                            {fields.map(field => (
-                                                <option key={field.id} value={field.id}>{field.label}</option>
+                                            {fields.map(f => (
+                                                <option key={f.id} value={f.id}>{f.label}</option>
                                             ))}
                                         </select>
 
+
                                         <select
-                                            value={filter.condition}
-                                            onChange={(e) => updateFilter(filter.id, "condition", e.target.value)}
+                                            value={filter.condition || ""}
+                                            onChange={(e) => updateFilter(filter.id, { condition: e.target.value })}
                                             className="border p-2 rounded"
                                         >
                                             <option value="">Condition</option>
+                                            {filter.type === "date" && <option value="between">Between</option>}
                                             <option value="equals">Equals</option>
                                             <option value="contains">Contains</option>
-                                            <option value="greaterThan">Greater Than</option>
-                                            <option value="lessThan">Less Than</option>
+                                            {filter.type !== "text" && (
+                                                <>
+                                                    <option value="greaterThan">Greater Than</option>
+                                                    <option value="lessThan">Less Than</option>
+                                                </>
+                                            )}
                                         </select>
 
-                                        <input
-                                            type="text"
-                                            placeholder="Value"
-                                            value={filter.value}
-                                            onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
-                                            className="border p-2 rounded flex-1"
-                                        />
+
+                                        {filter.condition === "between" ? (
+                                            <></>
+                                        ) : (
+                                            <input
+                                                type="text"
+                                                placeholder="Value"
+                                                value={filter.value || ""}
+                                                onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
+                                                className="border p-2 rounded flex-1"
+                                            />
+                                        )}
+
 
                                         <button
                                             onClick={() => removeFilter(filter.id)}

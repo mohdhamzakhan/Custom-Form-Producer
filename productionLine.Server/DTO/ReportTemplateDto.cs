@@ -11,9 +11,14 @@
     public List<ReportFieldDto> Fields { get; set; }
     public List<ReportFilterDto> Filters { get; set; }
     public List<CalculatedField> CalculatedFields { get; set; }     // ✅ NEW
-    public object? ChartConfig { get; set; }                         // ✅ NEW
+    public ChartConfig? ChartConfig { get; set; } // ✅ strongly typed                        // ✅ NEW
 }
 
+public class ChartConfig
+{
+    public string Type { get; set; }           // e.g., "bar", "line", etc.
+    public List<string> Metrics { get; set; }  // or a more detailed type
+}
 
 public class ReportFieldDto
 {
