@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250624063455_reportFields")]
+    partial class reportFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -508,9 +511,8 @@ namespace productionLine.Server.Migrations
 
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("FieldId")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
+                    b.Property<int>("FieldId")
+                        .HasColumnType("NUMBER(10)")
                         .HasColumnName("FIELDID");
 
                     b.Property<string>("FieldLabel")
@@ -574,14 +576,6 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("ID");
 
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("CalculatedFields")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("CALCULATEDFIELDS");
-
-                    b.Property<string>("ChartConfig")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("CHARTCONFIG");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TIMESTAMP(7)")

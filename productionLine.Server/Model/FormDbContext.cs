@@ -18,6 +18,8 @@ namespace productionLine.Server.Model
         public DbSet<ReportAccess> ReportAccesses { get; set; }
 
         public DbSet<ReportTemplate> ReportTemplates { get; set; } // Add this line to include ReportTemplate in the context
+        public DbSet<ReportField> ReportFields { get; set; } // Add this line to include ReportField in the context
+        public DbSet<ReportFilter> ReportFilters { get; set; } // Add this line to include ReportFilter in the context
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

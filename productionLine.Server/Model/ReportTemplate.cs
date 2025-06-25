@@ -25,12 +25,20 @@ namespace productionLine.Server.Model
         public bool IncludeRemarks { get; set; }
         [Column("SHAREDWITHROLE")]
         public string? SharedWithRole { get; set; }  // Optional
+        [Column("CALCULATEDFIELDS")]
+        public string? CalculatedFields { get; set; }  // store as JSON
+
+        [Column("CHARTCONFIG")]
+        public string? ChartConfig { get; set; }       // store as JSON
+
     }
     [Table("FF_REPORTFIELD")]
     public class ReportField
     {
         [Column("ID")]
         public int Id { get; set; }
+        [Column("FIELDID")]
+        public string FieldId { get; set; }  // ✅ Add this line
         [Column("FIELDLABEL")]
         public string? FieldLabel { get; set; }
         [Column("ORDER")]

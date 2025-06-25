@@ -1,8 +1,9 @@
-﻿import { useEffect, useState} from "react";
+﻿import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
-import ReportDisplayOptions from "./ReportDisplayOptions";
-import {APP_CONSTANTS} from "./store";
+import ReportCharts from "./ReportCharts";
+import { APP_CONSTANTS } from "./store";
+import "../report_viewer_styles.css";
 
 export default function ReportViewer() {
     const { templateId } = useParams();
@@ -12,11 +13,10 @@ export default function ReportViewer() {
     const [error, setError] = useState(null);
     const [template, setTemplate] = useState(null);
     const [reportData, setReportData] = useState([]);
-    const [calculatedFields, setCalculatedFields] = useState([]);
-    const [displayMode, setDisplayMode] = useState('table');
-    const [exportOptions, setExportOptions] = useState({ format: 'excel' });
-    const [isExporting, setIsExporting] = useState(false);
-
+    const [fields, setFields] = useState([]);
+    const [selectedFields, setSelectedFields] = useState([]);
+    const [displayMode, setDisplayMode] = useState("table");
+    const [viewMode, setViewMode] = useState("expanded");
 
     useEffect(() => {
         const fetchTemplate = async () => {
@@ -25,10 +25,17 @@ export default function ReportViewer() {
                 const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${templateId}`);
                 setTemplate(res.data);
                 setFilters(res.data.filters || []);
-                setCalculatedFields(res.data.calculatedFields || []);
+
+                const resolvedFields = (res.data.fields || []).map(f => ({
+                    id: f.fieldId || f.id,
+                    label: f.fieldLabel || f.label,
+                    type: f.type || "text",
+                }));
+
+                setFields(resolvedFields);
+                setSelectedFields(resolvedFields);
                 setLoading(false);
 
-                // Automatically fetch data if no runtime filters needed
                 if (!res.data.filters || res.data.filters.length === 0) {
                     fetchFilteredReport();
                 }
@@ -37,6 +44,7 @@ export default function ReportViewer() {
                 setLoading(false);
             }
         };
+
         fetchTemplate();
     }, [templateId]);
 
@@ -52,221 +60,174 @@ export default function ReportViewer() {
         }
     };
 
-    useEffect(() => {
-        if (!template || !filters.length) return;
+    const formatCellValue = (value, field) => {
+        if (!value || value === "-" || value === "") return "—";
 
-        const fetchDropdownOptions = async () => {
-            const updatedFilters = await Promise.all(filters.map(async (f) => {
-                if (f.type === "dropdown") {
-                    try {
-                        const res = await axios.get(
-                            `${APP_CONSTANTS.API_BASE_URL}/api/reports/dropdown-options/${templateId}/${encodeURIComponent(f.fieldLabel)}`
-                        );
-                        return { ...f, options: res.data };
-                    } catch (err) {
-                        console.error(`Failed to fetch options for ${f.fieldLabel}`);
-                    }
-                }
-                return f;
-            }));
-            setFilters(updatedFilters);
-        };
-
-        fetchDropdownOptions();
-    }, [filters.length, templateId]);
-
-
-    const headers = reportData.length > 0 ? reportData[0].data.map(d => d.fieldLabel) : [];
-
-    const handleFilterChange = (field, value, isDateRange = false) => {
-        if (isDateRange) {
-            // For date ranges, we need to handle start and end dates
-            const [start, end] = value;
-            setRuntimeFilters(prev => ({
-                ...prev,
-                [field]: `${start},${end}`
-            }));
-        } else {
-            setRuntimeFilters(prev => ({
-                ...prev,
-                [field]: value
-            }));
-        }
-    };
-
-    const exportReport = async () => {
         try {
-            setIsExporting(true);
-            // This is a placeholder for the export API
-            // You'll need to implement this in your backend
-            const res = await axios.post(
-                `${APP_CONSTANTS.API_BASE_URL}/api/reports/export/${templateId}`,
-                {
-                    format: exportOptions.format,
-                    filters: runtimeFilters,
-                    calculatedFields: calculatedFields
-                },
-                { responseType: 'blob' }
-            );
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed) && typeof parsed[0] === "object") {
+                // Already JSON object grid → render as table
+                return (
+                    <table className="mini-grid-table">
+                        <thead>
+                            <tr>{Object.keys(parsed[0]).map((col, i) => <th key={i}>{col}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                            {parsed.map((row, ri) => (
+                                <tr key={ri}>
+                                    {Object.values(row).map((cell, ci) => <td key={ci}>{cell || "—"}</td>)}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                );
+            }
+        } catch { }
 
-            // Create download link
-            const url = window.URL.createObjectURL(new Blob([res.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `${template.name}_report.${exportOptions.format}`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            setIsExporting(false);
-        } catch (err) {
-            setError("Failed to export report: " + (err.message || "Unknown error"));
-            setIsExporting(false);
+        // NEW: if it's a comma-separated value
+        if (typeof value === "string" && value.includes(", ")) {
+            const items = value.split(/, ?/);
+            return (
+                <ul className="comma-list">
+                    {items.map((item, idx) => <li key={idx}>• {item}</li>)}
+                </ul>
+            );
         }
+
+        return value;
     };
 
-    if (loading) return (
-        <div className="p-6 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-            <span className="ml-3">Loading...</span>
-        </div>
-    );
 
-    if (error) return (
-        <div className="bg-red-50 border border-red-200 text-red-600 p-6 rounded">
-            <h3 className="font-bold mb-2">Error</h3>
-            <p>{error}</p>
-            <button
-                onClick={() => window.location.reload()}
-                className="mt-4 bg-red-100 hover:bg-red-200 text-red-800 px-4 py-2 rounded"
-            >
-                Try Again
-            </button>
-        </div>
-    );
 
-    return (
-        <div className="max-w-7xl mx-auto p-6">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">{template?.name || "Report Viewer"}</h2>
-                <div className="flex gap-2">
-                    <div className="relative">
-                        <select
-                            value={exportOptions.format}
-                            onChange={(e) => setExportOptions({ ...exportOptions, format: e.target.value })}
-                            className="border p-2 rounded bg-white pr-8"
-                            disabled={isExporting}
-                        >
-                            <option value="excel">Excel</option>
-                            <option value="csv">CSV</option>
-                            <option value="pdf">PDF</option>
-                        </select>
+    const renderSummaryStats = () => {
+        if (reportData.length === 0) return null;
+        const totalSubmissions = new Set(reportData.map(r => r.submissionId)).size;
+        const totalItems = reportData.length;
+        return (
+            <div className="stats-card">
+                <div className="flex gap-6">
+                    <div className="text-center">
+                        <div className="stat-number text-green-600">{totalSubmissions}</div>
+                        <div className="text-sm">Submissions</div>
                     </div>
-                    <button
-                        onClick={exportReport}
-                        disabled={isExporting || reportData.length === 0}
-                        className={`px-4 py-2 rounded flex items-center ${isExporting || reportData.length === 0
-                                ? 'bg-gray-300 cursor-not-allowed'
-                                : 'bg-green-600 hover:bg-green-700 text-white'
-                            }`}
-                    >
-                        {isExporting ? (
-                            <>
-                                <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>
-                                Exporting...
-                            </>
-                        ) : (
-                            'Export Report'
-                        )}
-                    </button>
+                    <div className="text-center">
+                        <div className="stat-number text-blue-600">{totalItems}</div>
+                        <div className="text-sm">Total Items</div>
+                    </div>
                 </div>
             </div>
+        );
+    };
 
-            {filters.length > 0 && (
-                <div className="mb-6 bg-gray-50 p-4 rounded border">
-                    <h3 className="text-lg font-semibold mb-4">Filter Inputs</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Date Range Filters */}
-                        {filters.filter(f => f.operator === "between" && (f.type === "date" || !f.type)).map((f, idx) => (
-                            <div key={idx} className="flex flex-col">
-                                <label className="mb-1 font-medium">{f.fieldLabel} (Date Range)</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="date"
-                                        className="border p-2 rounded w-1/2"
-                                        onChange={e => handleFilterChange(
-                                            f.fieldLabel,
-                                            [e.target.value, runtimeFilters[f.fieldLabel]?.split(',')[1] || ''],
-                                            true
-                                        )}
-                                    />
-                                    <span className="flex items-center">to</span>
-                                    <input
-                                        type="date"
-                                        className="border p-2 rounded w-1/2"
-                                        onChange={e => handleFilterChange(
-                                            f.fieldLabel,
-                                            [runtimeFilters[f.fieldLabel]?.split(',')[0] || '', e.target.value],
-                                            true
-                                        )}
-                                    />
-                                </div>
-                            </div>
-                        ))}
+    const renderViewControls = () => (
+        <div className="view-controls">
+            <button onClick={() => setDisplayMode("table")} className={displayMode === 'table' ? 'active' : ''}>📊 Table</button>
+            <button onClick={() => setDisplayMode("chart")} className={displayMode === 'chart' ? 'active' : ''}>📈 Charts</button>
 
-                        {/* Text/Number Filters */}
-                        {filters.filter(f => f.operator !== "between").map((f, idx) => (
-                            <div key={idx} className="flex flex-col">
-                                <label className="mb-1 font-medium">
-                                    {f.fieldLabel} ({f.operator})
-                                </label>
+            {displayMode === 'table' && (
+                <>
+                    <button onClick={() => setViewMode("expanded")} className={viewMode === 'expanded' ? 'active' : ''}>📋 Expanded</button>
+                    <button onClick={() => setViewMode("grouped")} className={viewMode === 'grouped' ? 'active' : ''}>📑 Grouped</button>
+                </>
+            )}
+        </div>
+    );
 
-                                {f.type === "dropdown" && Array.isArray(f.options) ? (
-                                    <select
-                                        value={runtimeFilters[f.fieldLabel] || ''}
-                                        onChange={e => handleFilterChange(f.fieldLabel, e.target.value)}
-                                        className="border p-2 rounded"
-                                    >
-                                        <option value="">-- Select --</option>
-                                        {f.options.map(opt => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                    </select>
-                                ) : (
-                                    <input
-                                        type={f.type === "number" || f.type === "decimal" ? "number" : "text"}
-                                        placeholder={`Value for ${f.fieldLabel}`}
-                                        value={runtimeFilters[f.fieldLabel] || ''}
-                                        onChange={e => handleFilterChange(f.fieldLabel, e.target.value)}
-                                        className="border p-2 rounded"
-                                    />
-                                )}
-                            </div>
-                        ))}
+    const renderExpandedTable = () => (
+        <div className="table-container">
+            <table className="report-table">
+                <thead>
+                    <tr>
+                        {selectedFields.map((field, i) => {
+                            const label = typeof field === 'object' ? field.label : field;
+                            const cleanedLabel = label.includes("→")
+                                ? label.split("→").pop().trim()
+                                : label;
 
+                            return <th key={i}>{cleanedLabel}</th>;
+                        })}
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {reportData.map((row, i) => (
+                        <tr key={i}>
+                            {selectedFields.map((field, j) => {
+                                const fLabel = typeof field === 'object' ? field.label : field;
+                                const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
+                                return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+
+    const renderGroupedTable = () => {
+        const grouped = {};
+        reportData.forEach(row => {
+            if (!grouped[row.submissionId]) grouped[row.submissionId] = [];
+            grouped[row.submissionId].push(row);
+        });
+
+        return (
+            <div className="grouped-view">
+                {Object.entries(grouped).map(([submissionId, rows]) => (
+                    <div key={submissionId} className="group">
+                        <div className="group-header">
+                            <h4>Submission #{submissionId}</h4>
+                        </div>
+                        <table className="report-table">
+                            <thead>
+                                <tr>
+                                    {selectedFields.map((field, i) => (
+                                        <th key={i}>{typeof field === 'object' ? field.label : field}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((row, i) => (
+                                    <tr key={i}>
+                                        {selectedFields.map((field, j) => {
+                                            const fLabel = typeof field === 'object' ? field.label : field;
+                                            const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
+                                            return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
+                ))}
+            </div>
+        );
+    };
 
-                    <button
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded mt-4"
-                        onClick={fetchFilteredReport}
-                    >
-                        Run Report
-                    </button>
-                </div>
-            )}
+    if (loading) return <div className="loading">Loading report...</div>;
+    if (error) return <div className="error">{error}</div>;
 
-            {reportData.length === 0 ? (
-                <div className="p-6 text-center border rounded bg-gray-50">
-                    <p className="text-gray-500">No data found. {filters.length > 0 && "Try adjusting your filters."}</p>
-                </div>
-            ) : (
-                <ReportDisplayOptions
-                    reportData={reportData}
-                    headers={headers}
-                    calculatedFields={calculatedFields}
-                    displayMode={displayMode}
-                    setDisplayMode={setDisplayMode}
-                />
-            )}
+    return (
+        <div className="report-viewer-wrapper">
+            <h2 className="viewer-heading">📊 Report Viewer</h2>
+            {renderSummaryStats()}
+            {renderViewControls()}
+            {displayMode === "table"
+                ? viewMode === "expanded"
+                    ? renderExpandedTable()
+                    : renderGroupedTable()
+                : (
+                    <ReportCharts
+                        submissionData={reportData.map(r => ({
+                            submissionData: (r.data || []).map(cell => ({
+                                fieldLabel: cell.fieldLabel,
+                                fieldValue: cell.value
+                            }))
+                        }))}
+                        fields={fields}
+                        selectedFields={selectedFields.map(f => typeof f === "string" ? f : f.id)}
+                    />
+                )}
         </div>
     );
 }

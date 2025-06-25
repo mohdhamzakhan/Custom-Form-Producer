@@ -87,8 +87,8 @@ function App() {
                     element={<Navigate to="/login" replace />}
                 />
                 <Route path="/report" element={<ReportsList />} />
-                <Route path="/reports/edit/:id" element={<ReportDesigner />} />
-                <Route path="/reports/view/:id" element={<ReportViewer />} />
+                <Route path="/reports/edit/:reportId" element={<ReportDesigner />} />
+                <Route path="/reports/view/:templateId" element={<ReportViewer />} />
                 <Route path="/reports/new" element={<ReportDesigner />} />
             </Routes>
         </Router>

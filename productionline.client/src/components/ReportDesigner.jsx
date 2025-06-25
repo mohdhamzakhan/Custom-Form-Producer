@@ -5,6 +5,7 @@ import { ChevronRight, ChevronDown, Users, Download, BarChart3, FileText, Plus, 
 import { APP_CONSTANTS } from "./store";
 import useAdSearch from "./hooks/useAdSearch"
 import ReportCharts from "./ReportCharts"
+import CollapsibleGridTable from './CollapsibleGridTable';
 
 // Mock calculated fields editor
 const CalculatedFieldsEditor = ({ calculatedFields, setCalculatedFields, selectedFields, fields }) => {
@@ -269,6 +270,8 @@ export default function EnhancedReportDesigner() {
         type: "line",
         metrics: []  // now an array
     });
+    const [expandedSubmissions, setExpandedSubmissions] = useState([]);
+    const { reportId } = useParams(); // <-- this grabs the report ID from the route
 
 
     // UI state for left panel
@@ -280,26 +283,64 @@ export default function EnhancedReportDesigner() {
         sharing: false
     });
 
+    const toggleExpand = (rowIdx) => {
+        setExpandedSubmissions((prev) =>
+            prev.includes(rowIdx)
+                ? prev.filter((idx) => idx !== rowIdx)
+                : [...prev, rowIdx]
+        );
+    };
+
     const navigate = useNavigate();
-    const { reportId } = useParams();
 
     // Your original useEffect for loading existing report
+    //useEffect(() => {
+    //    if (reportId) {
+    //        fetch(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`)
+    //            .then(res => res.json())
+    //            .then(data => {
+    //                // This loads the existing report into the editor
+    //                setTemplateName(data.name);
+    //                setSelectedFormId(data.formId);
+    //                setSelectedFields(data.fields.map(f => f.fieldId));
+    //                setFilters(data.filters);
+    //                setCalculatedFields(data.calculatedFields || []);
+    //                setOptions(prev => ({
+    //                    ...prev,
+    //                    sharedWithRoles: data.sharedWithRole || []
+    //                }));
+    //            });
+    //    }
+    //}, [reportId]);
+
     useEffect(() => {
-        if (reportId) {
-            fetch(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`)
-                .then(res => res.json())
-                .then(data => {
-                    setTemplateName(data.name);
-                    setSelectedFormId(data.formId);
-                    setSelectedFields(data.fields.map(f => f.fieldId));
-                    setFilters(data.filters);
-                    setCalculatedFields(data.calculatedFields || []);
-                    setOptions(prev => ({
-                        ...prev,
-                        sharedWithRoles: data.sharedWithRole || []
-                    }));
-                });
-        }
+        if (!reportId) return;
+
+        axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`).then((res) => {
+            const data = res.data;
+
+            setTemplateName(data.name);
+            setSelectedFormId(data.formId);
+            setOptions((prev) => ({
+                ...prev,
+                includeApprovals: data.includeApprovals ?? false,
+                includeRemarks: data.includeRemarks ?? false,
+                isShared: !!data.sharedWithRole,
+                sharedWithRoles: data.sharedWithRole || [],
+            }));
+
+            setSelectedFields(data.fields.map(f => f.fieldId));
+            setFields(data.fields.map(f => ({
+                id: f.fieldId,
+                label: f.fieldLabel,
+                type: f.type,
+                order: f.order,
+            })));
+
+            setFilters(data.filters || []);
+            setCalculatedFields(data.calculatedFields || []);
+            setChartConfig(data.chartConfig || null);
+        });
     }, [reportId]);
 
     // Your original user authentication logic
@@ -356,7 +397,53 @@ export default function EnhancedReportDesigner() {
         fetchForms();
     }, [user]);
 
-    // Your original handleFormChange function
+    // When selectedFormId changes, load fields for that form
+    useEffect(() => {
+        if (!selectedFormId) return;
+
+        const loadFormFields = async () => {
+            try {
+                const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${selectedFormId}/fields`);
+                const fieldList = Array.isArray(res.data)
+                    ? res.data
+                    : Array.isArray(res.data.fields)
+                        ? res.data.fields
+                        : [];
+
+                const expandedFields = [];
+                fieldList.forEach((field) => {
+                    if (field.columnJson) {
+                        try {
+                            const columns = JSON.parse(field.columnJson);
+                            columns.forEach((col) => {
+                                expandedFields.push({
+                                    id: `${field.id}:${col.id}`,
+                                    label: `${field.label} → ${col.name}`,
+                                    type: col.type || "text"
+                                });
+                            });
+                        } catch (err) {
+                            console.error("Invalid columnJson in field:", field.label);
+                        }
+                    } else {
+                        expandedFields.push({
+                            id: field.id,
+                            label: field.label,
+                            type: field.type
+                        });
+                    }
+                });
+
+                setFields(expandedFields);
+            } catch (err) {
+                setError("Failed to load form fields: " + (err.message || "Unknown error"));
+            }
+        };
+
+        loadFormFields();
+    }, [selectedFormId]);
+
+     //Your original handleFormChange function
     const handleFormChange = async (e) => {
         const formId = e.target.value;
         setSelectedFormId(formId);
@@ -406,7 +493,7 @@ export default function EnhancedReportDesigner() {
         }
     };
 
-    // Your original filter functions
+     //Your original filter functions
     const addFilter = () => {
         setFilters([...filters, {
             id: Date.now(),  // <-- Unique ID
@@ -521,7 +608,7 @@ export default function EnhancedReportDesigner() {
             })),
             chartConfig: chartConfig.metrics?.length > 0 ? chartConfig : null
         };
-
+        
         try {
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
                 method: "POST",
@@ -568,7 +655,37 @@ export default function EnhancedReportDesigner() {
     };
 
     fetchApprovedSubmissions();
-}, [selectedFormId]);
+    }, [selectedFormId]);
+
+    // Helper to group selected fields by their grid parent
+    function groupGridColumns(fields, selectedFields) {
+        const gridGroups = {};
+        selectedFields.forEach(fieldId => {
+            const field = fields.find(f => f.id === fieldId);
+            if (!field) return;
+            // grid field ids look like: parentFieldId:colId
+            const [parentId, colId] = fieldId.split(":");
+            if (colId) {
+                if (!gridGroups[parentId]) gridGroups[parentId] = [];
+                gridGroups[parentId].push({ ...field, colId });
+            }
+        });
+        return gridGroups;
+    }
+
+    function groupGridColumns(fields, selectedFields) {
+        const gridGroups = {};
+        selectedFields.forEach(fieldId => {
+            const field = fields.find(f => f.id === fieldId);
+            if (!field) return;
+            const [parentId, colId] = fieldId.split(":");
+            if (colId) {
+                if (!gridGroups[parentId]) gridGroups[parentId] = [];
+                gridGroups[parentId].push({ ...field, colId });
+            }
+        });
+        return gridGroups;
+    }
 
 
     return (
@@ -598,9 +715,9 @@ export default function EnhancedReportDesigner() {
                     {leftPanelExpanded.availableFields && (
                         <div className="px-4 pb-4">
                             <div className="space-y-2 max-h-60 overflow-y-auto">
-                                {fields.map(field => (
+                                {fields.map((field,idx) => (
                                     <label
-                                        key={field.id}
+                                        key={field.id || idx}
                                         className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
                                     >
                                         <input
@@ -642,23 +759,24 @@ export default function EnhancedReportDesigner() {
                                 <p className="text-gray-500 text-sm italic">No fields selected</p>
                             ) : (
                                 <div className="space-y-1">
-                                    {selectedFields.map(fieldId => {
-                                        const field = fields.find(f => f.id === fieldId);
-                                        return (
-                                            <div key={fieldId} className="flex items-center justify-between p-2 bg-blue-50 rounded">
-                                                <div>
-                                                    <div className="font-medium text-sm">{field?.label}</div>
-                                                    <div className="text-xs text-gray-500">{field?.type}</div>
+                                        {selectedFields.map((fieldId) => {
+                                            const field = fields.find(f => f.id === fieldId);
+                                            if (!field) return null;
+                                            return (
+                                                <div key={fieldId} className="flex items-center justify-between p-2 bg-blue-50 rounded">
+                                                    <div>
+                                                        <div className="font-medium text-sm">{field.label}</div>
+                                                        <div className="text-xs text-gray-500">{field.type}</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => toggleField(fieldId)}
+                                                        className="text-red-500 hover:text-red-700"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    onClick={() => toggleField(fieldId)}
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
                                 </div>
                             )}
                         </div>
@@ -700,8 +818,8 @@ export default function EnhancedReportDesigner() {
                                 Add Calculated Field
                             </button>
 
-                            {calculatedFields.map(field => (
-                                <div key={field.id} className="mt-2 p-2 border rounded">
+                            {calculatedFields.map((field, idx) => (
+                                <div key={field.id ?? idx} className="mt-2 p-2 border rounded">
                                     <div className="font-medium text-sm">{field.label || "Untitled"}</div>
                                     <div className="text-xs text-gray-500 truncate">{field.formula}</div>
                                 </div>
@@ -852,7 +970,7 @@ export default function EnhancedReportDesigner() {
                                 <label className="block text-sm mb-1">Chart Type</label>
                                 <select
                                     className="w-full border p-2 rounded"
-                                    value={chartConfig.type}
+                                    value={chartConfig?.type}
                                     onChange={(e) => setChartConfig({ ...chartConfig, type: e.target.value })}
                                 >
                                     <option value="bar">Bar</option>
@@ -866,7 +984,7 @@ export default function EnhancedReportDesigner() {
                                 <select
                                     multiple
                                     className="w-full border p-2 rounded h-32"
-                                    value={chartConfig.metrics}
+                                    value={chartConfig?.metrics}
                                     onChange={(e) => {
                                         const selected = Array.from(e.target.selectedOptions, opt => opt.value);
                                         setChartConfig({ ...chartConfig, metrics: selected });
@@ -874,6 +992,7 @@ export default function EnhancedReportDesigner() {
                                 >
                                     {selectedFields.map(fid => {
                                         const field = fields.find(f => f.id === fid);
+                                        if (!field) return null;
                                         return <option key={fid} value={field?.label}>{field?.label}</option>;
                                     })}
                                     {calculatedFields.map((cf, idx) => (
@@ -1031,126 +1150,188 @@ export default function EnhancedReportDesigner() {
                         {selectedFields.length > 0 ? (
                             <div className="border rounded overflow-hidden">
                                 <div className="bg-gray-50 border-b">
-                                    <div className="grid gap-4 font-semibold text-sm mb-2" style={{ gridTemplateColumns: `repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}>
+                                    <div className="grid gap-4 font-semibold text-sm mb-2" style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}>
+                                        <div></div>
                                         {selectedFields.map(fieldId => {
                                             const field = fields.find(f => f.id === fieldId);
                                             const displayLabel = field?.label?.includes("→")
                                                 ? field.label.split("→").pop().trim()
                                                 : field?.label;
-
                                             return (
                                                 <div key={fieldId}>{displayLabel}</div>
                                             );
                                         })}
-
                                         {calculatedFields.map((cf, i) => (
                                             <div key={`cf-${i}`}>{cf.label}</div>
                                         ))}
                                     </div>
-
                                 </div>
                                 <div className="p-4">
                                     {submissionData.length === 0 ? (
                                         <p className="text-gray-500 italic">No approved submissions available</p>
                                     ) : (
-                                        submissionData.slice(0, 3).map((submission, rowIdx) => (
-                                            <div key={rowIdx} className="grid gap-4 mb-2 text-sm" style={{ gridTemplateColumns: `repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}>
-                                                {/* Normal Fields */}
-                                                {selectedFields.map(fieldId => {
-                                                    const field = fields.find(f => f.id === fieldId);
-                                                    if (!field) return null;
+                                        submissionData.slice(0, 3).map((submission, rowIdx) => {
+                                            // Determine if this row has any grid data fields
+                                            const hasGrid = selectedFields.some(fieldId => {
+                                                const field = fields.find(f => f.id === fieldId);
+                                                if (!field) return false;
+                                                const baseFieldId = fieldId.split(":")[0];
+                                                const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                                                try {
+                                                    const parsed = JSON.parse(fieldData?.fieldValue || "");
+                                                    return Array.isArray(parsed) && typeof parsed[0] === "object";
+                                                } catch {
+                                                    return false;
+                                                }
+                                            });
 
-                                                    const baseFieldId = fieldId.split(":")[0];
-                                                    const columnName = field.label?.includes("→")
-                                                        ? field.label.split("→").pop().trim()
-                                                        : field.label;
+                                            return (
+                                                <div key={rowIdx} className="mb-2">
+                                                    {/* Main row */}
+                                                    <div
+                                                        className="grid gap-4 items-center text-sm"
+                                                        style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}
+                                                    >
+                                                        <button
+                                                            className="text-blue-500 hover:underline focus:outline-none"
+                                                            onClick={() => hasGrid && toggleExpand(rowIdx)}
+                                                            style={{
+                                                                background: "none",
+                                                                border: "none",
+                                                                cursor: hasGrid ? "pointer" : "default",
+                                                                opacity: hasGrid ? "1" : "0.4"
+                                                            }}
+                                                            aria-label={expandedSubmissions.includes(rowIdx) ? "Collapse" : "Expand"}
+                                                            tabIndex={hasGrid ? 0 : -1}
+                                                            disabled={!hasGrid}
+                                                        >
+                                                            {hasGrid ? (expandedSubmissions.includes(rowIdx) ? "▼" : "▶") : ""}
+                                                        </button>
+                                                        {/* Normal Fields */}
+                                                        {selectedFields.map(fieldId => {
+                                                            const field = fields.find(f => f.id === fieldId);
+                                                            if (!field) return <div key={fieldId}>—</div>;
+                                                            const baseFieldId = fieldId.split(":")[0];
+                                                            const columnName = field.label?.includes("→")
+                                                                ? field.label.split("→").pop().trim()
+                                                                : field.label;
+                                                            const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                                                            const raw = fieldData?.fieldValue;
 
-                                                    const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
-                                                    const raw = fieldData?.fieldValue;
+                                                            try {
+                                                                const parsed = JSON.parse(raw);
+                                                                if (Array.isArray(parsed) && typeof parsed[0] === "object") {
+                                                                    // Show summary: count of rows
+                                                                    return <div key={fieldId}>{parsed.length} rows</div>;
+                                                                }
+                                                                return <div key={fieldId}>{parsed || "—"}</div>;
+                                                            } catch {
+                                                                return <div key={fieldId}>{raw || "—"}</div>;
+                                                            }
+                                                        })}
 
-                                                    try {
-                                                        const parsed = JSON.parse(raw);
-                                                        if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                                                            const values = parsed.map(row => row[columnName]).filter(Boolean);
-                                                            return <div key={fieldId}>{values.join(", ") || "—"}</div>;
-                                                        }
-                                                        return <div key={fieldId}>{parsed || "—"}</div>;
-                                                    } catch {
-                                                        return <div key={fieldId}>{raw || "—"}</div>;
-                                                    }
-                                                })}
+                                                        {/* Calculated Fields */}
+                                                        {calculatedFields.map((calcField, i) => {
+                                                            // ... your existing calculated field logic here ...
+                                                            // (unchanged)
+                                                            const formula = calcField.formula;
+                                                            const precision = calcField.precision ?? 2;
+                                                            let computedFormula = formula;
 
-                                                {/* Calculated Fields */}
-                                                {calculatedFields.map((calcField, i) => {
-                                                    const formula = calcField.formula;
-                                                    const precision = calcField.precision ?? 2;
-                                                    let computedFormula = formula;
+                                                            const functionRegex = /(SUM|AVG|MIN|MAX)\(([^)]+)\)/gi;
+                                                            let match;
 
-                                                    const functionRegex = /(SUM|AVG|MIN|MAX)\(([^)]+)\)/gi;
-                                                    let match;
+                                                            while ((match = functionRegex.exec(formula)) !== null) {
+                                                                const func = match[1].toUpperCase();
+                                                                const fullLabel = match[2].trim();
 
-                                                    while ((match = functionRegex.exec(formula)) !== null) {
-                                                        const func = match[1].toUpperCase();
-                                                        const fullLabel = match[2].trim();
+                                                                const field = fields.find(f => f.label === fullLabel);
+                                                                if (!field) {
+                                                                    computedFormula = computedFormula.replace(match[0], "0");
+                                                                    continue;
+                                                                }
 
-                                                        const field = fields.find(f => f.label === fullLabel);
-                                                        if (!field) {
-                                                            computedFormula = computedFormula.replace(match[0], "0");
-                                                            continue;
-                                                        }
+                                                                const baseFieldId = field.id.split(":")[0];
+                                                                const columnName = fullLabel.split("→").pop().trim();
+                                                                const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
 
-                                                        const baseFieldId = field.id.split(":")[0];
-                                                        const columnName = fullLabel.split("→").pop().trim();
-                                                        const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                                                                try {
+                                                                    const parsed = JSON.parse(fieldData?.fieldValue || "[]");
+                                                                    const values = Array.isArray(parsed)
+                                                                        ? parsed.map(row => Number(row[columnName]) || 0)
+                                                                        : [];
 
-                                                        try {
-                                                            const parsed = JSON.parse(fieldData?.fieldValue || "[]");
-                                                            const values = Array.isArray(parsed)
-                                                                ? parsed.map(row => Number(row[columnName]) || 0)
-                                                                : [];
+                                                                    let result = 0;
+                                                                    switch (func) {
+                                                                        case "SUM":
+                                                                            result = values.reduce((a, b) => a + b, 0);
+                                                                            break;
+                                                                        case "AVG":
+                                                                            result = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+                                                                            break;
+                                                                        case "MIN":
+                                                                            result = values.length ? Math.min(...values) : 0;
+                                                                            break;
+                                                                        case "MAX":
+                                                                            result = values.length ? Math.max(...values) : 0;
+                                                                            break;
+                                                                    }
 
-                                                            let result = 0;
-                                                            switch (func) {
-                                                                case "SUM":
-                                                                    result = values.reduce((a, b) => a + b, 0);
-                                                                    break;
-                                                                case "AVG":
-                                                                    result = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-                                                                    break;
-                                                                case "MIN":
-                                                                    result = values.length ? Math.min(...values) : 0;
-                                                                    break;
-                                                                case "MAX":
-                                                                    result = values.length ? Math.max(...values) : 0;
-                                                                    break;
+                                                                    computedFormula = computedFormula.replace(match[0], result);
+                                                                } catch {
+                                                                    computedFormula = computedFormula.replace(match[0], "0");
+                                                                }
                                                             }
 
-                                                            computedFormula = computedFormula.replace(match[0], result);
-                                                        } catch {
-                                                            computedFormula = computedFormula.replace(match[0], "0");
-                                                        }
-                                                    }
-
-
-                                                    try {
-                                                        const result = eval(computedFormula);
-                                                        return (
-                                                            <div key={`cf-${i}`}>
-                                                                {Number(result).toFixed(precision)}
-                                                            </div>
-                                                        );
-                                                    } catch {
-                                                        return (
-                                                            <div key={`cf-${i}`} className="text-red-500">Err</div>
-                                                        );
-                                                    }
-                                                })}
-                                            </div>
-                                        ))
+                                                            try {
+                                                                const result = eval(computedFormula);
+                                                                return (
+                                                                    <div key={`cf-${i}`}>
+                                                                        {Number(result).toFixed(precision)}
+                                                                    </div>
+                                                                );
+                                                            } catch {
+                                                                return (
+                                                                    <div key={`cf-${i}`} className="text-red-500">Err</div>
+                                                                );
+                                                            }
+                                                        })}
+                                                    </div>
+                                                    {/* Nested grid rows */}
+                                                    {expandedSubmissions.includes(rowIdx) && (
+                                                        <div className="pl-10 pt-2">
+                                                            {(() => {
+                                                                const gridGroups = groupGridColumns(fields, selectedFields);
+                                                                return Object.entries(gridGroups).map(([parentId, columns]) => {
+                                                                    const parentField = fields.find(f => f.id === parentId);
+                                                                    const parentLabel = parentField ? parentField.label : parentId;
+                                                                    const fieldData = submission.submissionData.find(d => d.fieldLabel === parentId);
+                                                                    let gridRows = [];
+                                                                    try {
+                                                                        gridRows = JSON.parse(fieldData?.fieldValue || "[]");
+                                                                        if (!Array.isArray(gridRows)) gridRows = [];
+                                                                    } catch {
+                                                                        gridRows = [];
+                                                                    }
+                                                                    if (gridRows.length === 0) return null;
+                                                                    return (
+                                                                        <CollapsibleGridTable
+                                                                            key={parentId}
+                                                                            label={parentLabel}
+                                                                            columns={columns}
+                                                                            rows={gridRows}
+                                                                            maxPreviewRows={3}
+                                                                        />
+                                                                    );
+                                                                });
+                                                            })()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })
                                     )}
                                 </div>
-
-
                             </div>
                         ) : (
                             <div className="text-center py-8 text-gray-500">
