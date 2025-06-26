@@ -311,7 +311,7 @@ export default function EnhancedReportDesigner() {
     //                }));
     //            });
     //    }
-    //}, [reportId]);
+    //}, [reportId]);f
 
     useEffect(() => {
         if (!reportId) return;
@@ -338,16 +338,20 @@ export default function EnhancedReportDesigner() {
             })));
             console.log(data.filters)
             const loadedFilters = data.filters.map((f, index) => {
-                const matchingField = fields.find(field => field.label === f.fieldLabel);
+                const matchingField = fields.find(field =>
+                    field.id === f.fieldLabel || field.label === f.fieldLabel
+                );
                 return {
                     id: index + 1,
-                    field: matchingField?.id || "",           // 🔧 use id for select
+                    field: matchingField?.id || f.fieldLabel || "",   // ✅ fallback to GUID
                     label: matchingField?.label || f.fieldLabel,
                     type: matchingField?.type || f.type || "text",
                     condition: f.operator || "",
                     value: f.value || ""
                 };
             });
+
+
 
             setFilters(loadedFilters || []);
             setCalculatedFields(data.calculatedFields || []);
@@ -564,7 +568,7 @@ export default function EnhancedReportDesigner() {
         // Clear previous messages
         setError(null);
         setSuccess(null);
-
+        console.log(filters)
         // Check filter validity
         const invalidFilters = filters.filter(f => !f.field || !f.condition);
         if (invalidFilters.length > 0) {
@@ -589,6 +593,7 @@ export default function EnhancedReportDesigner() {
                 type: matchedField?.type || f.type || "text"
             };
         });
+        console.log(filtersToSave)
         // Prepare payload
         const payload = {
             Id: reportId ? parseInt(reportId) : 0,
@@ -976,47 +981,100 @@ export default function EnhancedReportDesigner() {
                     />
 
                     <div className="mb-6 bg-white p-4 border rounded">
-                        <h3 className="font-semibold mb-3">Chart Builder</h3>
+                        <h3 className="font-semibold mb-3">📊 Chart Builder</h3>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Chart Type */}
                             <div>
                                 <label className="block text-sm mb-1">Chart Type</label>
                                 <select
                                     className="w-full border p-2 rounded"
-                                    value={chartConfig?.type}
-                                    onChange={(e) => setChartConfig({ ...chartConfig, type: e.target.value })}
+                                    value={chartConfig?.type || ""}
+                                    onChange={(e) =>
+                                        setChartConfig({ ...chartConfig, type: e.target.value })
+                                    }
                                 >
-                                    <option value="bar">Bar</option>
-                                    <option value="line">Line</option>
-                                    <option value="pie">Pie</option>
+                                    <option value="">Select Chart Type</option>
+                                    <option value="bar">📊 Bar</option>
+                                    <option value="line">📈 Line</option>
+                                    <option value="pie">🥧 Pie</option>
                                 </select>
                             </div>
 
+                            {/* Chart Title */}
+                            <div>
+                                <label className="block text-sm mb-1">Chart Title</label>
+                                <input
+                                    type="text"
+                                    className="w-full border p-2 rounded"
+                                    placeholder="e.g., Production Overview"
+                                    value={chartConfig?.title || ""}
+                                    onChange={(e) =>
+                                        setChartConfig({ ...chartConfig, title: e.target.value })
+                                    }
+                                />
+                            </div>
+
+                            {/* X-Axis Field */}
+                            <div>
+                                <label className="block text-sm mb-1">X-Axis Field</label>
+                                <select
+                                    className="w-full border p-2 rounded"
+                                    value={chartConfig?.xField || ""}
+                                    onChange={(e) => setChartConfig({ ...chartConfig, xField: e.target.value })}
+                                >
+                                    <option value="">Select Field</option>
+                                    {selectedFields.map((fid) => {
+                                        const field = fields.find((f) => f.id === fid);
+                                        if (!field) return null;
+                                        return (
+                                            <option key={fid} value={field.label}>
+                                                {field.label}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+
+                            </div>
+
+                            {/* Chart Metrics */}
                             <div>
                                 <label className="block text-sm mb-1">Chart Metrics (Multiple Allowed)</label>
                                 <select
                                     multiple
                                     className="w-full border p-2 rounded h-32"
-                                    value={chartConfig?.metrics}
+                                    value={chartConfig?.metrics || []}
                                     onChange={(e) => {
                                         const selected = Array.from(e.target.selectedOptions, opt => opt.value);
                                         setChartConfig({ ...chartConfig, metrics: selected });
                                     }}
                                 >
-                                    {selectedFields.map(fid => {
-                                        const field = fields.find(f => f.id === fid);
+                                    {/* use label as both value and display text */}
+                                    {selectedFields.map((fid) => {
+                                        const field = fields.find((f) => f.id === fid);
                                         if (!field) return null;
-                                        return <option key={fid} value={field?.label}>{field?.label}</option>;
+                                        return (
+                                            <option key={fid} value={field.label}>
+                                                {field.label}
+                                            </option>
+                                        );
                                     })}
+
+                                    {/* also include calculated fields */}
                                     {calculatedFields.map((cf, idx) => (
-                                        <option key={`cf-${idx}`} value={cf.label}>{cf.label}</option>
+                                        <option key={`cf-${idx}`} value={cf.label}>
+                                            {cf.label}
+                                        </option>
                                     ))}
                                 </select>
-                                <p className="text-xs text-gray-500 mt-1">Hold Ctrl (Windows) or Cmd (Mac) to select multiple</p>
-                            </div>
 
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Hold Ctrl (Windows) or Cmd (Mac) to select multiple
+                                </p>
+                            </div>
                         </div>
                     </div>
+
 
                     {/* Filters Section */}
                     <div className="mb-6 bg-white p-6 rounded-lg shadow">
@@ -1024,18 +1082,18 @@ export default function EnhancedReportDesigner() {
                         {filters.length === 0 ? (
                             <p className="text-gray-500 italic">No filters added yet. Use the left panel to add filters.</p>
                         ) : (
-                            <div className="space-y-4">
+                                <div className="space-y-4">
                                 {filters.map((filter) => (
                                     <div key={filter.id} className="flex gap-3 items-center p-3 border rounded">
                                         <select
-                                            value={filter.fieldLabel}
+                                            value={filter.field || ""}
                                             onChange={(e) => {
                                                 const selected = fields.find(f => f.id === e.target.value);
                                                 updateFilter(filter.id, {
                                                     field: selected.id,
                                                     label: selected.label,
                                                     type: selected.type,
-                                                    condition: "", // reset condition
+                                                    condition: "", // reset
                                                     value: ""
                                                 });
                                             }}
@@ -1045,6 +1103,7 @@ export default function EnhancedReportDesigner() {
                                                 <option key={f.id} value={f.id}>{f.label}</option>
                                             ))}
                                         </select>
+
 
 
                                         <select

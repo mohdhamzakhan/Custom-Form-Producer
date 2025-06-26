@@ -414,39 +414,51 @@ namespace productionLine.Server.Controllers
         {
             foreach (var filter in filters)
             {
-                string actualValue = runtimeValues.ContainsKey(filter.FieldLabel)
-                    ? runtimeValues[filter.FieldLabel]
-                    : filter.Value;
+                var field = filter.FieldLabel;
 
-                if (filter.Operator == "between" && (filter.Type == "date" || string.IsNullOrEmpty(filter.Type)) && actualValue.Contains(","))
+                // ✅ Skip if filter is not provided or value is empty/null
+                if (!runtimeValues.TryGetValue(field, out var rawValue) || string.IsNullOrWhiteSpace(rawValue))
+                    continue;
+
+                var op = filter.Operator;
+                var value = rawValue;
+
+                submissions = submissions.Where(sub =>
                 {
-                    var parts = actualValue.Split(',');
-                    if (DateTime.TryParse(parts[0], out var start) && DateTime.TryParse(parts[1], out var end))
+                    var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == field);
+                    if (match == null || string.IsNullOrWhiteSpace(match.FieldValue)) return false;
+
+                    switch (op)
                     {
-                        submissions = submissions
-                            .Where(s => s.SubmissionData.Any(d =>
-                                d.FieldLabel == filter.FieldLabel &&
-                                DateTime.TryParse(d.FieldValue, out var val) &&
-                                val >= start && val <= end)).ToList();
-                    }
-                }
+                        case "equals":
+                            return match.FieldValue == value;
 
-                else if (filter.Operator == "equals")
-                {
-                    submissions = submissions
-                        .Where(s => s.SubmissionData.Any(d =>
-                            d.FieldLabel == filter.FieldLabel &&
-                            d.FieldValue == actualValue)).ToList();
-                }
-                else if (filter.Operator == "contains")
-                {
-                    submissions = submissions
-                        .Where(s => s.SubmissionData.Any(d =>
-                            d.FieldLabel == filter.FieldLabel &&
-                            d.FieldValue != null &&
-                            d.FieldValue.Contains(actualValue))).ToList();
-                }
+                        case "contains":
+                            return match.FieldValue?.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        case "greaterThan":
+                            return double.TryParse(match.FieldValue, out var n1) && double.TryParse(value, out var n2) && n1 > n2;
+
+                        case "lessThan":
+                            return double.TryParse(match.FieldValue, out var m1) && double.TryParse(value, out var m2) && m1 < m2;
+
+                        case "between":
+                            var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length == 2 &&
+                                DateTime.TryParse(parts[0], out var start) &&
+                                DateTime.TryParse(parts[1], out var end) &&
+                                DateTime.TryParse(match.FieldValue, out var actual))
+                            {
+                                return actual >= start && actual <= end;
+                            }
+                            return false;
+
+                        default:
+                            return true;
+                    }
+                }).ToList();
             }
+
 
             return submissions;
         }

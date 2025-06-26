@@ -1,167 +1,98 @@
-﻿// components/ReportCharts.jsx
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-    PieChart, Pie, Cell, LineChart, Line
-} from 'recharts';
-import { useEffect, useState } from 'react';
+﻿import {
+    BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+    PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer
+} from "recharts";
+import { useMemo } from "react";
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+const COLORS = [
+    "#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#00C49F", "#FFBB28",
+    "#FF6384", "#36A2EB", "#9966FF", "#FFCE56", "#4BC0C0"
+];
 
-export default function ReportCharts({ submissionData, fields, selectedFields }) {
-    const [chartData, setChartData] = useState([]);
-    const [chartType, setChartType] = useState('bar');
-    const [selectedMetrics, setSelectedMetrics] = useState([]);
 
-    useEffect(() => {
-        if (!submissionData.length || !selectedMetrics.length) return;
+export default function ReportCharts({ data = [], metrics = [], type = "bar", fields = [], xField = "Line Name", title = "Chart" }) {
+    const chartData = useMemo(() => {
+        if (!Array.isArray(data) || !Array.isArray(metrics)) return [];
 
-        const rows = [];
+        const grouped = {};
 
-        submissionData.forEach((submission, index) => {
-            const row = { name: `Row ${index + 1}` };
+        data.forEach(entry => {
+            const xValue = entry.data?.find(d => d.fieldLabel === xField)?.value || "Unknown";
 
-            selectedMetrics.forEach(metric => {
-                selectedFields.forEach(fieldId => {
-                    const field = fields.find(f => f.id === fieldId);
-                    const baseFieldId = fieldId.split(":")[0];
-                    const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+            if (!grouped[xValue]) grouped[xValue] = { name: xValue };
 
-                    if (fieldData?.fieldValue) {
-                        try {
-                            const parsed = JSON.parse(fieldData.fieldValue);
-
-                            if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                                const values = parsed.map(row => Number(row[metric]) || 0);
-                                if (values.length > 0) {
-                                    row[metric] = values.reduce((a, b) => a + b, 0);
-                                }
-                            } else if (field.label === metric) {
-                                row[metric] = Number(parsed) || 0;
-                            }
-                        } catch {
-                            if (field.label === metric) {
-                                row[metric] = Number(fieldData.fieldValue) || 0;
-                            }
-                        }
-                    }
-                });
+            metrics.forEach(metric => {
+                const val = entry.data?.find(d => d.fieldLabel === metric);
+                const num = parseFloat(val?.value || "0");
+                grouped[xValue][metric] = (grouped[xValue][metric] || 0) + (isNaN(num) ? 0 : num);
             });
-
-            rows.push(row);
         });
 
-        setChartData(rows);
-    }, [submissionData, fields, selectedFields, selectedMetrics]);
+        return Object.values(grouped);
+    }, [data, metrics, xField]);
 
-
-    const renderChart = () => {
-        if (!chartData.length) return <p className="text-gray-400">No data available</p>;
-
-        switch (chartType) {
-            case 'line':
-                return (
-                    <LineChart width={600} height={350} data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {selectedMetrics.map((metric, idx) => (
-                            <Line
-                                key={metric}
-                                type="monotone"
-                                dataKey={metric}
-                                stroke={COLORS[idx % COLORS.length]}
-                            />
-                        ))}
-                    </LineChart>
-                );
-            case 'pie':
-                if (selectedMetrics.length !== 1) {
-                    return <p className="text-red-500">Select one metric for pie chart</p>;
-                }
-                return (
-                    <PieChart width={400} height={300}>
-                        <Pie
-                            data={chartData}
-                            dataKey={selectedMetrics[0]}
-                            nameKey="name"
-                            outerRadius={100}
-                            fill="#8884d8"
-                            label
-                        >
-                            {chartData.map((_, i) => (
-                                <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />
-                            ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend />
-                    </PieChart>
-                );
-            default:
-                return (
-                    <BarChart width={600} height={350} data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {selectedMetrics.map((metric, idx) => (
-                            <Bar key={metric} dataKey={metric} fill={COLORS[idx % COLORS.length]} />
-                        ))}
-                    </BarChart>
-                );
-        }
-    };
-
-
-    const metricOptions = [];
-
-    selectedFields.forEach(fid => {
-        const field = fields.find(f => f.id === fid);
-        if (field?.label) {
-            if (fid.includes(":")) {
-                const label = field.label.split("→").pop().trim();
-                if (!metricOptions.includes(label)) metricOptions.push(label);
-            } else {
-                if (!metricOptions.includes(field.label)) metricOptions.push(field.label);
-            }
-        }
-    });
+    if (!chartData || chartData.length === 0) {
+        return <div className="text-gray-500 italic">No chart data available.</div>;
+    }
 
     return (
-        <div className="border rounded p-4 mt-4 bg-white">
-            <div className="flex items-center gap-4 mb-4">
-                <select
-                    multiple
-                    className="border p-2 rounded h-32"
-                    value={selectedMetrics}
-                    onChange={(e) => {
-                        const selected = Array.from(e.target.selectedOptions, o => o.value);
-                        setSelectedMetrics(selected);
-                    }}
-                >
-                    <option value="">Select Metrics</option>
-                    {metricOptions.map((label, idx) => (
-                        <option key={idx} value={label}>{label}</option>
-                    ))}
-                </select>
+        <div className="bg-white p-4 rounded border shadow">
+            <h4 className="font-semibold text-lg mb-4">{title}</h4>
+            <ResponsiveContainer width="100%" height={300}>
+                {type === "bar" && (
+                    <BarChart data={chartData} width={700} height={400}>
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        {metrics.map((metric, idx) => (
+                            <Bar
+                                key={metric}
+                                dataKey={metric}
+                                fill={COLORS[idx % COLORS.length]}
+                                label={{ position: "top", fill: "#000", fontSize: 12 }}
+                            />
+                        ))}
+                    </BarChart>
+                )}
 
 
-                <select
-                    value={chartType}
-                    onChange={(e) => setChartType(e.target.value)}
-                    className="border p-2 rounded"
-                >
-                    <option value="bar">Bar</option>
-                    <option value="pie">Pie</option>
-                    <option value="line">Line</option>
-                </select>
-            </div>
+                {type === "line" && (
+                    <LineChart data={chartData}>
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        {metrics.map((metric, idx) => (
+                            <Line key={metric} type="monotone" dataKey={metric} stroke={COLORS[idx % COLORS.length]} />
+                        ))}
+                    </LineChart>
+                )}
 
-            <div className="flex justify-center">
-                {renderChart()}
-            </div>
+                {type === "pie" && (
+                    <PieChart>
+                        <Tooltip />
+                        <Legend />
+                        {metrics.map((metric, idx) => (
+                            <Pie
+                                key={metric}
+                                data={chartData}
+                                dataKey={metric}
+                                nameKey="name"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80 + idx * 20}
+                                label
+                            >
+                                {chartData.map((entry, i) => (
+                                    <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />
+                                ))}
+                            </Pie>
+                        ))}
+                    </PieChart>
+                )}
+
+            </ResponsiveContainer>
         </div>
     );
 }

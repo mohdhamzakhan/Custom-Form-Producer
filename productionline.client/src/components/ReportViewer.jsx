@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import ReportCharts from "./ReportCharts";
@@ -17,6 +17,7 @@ export default function ReportViewer() {
     const [selectedFields, setSelectedFields] = useState([]);
     const [displayMode, setDisplayMode] = useState("table");
     const [viewMode, setViewMode] = useState("expanded");
+    const [chartConfig, setChartConfig] = useState({ type: "bar", metrics: [] });
 
     useEffect(() => {
         const fetchTemplate = async () => {
@@ -34,6 +35,13 @@ export default function ReportViewer() {
 
                 setFields(resolvedFields);
                 setSelectedFields(resolvedFields);
+
+                // Set default chart config if not provided
+                setChartConfig({
+                    type: res.data.chartConfig?.type || "bar",
+                    metrics: res.data.chartConfig?.metrics || []
+                });
+
                 setLoading(false);
 
                 if (!res.data.filters || res.data.filters.length === 0) {
@@ -59,6 +67,35 @@ export default function ReportViewer() {
             setLoading(false);
         }
     };
+
+    // Memoize the chart data to prevent infinite re-renders
+    const chartData = useMemo(() => {
+        if (!reportData || reportData.length === 0) return [];
+
+        console.log('Recreating chart data...', reportData.length, 'items');
+
+        // Transform the data to the format expected by ReportCharts
+        const transformedData = reportData.map(row => ({
+            submissionId: row.submissionId,
+            submissionData: (row.data || []).map(cell => ({
+                fieldLabel: cell.fieldLabel,
+                fieldValue: cell.value
+            }))
+        }));
+
+        return transformedData;
+    }, [reportData]);
+
+    // Memoize selected field IDs
+    const selectedFieldIds = useMemo(() => {
+        return selectedFields.map(f => typeof f === "string" ? f : f.id);
+    }, [selectedFields]);
+
+    // Memoize chart config to prevent object recreation
+    const memoizedChartConfig = useMemo(() => ({
+        type: chartConfig?.type || "bar",
+        metrics: chartConfig?.metrics || []
+    }), [chartConfig?.type, chartConfig?.metrics]);
 
     const formatCellValue = (value, field) => {
         if (!value || value === "-" || value === "") return "—";
@@ -96,8 +133,6 @@ export default function ReportViewer() {
 
         return value;
     };
-
-
 
     const renderSummaryStats = () => {
         if (reportData.length === 0) return null;
@@ -204,29 +239,141 @@ export default function ReportViewer() {
         );
     };
 
+    const renderActiveFilters = () => {
+        const active = filters
+            .filter(f => runtimeFilters[f.fieldLabel] && runtimeFilters[f.fieldLabel] !== "")
+            .map(f => {
+                const val = runtimeFilters[f.fieldLabel];
+                const label = fields.find(x => x.id === f.fieldLabel)?.label || f.fieldLabel;
+                return `${label}: ${val}`;
+            });
+
+        if (active.length === 0) return null;
+
+        return (
+            <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded shadow-sm">
+                <div className="font-medium mb-1">Active Filters:</div>
+                <ul className="list-disc ml-5 text-sm">
+                    {active.map((text, i) => <li key={i}>{text}</li>)}
+                </ul>
+            </div>
+        );
+    };
+
     if (loading) return <div className="loading">Loading report...</div>;
     if (error) return <div className="error">{error}</div>;
 
     return (
         <div className="report-viewer-wrapper">
             <h2 className="viewer-heading">📊 Report Viewer</h2>
+            {filters.length > 0 && (
+                <div className="filter-section mb-6 bg-white p-4 rounded shadow">
+                    <h3 className="font-semibold mb-3 text-gray-800">🔍 Apply Filters</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filters.map((filter, idx) => {
+                            const field = fields.find(f => f.id === filter.fieldLabel || f.label === filter.fieldLabel);
+
+                            // BETWEEN (date range)
+                            if (filter.operator === "between" && filter.type === "date") {
+                                const [start, end] = (runtimeFilters[filter.fieldLabel] || "").split(",") || ["", ""];
+                                return (
+                                    <div key={idx} className="flex flex-col">
+                                        <label className="text-sm font-medium text-gray-700 mb-1">{field?.label || filter.fieldLabel} (From - To)</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="date"
+                                                value={start || ""}
+                                                onChange={(e) => {
+                                                    const newStart = e.target.value;
+                                                    setRuntimeFilters(prev => ({
+                                                        ...prev,
+                                                        [filter.fieldLabel]: `${newStart},${end || ""}`
+                                                    }));
+                                                }}
+                                                className="border px-2 py-1 rounded flex-1"
+                                            />
+                                            <input
+                                                type="date"
+                                                value={end || ""}
+                                                onChange={(e) => {
+                                                    const newEnd = e.target.value;
+                                                    setRuntimeFilters(prev => ({
+                                                        ...prev,
+                                                        [filter.fieldLabel]: `${start || ""},${newEnd}`
+                                                    }));
+                                                }}
+                                                className="border px-2 py-1 rounded flex-1"
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            // Default text input
+                            return (
+                                <div key={idx} className="flex flex-col">
+                                    <label className="text-sm font-medium text-gray-700 mb-1">{field?.label || filter.fieldLabel}</label>
+                                    <input
+                                        type="text"
+                                        value={runtimeFilters[filter.fieldLabel] || ""}
+                                        onChange={(e) =>
+                                            setRuntimeFilters(prev => ({
+                                                ...prev,
+                                                [filter.fieldLabel]: e.target.value
+                                            }))
+                                        }
+                                        className="border px-2 py-1 rounded"
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="mt-4 text-right">
+                        <button
+                            onClick={fetchFilteredReport}
+                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                        >
+                            ▶️ Run Report
+                        </button>
+                        {Object.keys(runtimeFilters).length > 0 && (
+                            <button
+                                onClick={() => {
+                                    setRuntimeFilters({});
+                                    fetchFilteredReport(); // reload without filters
+                                }}
+                                className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-medium mb-4 ml-2"
+                            >
+                                🧹 Clear All Filters
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+            {renderActiveFilters()}
             {renderSummaryStats()}
             {renderViewControls()}
+
             {displayMode === "table"
                 ? viewMode === "expanded"
                     ? renderExpandedTable()
                     : renderGroupedTable()
                 : (
-                    <ReportCharts
-                        submissionData={reportData.map(r => ({
-                            submissionData: (r.data || []).map(cell => ({
-                                fieldLabel: cell.fieldLabel,
-                                fieldValue: cell.value
-                            }))
-                        }))}
-                        fields={fields}
-                        selectedFields={selectedFields.map(f => typeof f === "string" ? f : f.id)}
-                    />
+                    <div key="chart-container">
+                        {console.log('Rendering ReportCharts with:', {
+                            chartDataLength: chartData.length,
+                            fieldsLength: fields.length,
+                            selectedFieldsLength: selectedFieldIds.length,
+                            chartType: memoizedChartConfig.type,
+                            metricsLength: memoizedChartConfig.metrics.length
+                        })}
+                        <ReportCharts
+                            data={reportData}
+                            metrics={chartConfig.metrics}
+                            type={chartConfig.type}
+                            xField={chartConfig.xField || "Line Name"}
+                            title={chartConfig.title || "Report Chart"}
+                        />
+                    </div>
                 )}
         </div>
     );

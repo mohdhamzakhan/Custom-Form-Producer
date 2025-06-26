@@ -1,4 +1,6 @@
-﻿public class ReportTemplateDto
+﻿using System.Text.Json.Serialization;
+
+public class ReportTemplateDto
 {
     public int Id { get; set; }
     public int FormId { get; set; }
@@ -16,9 +18,19 @@
 
 public class ChartConfig
 {
-    public string Type { get; set; }           // e.g., "bar", "line", etc.
-    public List<string> Metrics { get; set; }  // or a more detailed type
+    [JsonPropertyName("type")]
+    public string Type { get; set; }
+
+    [JsonPropertyName("metrics")]
+    public List<string> Metrics { get; set; }
+
+    [JsonPropertyName("title")]
+    public string Title { get; set; }
+
+    [JsonPropertyName("xField")]
+    public string XField { get; set; }
 }
+
 
 public class ReportFieldDto
 {
