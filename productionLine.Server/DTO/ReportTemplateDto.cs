@@ -53,6 +53,8 @@ public class CalculatedField
     public string Formula { get; set; }
     public string? Description { get; set; }
     public string? Format { get; set; }
-    public int Precision { get; set; }
+    public int? Precision { get; set; }
+    public string chartLabel { get; set; }
+    public string scope { get; set; } // "row" or "column"
 }
 

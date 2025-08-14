@@ -26,6 +26,7 @@ export default function ReportViewer() {
                 const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${templateId}`);
                 setTemplate(res.data);
                 setFilters(res.data.filters || []);
+                console.log(res.data)
 
                 const resolvedFields = (res.data.fields || []).map(f => ({
                     id: f.fieldId || f.id,
@@ -39,7 +40,9 @@ export default function ReportViewer() {
                 // Set default chart config if not provided
                 setChartConfig({
                     type: res.data.chartConfig?.type || "bar",
-                    metrics: res.data.chartConfig?.metrics || []
+                    metrics: res.data.chartConfig?.metrics || [],
+                    xField: res.data.chartConfig?.xField,
+                    title: res.data.chartConfig?.title
                 });
 
                 setLoading(false);
@@ -60,7 +63,7 @@ export default function ReportViewer() {
         try {
             setLoading(true);
             const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
-            setReportData(res.data);
+                        setReportData(res.data);
             setLoading(false);
         } catch (err) {
             setError("Failed to run filtered report: " + (err.message || "Unknown error"));
@@ -71,8 +74,6 @@ export default function ReportViewer() {
     // Memoize the chart data to prevent infinite re-renders
     const chartData = useMemo(() => {
         if (!reportData || reportData.length === 0) return [];
-
-        console.log('Recreating chart data...', reportData.length, 'items');
 
         // Transform the data to the format expected by ReportCharts
         const transformedData = reportData.map(row => ({
@@ -94,7 +95,8 @@ export default function ReportViewer() {
     // Memoize chart config to prevent object recreation
     const memoizedChartConfig = useMemo(() => ({
         type: chartConfig?.type || "bar",
-        metrics: chartConfig?.metrics || []
+        metrics: chartConfig?.metrics || [],
+        xField: chartConfig?.xField
     }), [chartConfig?.type, chartConfig?.metrics]);
 
     const formatCellValue = (value, field) => {
@@ -359,13 +361,6 @@ export default function ReportViewer() {
                     : renderGroupedTable()
                 : (
                     <div key="chart-container">
-                        {console.log('Rendering ReportCharts with:', {
-                            chartDataLength: chartData.length,
-                            fieldsLength: fields.length,
-                            selectedFieldsLength: selectedFieldIds.length,
-                            chartType: memoizedChartConfig.type,
-                            metricsLength: memoizedChartConfig.metrics.length
-                        })}
                         <ReportCharts
                             data={reportData}
                             metrics={chartConfig.metrics}
