@@ -348,3 +348,367 @@
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
+
+
+
+
+/* Enhanced Report Viewer Styles */
+
+/* Dashboard Layout */
+.dashboard-container {
+    padding: 1rem;
+}
+
+.dashboard-chart-item {
+    background: white;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+}
+
+/* Charts Grid */
+.charts-grid {
+    padding: 1rem;
+}
+
+.chart-container {
+    background: white;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+}
+
+/* Enhanced View Controls */
+.view-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+    .view-controls button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #d1d5db;
+        border-radius: 0.375rem;
+        background: white;
+        color: #374151;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+        .view-controls button:hover {
+            background: #f3f4f6;
+            border-color: #9ca3af;
+        }
+
+        .view-controls button.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+/* Enhanced Stats Card */
+.stats-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Chart Builder Styles */
+.chart-builder-section {
+    background: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    border-radius: 0.5rem;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.chart-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.chart-type-option {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+    .chart-type-option:hover {
+        border-color: #3b82f6;
+        background: #eff6ff;
+    }
+
+    .chart-type-option.selected {
+        border-color: #3b82f6;
+        background: #dbeafe;
+    }
+
+    .chart-type-option .icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .chart-type-option .label {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .chart-type-option .description {
+        font-size: 0.75rem;
+        color: #6b7280;
+    }
+
+/* Formula Builder */
+.formula-builder {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.formula-examples {
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+    .formula-examples code {
+        background: #bfdbfe;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 0.75rem;
+    }
+
+/* Calculation Type Badges */
+.calc-type-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.calc-type-aggregate {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.calc-type-rowwise {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.calc-type-columnwise {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+/* Enhanced Tables */
+.mini-grid-table {
+    font-size: 0.75rem;
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.25rem 0;
+}
+
+    .mini-grid-table th,
+    .mini-grid-table td {
+        border: 1px solid #d1d5db;
+        padding: 0.25rem 0.5rem;
+        text-align: left;
+    }
+
+    .mini-grid-table th {
+        background: #f3f4f6;
+        font-weight: 600;
+    }
+
+.comma-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+    .comma-list li {
+        font-size: 0.75rem;
+        color: #4b5563;
+        margin-bottom: 0.125rem;
+    }
+
+/* Grouped View Enhancements */
+.group {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.group-header {
+    background: linear-gradient(90deg, #f3f4f6, #e5e7eb);
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #d1d5db;
+}
+
+    .group-header h4 {
+        margin: 0;
+        font-weight: 600;
+        color: #374151;
+    }
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .chart-type-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stats-card .flex {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .view-controls {
+        flex-wrap: wrap;
+    }
+
+    .dashboard-container .grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Loading States */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: #6b7280;
+    font-size: 1.125rem;
+}
+
+    .loading::before {
+        content: '';
+        width: 20px;
+        height: 20px;
+        border: 2px solid #d1d5db;
+        border-top: 2px solid #3b82f6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 0.5rem;
+    }
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Error States */
+.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+}
+
+/* Success States */
+.success {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #16a34a;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+}
+
+/* Chart Validation */
+.chart-validation-warning {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    color: #92400e;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+}
+
+.chart-validation-error {
+    background: #fef2f2;
+    border: 1px solid #f87171;
+    color: #dc2626;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+}
+
+/* Combo Chart Configuration */
+.combo-config {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+    .combo-config h4 {
+        margin: 0 0 0.5rem 0;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+/* Print Styles */
+@media print {
+    .view-controls,
+    .filter-section {
+        display: none;
+    }
+
+    .chart-container,
+    .dashboard-chart-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .stats-card {
+        background: #f3f4f6 !important;
+        color: #374151 !important;
+        box-shadow: none;
+    }
+}

@@ -5,7 +5,7 @@ import ReportCharts from "./ReportCharts";
 import { APP_CONSTANTS } from "./store";
 import "../report_viewer_styles.css";
 
-export default function ReportViewer() {
+export default function EnhancedReportViewer() {
     const { templateId } = useParams();
     const [filters, setFilters] = useState([]);
     const [runtimeFilters, setRuntimeFilters] = useState({});
@@ -17,7 +17,7 @@ export default function ReportViewer() {
     const [selectedFields, setSelectedFields] = useState([]);
     const [displayMode, setDisplayMode] = useState("table");
     const [viewMode, setViewMode] = useState("expanded");
-    const [chartConfig, setChartConfig] = useState({ type: "bar", metrics: [] });
+    const [chartConfigs, setChartConfigs] = useState([]);
 
     useEffect(() => {
         const fetchTemplate = async () => {
@@ -26,7 +26,6 @@ export default function ReportViewer() {
                 const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${templateId}`);
                 setTemplate(res.data);
                 setFilters(res.data.filters || []);
-                console.log(res.data)
 
                 const resolvedFields = (res.data.fields || []).map(f => ({
                     id: f.fieldId || f.id,
@@ -37,13 +36,22 @@ export default function ReportViewer() {
                 setFields(resolvedFields);
                 setSelectedFields(resolvedFields);
 
-                // Set default chart config if not provided
-                setChartConfig({
-                    type: res.data.chartConfig?.type || "bar",
-                    metrics: res.data.chartConfig?.metrics || [],
-                    xField: res.data.chartConfig?.xField,
-                    title: res.data.chartConfig?.title
-                });
+                // Handle multiple chart configurations
+                const charts = res.data.chartConfig || [];
+                console.log(charts)
+                if (charts.length === 0 && res.data.chartConfig) {
+                    // Backward compatibility - convert single chart to array
+                    charts.push({
+                        id: 1,
+                        title: res.data.chartConfig.title || "Chart 1",
+                        type: res.data.chartConfig.type || "bar",
+                        metrics: res.data.chartConfig.metrics || [],
+                        xField: res.data.chartConfig.xField,
+                        position: { row: 0, col: 0, width: 12, height: 6 },
+                        comboConfig: res.data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] }
+                    });
+                }
+                setChartConfigs(charts);
 
                 setLoading(false);
 
@@ -63,7 +71,7 @@ export default function ReportViewer() {
         try {
             setLoading(true);
             const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
-                        setReportData(res.data);
+            setReportData(res.data);
             setLoading(false);
         } catch (err) {
             setError("Failed to run filtered report: " + (err.message || "Unknown error"));
@@ -78,26 +86,14 @@ export default function ReportViewer() {
         // Transform the data to the format expected by ReportCharts
         const transformedData = reportData.map(row => ({
             submissionId: row.submissionId,
-            submissionData: (row.data || []).map(cell => ({
+            data: (row.data || []).map(cell => ({
                 fieldLabel: cell.fieldLabel,
-                fieldValue: cell.value
+                value: cell.value
             }))
         }));
 
         return transformedData;
     }, [reportData]);
-
-    // Memoize selected field IDs
-    const selectedFieldIds = useMemo(() => {
-        return selectedFields.map(f => typeof f === "string" ? f : f.id);
-    }, [selectedFields]);
-
-    // Memoize chart config to prevent object recreation
-    const memoizedChartConfig = useMemo(() => ({
-        type: chartConfig?.type || "bar",
-        metrics: chartConfig?.metrics || [],
-        xField: chartConfig?.xField
-    }), [chartConfig?.type, chartConfig?.metrics]);
 
     const formatCellValue = (value, field) => {
         if (!value || value === "-" || value === "") return "—";
@@ -105,7 +101,6 @@ export default function ReportViewer() {
         try {
             const parsed = JSON.parse(value);
             if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                // Already JSON object grid → render as table
                 return (
                     <table className="mini-grid-table">
                         <thead>
@@ -123,7 +118,6 @@ export default function ReportViewer() {
             }
         } catch { }
 
-        // NEW: if it's a comma-separated value
         if (typeof value === "string" && value.includes(", ")) {
             const items = value.split(/, ?/);
             return (
@@ -140,6 +134,8 @@ export default function ReportViewer() {
         if (reportData.length === 0) return null;
         const totalSubmissions = new Set(reportData.map(r => r.submissionId)).size;
         const totalItems = reportData.length;
+        const chartsCount = chartConfigs.length;
+
         return (
             <div className="stats-card">
                 <div className="flex gap-6">
@@ -151,6 +147,10 @@ export default function ReportViewer() {
                         <div className="stat-number text-blue-600">{totalItems}</div>
                         <div className="text-sm">Total Items</div>
                     </div>
+                    <div className="text-center">
+                        <div className="stat-number text-purple-600">{chartsCount}</div>
+                        <div className="text-sm">Charts</div>
+                    </div>
                 </div>
             </div>
         );
@@ -158,13 +158,39 @@ export default function ReportViewer() {
 
     const renderViewControls = () => (
         <div className="view-controls">
-            <button onClick={() => setDisplayMode("table")} className={displayMode === 'table' ? 'active' : ''}>📊 Table</button>
-            <button onClick={() => setDisplayMode("chart")} className={displayMode === 'chart' ? 'active' : ''}>📈 Charts</button>
+            <button
+                onClick={() => setDisplayMode("table")}
+                className={displayMode === 'table' ? 'active' : ''}
+            >
+                📊 Table
+            </button>
+            <button
+                onClick={() => setDisplayMode("charts")}
+                className={displayMode === 'charts' ? 'active' : ''}
+            >
+                📈 Charts ({chartConfigs.length})
+            </button>
+            <button
+                onClick={() => setDisplayMode("dashboard")}
+                className={displayMode === 'dashboard' ? 'active' : ''}
+            >
+                🎯 Dashboard
+            </button>
 
             {displayMode === 'table' && (
                 <>
-                    <button onClick={() => setViewMode("expanded")} className={viewMode === 'expanded' ? 'active' : ''}>📋 Expanded</button>
-                    <button onClick={() => setViewMode("grouped")} className={viewMode === 'grouped' ? 'active' : ''}>📑 Grouped</button>
+                    <button
+                        onClick={() => setViewMode("expanded")}
+                        className={viewMode === 'expanded' ? 'active' : ''}
+                    >
+                        📋 Expanded
+                    </button>
+                    <button
+                        onClick={() => setViewMode("grouped")}
+                        className={viewMode === 'grouped' ? 'active' : ''}
+                    >
+                        📑 Grouped
+                    </button>
                 </>
             )}
         </div>
@@ -241,6 +267,110 @@ export default function ReportViewer() {
         );
     };
 
+    const renderChartsView = () => {
+        if (chartConfigs.length === 0) {
+            return (
+                <div className="text-center py-12 bg-gray-50 rounded">
+                    <div className="text-6xl mb-4">📈</div>
+                    <h3 className="text-xl font-medium text-gray-600 mb-2">No Charts Configured</h3>
+                    <p className="text-gray-500">Charts need to be configured in the report designer.</p>
+                </div>
+            );
+        }
+        console.log(chartData)
+        return (
+            <div className="charts-grid space-y-6">
+                {chartConfigs.map((chart, index) => (
+                    <div key={chart.id || index} className="chart-container">
+                        <ReportCharts
+                            data={chartData}
+                            metrics={chart.metrics}
+                            type={chart.type}
+                            xField={chart.xField || "Line Name"}
+                            title={chart.title || `Chart ${index + 1}`}
+                            comboConfig={chart.comboConfig}
+                        />
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    const renderDashboardView = () => {
+        if (chartConfigs.length === 0) {
+            return renderChartsView(); // Fallback to charts view if no dashboard layout
+        }
+
+        return (
+            <div className="dashboard-container">
+                {/* Summary Stats Row */}
+                <div className="mb-6">
+                    {renderSummaryStats()}
+                </div>
+
+                {/* Charts Grid Layout */}
+                <div className="grid grid-cols-12 gap-4 auto-rows-min">
+                    {chartConfigs.map((chart, index) => (
+                        <div
+                            key={chart.id || index}
+                            className="dashboard-chart-item"
+                            style={{
+                                gridColumn: `span ${chart.position?.width || 6}`,
+                                minHeight: `${(chart.position?.height || 6) * 40}px`
+                            }}
+                        >
+                            <ReportCharts
+                                data={chartData}
+                                metrics={chart.metrics}
+                                type={chart.type}
+                                xField={chart.xField || "Line Name"}
+                                title={chart.title || `Chart ${index + 1}`}
+                                comboConfig={chart.comboConfig}
+                            />
+                        </div>
+                    ))}
+                </div>
+
+                {/* Compact Table Summary */}
+                {reportData.length > 0 && (
+                    <div className="mt-6">
+                        <h3 className="text-lg font-semibold mb-3">📋 Data Summary</h3>
+                        <div className="overflow-x-auto">
+                            <table className="report-table">
+                                <thead>
+                                    <tr>
+                                        {selectedFields.slice(0, 5).map((field, i) => {
+                                            const label = typeof field === 'object' ? field.label : field;
+                                            return <th key={i}>{label}</th>;
+                                        })}
+                                        {selectedFields.length > 5 && <th>...</th>}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {reportData.slice(0, 10).map((row, i) => (
+                                        <tr key={i}>
+                                            {selectedFields.slice(0, 5).map((field, j) => {
+                                                const fLabel = typeof field === 'object' ? field.label : field;
+                                                const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
+                                                return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
+                                            })}
+                                            {selectedFields.length > 5 && <td className="text-gray-400">...</td>}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {reportData.length > 10 && (
+                                <div className="text-center py-2 text-gray-500 text-sm">
+                                    ... and {reportData.length - 10} more rows
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderActiveFilters = () => {
         const active = filters
             .filter(f => runtimeFilters[f.fieldLabel] && runtimeFilters[f.fieldLabel] !== "")
@@ -267,7 +397,9 @@ export default function ReportViewer() {
 
     return (
         <div className="report-viewer-wrapper">
-            <h2 className="viewer-heading">📊 Report Viewer</h2>
+            <h2 className="viewer-heading">📊 Enhanced Report Viewer</h2>
+
+            {/* Filters Section */}
             {filters.length > 0 && (
                 <div className="filter-section mb-6 bg-white p-4 rounded shadow">
                     <h3 className="font-semibold mb-3 text-gray-800">🔍 Apply Filters</h3>
@@ -275,12 +407,13 @@ export default function ReportViewer() {
                         {filters.map((filter, idx) => {
                             const field = fields.find(f => f.id === filter.fieldLabel || f.label === filter.fieldLabel);
 
-                            // BETWEEN (date range)
                             if (filter.operator === "between" && filter.type === "date") {
                                 const [start, end] = (runtimeFilters[filter.fieldLabel] || "").split(",") || ["", ""];
                                 return (
                                     <div key={idx} className="flex flex-col">
-                                        <label className="text-sm font-medium text-gray-700 mb-1">{field?.label || filter.fieldLabel} (From - To)</label>
+                                        <label className="text-sm font-medium text-gray-700 mb-1">
+                                            {field?.label || filter.fieldLabel} (From - To)
+                                        </label>
                                         <div className="flex gap-2">
                                             <input
                                                 type="date"
@@ -311,10 +444,11 @@ export default function ReportViewer() {
                                 );
                             }
 
-                            // Default text input
                             return (
                                 <div key={idx} className="flex flex-col">
-                                    <label className="text-sm font-medium text-gray-700 mb-1">{field?.label || filter.fieldLabel}</label>
+                                    <label className="text-sm font-medium text-gray-700 mb-1">
+                                        {field?.label || filter.fieldLabel}
+                                    </label>
                                     <input
                                         type="text"
                                         value={runtimeFilters[filter.fieldLabel] || ""}
@@ -341,7 +475,7 @@ export default function ReportViewer() {
                             <button
                                 onClick={() => {
                                     setRuntimeFilters({});
-                                    fetchFilteredReport(); // reload without filters
+                                    fetchFilteredReport();
                                 }}
                                 className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-medium mb-4 ml-2"
                             >
@@ -351,25 +485,21 @@ export default function ReportViewer() {
                     </div>
                 </div>
             )}
+
             {renderActiveFilters()}
             {renderSummaryStats()}
             {renderViewControls()}
 
-            {displayMode === "table"
-                ? viewMode === "expanded"
-                    ? renderExpandedTable()
-                    : renderGroupedTable()
-                : (
-                    <div key="chart-container">
-                        <ReportCharts
-                            data={reportData}
-                            metrics={chartConfig.metrics}
-                            type={chartConfig.type}
-                            xField={chartConfig.xField || "Line Name"}
-                            title={chartConfig.title || "Report Chart"}
-                        />
-                    </div>
+            {/* Main Content */}
+            <div className="main-content">
+                {displayMode === "table" ? (
+                    viewMode === "expanded" ? renderExpandedTable() : renderGroupedTable()
+                ) : displayMode === "charts" ? (
+                    renderChartsView()
+                ) : (
+                    renderDashboardView()
                 )}
+            </div>
         </div>
     );
 }

@@ -186,8 +186,8 @@ namespace productionLine.Server.Controllers
     ? JsonSerializer.Serialize(dto.CalculatedFields)
     : null;
 
-                template.ChartConfig = dto.ChartConfig != null
-                    ? JsonSerializer.Serialize(dto.ChartConfig)
+                template.ChartConfig = dto.ChartConfigs != null
+                    ? JsonSerializer.Serialize(dto.ChartConfigs)
                     : null;
 
             }
@@ -216,7 +216,9 @@ namespace productionLine.Server.Controllers
                         Type = f.Type
                     }).ToList(),
                     CalculatedFields = JsonSerializer.Serialize(dto.CalculatedFields ?? new List<CalculatedField>()),
-                    ChartConfig = JsonSerializer.Serialize(dto.ChartConfig ?? new object())
+                    ChartConfig = dto.ChartConfigs?.Any() == true
+                                    ? JsonSerializer.Serialize(dto.ChartConfigs)
+                                    : null
                 };
 
                 _context.ReportTemplates.Add(template);
@@ -488,16 +490,14 @@ namespace productionLine.Server.Controllers
                 }).ToList(),
                 filters = template.Filters,
                 sharedWithRole = !string.IsNullOrEmpty(template.SharedWithRole)
-    ? JsonSerializer.Deserialize<List<string>>(template.SharedWithRole)
-    : new List<string>(),
-            calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
-    ? JsonSerializer.Deserialize<List<CalculatedField>>(template.CalculatedFields)
-    : new List<CalculatedField>(),
-
+                    ? JsonSerializer.Deserialize<List<string>>(template.SharedWithRole)
+                    : new List<string>(),
+                calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
+                    ? JsonSerializer.Deserialize<List<CalculatedField>>(template.CalculatedFields)
+                    : new List<CalculatedField>(),
                 chartConfig = !string.IsNullOrEmpty(template.ChartConfig)
-    ? JsonSerializer.Deserialize<ChartConfig>(template.ChartConfig)
-    : null
-
+                    ? JsonSerializer.Deserialize<List<ChartConfig>>(template.ChartConfig)
+                    : new List<ChartConfig>()
             });
         }
 
