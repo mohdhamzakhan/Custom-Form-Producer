@@ -396,13 +396,14 @@ export default function EnhancedReportDesigner() {
             setCalculatedFields(data.calculatedFields || []);
             // Normalize chartConfigs handling for backward compatibility
             let charts = data.chartConfig || [];
-            console.log(charts)
             if ((!charts || charts.length === 0) && data.chartConfig) {
                 charts = [{
                     id: data.chartConfig.id || 1,
                     title: data.chartConfig.title || "Chart 1",
                     type: data.chartConfig.type || "bar",
+                    // Keep metrics as labels (don't convert back to IDs)
                     metrics: data.chartConfig.metrics || [],
+                    // Keep xField as label (don't convert back to ID)
                     xField: data.chartConfig.xField || null,
                     position: {
                         row: data.chartConfig.position?.Row ?? 0,
@@ -413,7 +414,7 @@ export default function EnhancedReportDesigner() {
                     comboConfig: data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] }
                 }];
             } else {
-                // Normalize positions in each chart for consistent camelCase keys
+                // Normalize positions but keep field references as labels
                 charts = charts.map(chart => ({
                     ...chart,
                     position: {
@@ -422,6 +423,7 @@ export default function EnhancedReportDesigner() {
                         width: chart.position?.Width ?? chart.position?.width ?? 12,
                         height: chart.position?.Height ?? chart.position?.height ?? 6,
                     }
+                    // Don't convert metrics/xField - keep as labels
                 }));
             }
             console.log(charts)
@@ -715,10 +717,29 @@ export default function EnhancedReportDesigner() {
                 id: chart.id,
                 title: chart.title,
                 type: chart.type,
-                metrics: chart.metrics || [],
-                xField: chart.xField,
+                // Convert field IDs to field labels for storage
+                metrics: chart.metrics.map(metricId => {
+                    const field = fields.find(f => f.id === metricId);
+                    return field ? field.label : metricId;
+                }),
+                // Convert xField ID to label
+                xField: (() => {
+                    if (!chart.xField) return null;
+                    const field = fields.find(f => f.id === chart.xField);
+                    return field ? field.label : chart.xField;
+                })(),
                 position: chart.position,
-                comboConfig: chart.comboConfig
+                comboConfig: {
+                    // Convert combo config IDs to labels
+                    barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
+                        const field = fields.find(f => f.id === metricId);
+                        return field ? field.label : metricId;
+                    }),
+                    lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
+                        const field = fields.find(f => f.id === metricId);
+                        return field ? field.label : metricId;
+                    })
+                }
             }))
         };
 

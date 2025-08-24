@@ -79,21 +79,105 @@ export default function EnhancedReportViewer() {
         }
     };
 
-    // Memoize the chart data to prevent infinite re-renders
     const chartData = useMemo(() => {
         if (!reportData || reportData.length === 0) return [];
 
-        // Transform the data to the format expected by ReportCharts
-        const transformedData = reportData.map(row => ({
-            submissionId: row.submissionId,
-            data: (row.data || []).map(cell => ({
-                fieldLabel: cell.fieldLabel,
-                value: cell.value
-            }))
-        }));
+        console.log('=== CHART DATA TRANSFORMATION DEBUG ===');
+        console.log('Raw reportData:', reportData);
 
+        const transformedData = reportData.map((row, index) => {
+            const chartPoint = { submissionId: row.submissionId || index };
+
+            console.log(`Processing row ${index}:`, row);
+
+            // Process each data field
+            (row.data || []).forEach(cell => {
+                const fieldLabel = cell.fieldLabel;
+                let value = cell.value;
+
+                console.log(`  Field: ${fieldLabel}, Raw Value: ${value}`);
+
+                // Handle different value types
+                if (value === null || value === undefined || value === '') {
+                    chartPoint[fieldLabel] = 0;
+                    return;
+                }
+
+                // Try to parse JSON (for grid/complex data)
+                try {
+                    const parsed = JSON.parse(value);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        // For arrays, try to sum numeric values or take first item
+                        if (typeof parsed[0] === 'object') {
+                            // Grid data - we'll handle this differently
+                            console.log(`    Grid data detected for ${fieldLabel}:`, parsed);
+                            chartPoint[fieldLabel] = parsed.length; // For now, use count
+                        } else {
+                            // Array of primitives
+                            const numericValues = parsed.map(v => parseFloat(v)).filter(v => !isNaN(v));
+                            chartPoint[fieldLabel] = numericValues.length > 0 ?
+                                numericValues.reduce((a, b) => a + b, 0) : 0;
+                        }
+                    } else if (typeof parsed === 'number') {
+                        chartPoint[fieldLabel] = parsed;
+                    } else {
+                        chartPoint[fieldLabel] = parsed;
+                    }
+                } catch (e) {
+                    // Not JSON, handle as primitive value
+                    const numValue = parseFloat(value);
+                    if (!isNaN(numValue) && isFinite(numValue)) {
+                        chartPoint[fieldLabel] = numValue;
+                        console.log(`    Converted to number: ${numValue}`);
+                    } else {
+                        chartPoint[fieldLabel] = value;
+                        console.log(`    Kept as string: ${value}`);
+                    }
+                }
+            });
+
+            console.log(`  Final chart point for row ${index}:`, chartPoint);
+            return chartPoint;
+        });
+
+        console.log('=== FINAL TRANSFORMED DATA ===');
+        console.log('Transformed data:', transformedData);
+
+        // Show sample data analysis
+        if (transformedData.length > 0) {
+            const samplePoint = transformedData[0];
+            console.log('Sample data point keys:', Object.keys(samplePoint));
+            console.log('Sample values:');
+            Object.entries(samplePoint).forEach(([key, value]) => {
+                console.log(`  ${key}: ${value} (${typeof value})`);
+            });
+        }
+
+        console.log('=====================================');
         return transformedData;
     }, [reportData]);
+
+
+    const resolveFieldReference = (fieldRef, fields) => {
+        // First try direct match with field ID
+        let field = fields.find(f => f.id === fieldRef);
+        if (field) return field;
+
+        // Then try match with field label
+        field = fields.find(f => f.label === fieldRef);
+        if (field) return field;
+
+        // For grid fields, try to find parent
+        if (typeof fieldRef === 'string' && fieldRef.includes(':')) {
+            const parentId = fieldRef.split(':')[0];
+            field = fields.find(f => f.id === parentId);
+            if (field) return field;
+        }
+
+        return null;
+    };
+
+
 
     const formatCellValue = (value, field) => {
         if (!value || value === "-" || value === "") return "—";
@@ -267,6 +351,7 @@ export default function EnhancedReportViewer() {
         );
     };
 
+    // Add this to your renderChartsView function in ReportViewer.jsx
     const renderChartsView = () => {
         if (chartConfigs.length === 0) {
             return (
@@ -277,21 +362,140 @@ export default function EnhancedReportViewer() {
                 </div>
             );
         }
-        console.log(chartData)
+
+        const ChartDataDebugWrapper = ({ data, metrics, type, xField, title, comboConfig, children }) => {
+            console.log('=== CHART DATA FLOW DEBUG ===');
+            console.log('Props received by ReportCharts:');
+            console.log('  data:', data);
+            console.log('  data type:', typeof data);
+            console.log('  data length:', data?.length);
+            console.log('  metrics:', metrics);
+            console.log('  type:', type);
+            console.log('  xField:', xField);
+            console.log('  title:', title);
+            console.log('  comboConfig:', comboConfig);
+
+            // Validate data structure
+            if (data && data.length > 0) {
+                console.log('First data item keys:', Object.keys(data[0]));
+                console.log('First data item:', data[0]);
+
+                // Check if metrics exist in first item
+                metrics?.forEach(metric => {
+                    const value = data[0][metric];
+                    console.log(`  Metric "${metric}": ${value} (${typeof value})`);
+                });
+            }
+
+            console.log('===============================');
+
+            return null; // This is just for debugging
+        };
+
         return (
             <div className="charts-grid space-y-6">
-                {chartConfigs.map((chart, index) => (
-                    <div key={chart.id || index} className="chart-container">
-                        <ReportCharts
-                            data={chartData}
-                            metrics={chart.metrics}
-                            type={chart.type}
-                            xField={chart.xField || "Line Name"}
-                            title={chart.title || `Chart ${index + 1}`}
-                            comboConfig={chart.comboConfig}
-                        />
+                {chartConfigs.map((chart, index) => {
+                    console.log(`=== RENDERING CHART ${index} ===`);
+                    console.log('Chart config:', chart);
+                    console.log('Available data:', chartData);
+
+                    // Check if metrics exist in data
+                    const dataKeys = chartData.length > 0 ? Object.keys(chartData[0]) : [];
+                    const metricsFound = chart.metrics.filter(metric => dataKeys.includes(metric));
+                    const metricsNotFound = chart.metrics.filter(metric => !dataKeys.includes(metric));
+
+                    console.log('Metrics found in data:', metricsFound);
+                    console.log('Metrics NOT found in data:', metricsNotFound);
+                    console.log('X-field exists:', dataKeys.includes(chart.xField));
+
+                    // Sample values for found metrics
+                    if (chartData.length > 0) {
+                        console.log('Sample metric values:');
+                        chart.metrics.forEach(metric => {
+                            const sampleValue = chartData[0][metric];
+                            console.log(`  ${metric}: ${sampleValue} (${typeof sampleValue})`);
+                        });
+                    }
+
+                    console.log('================================');
+
+                    return (
+                        <div key={chart.id || index} className="chart-container">
+                            {/* Enhanced debug info */}
+                            <div className="mb-4 p-3 bg-blue-50 border rounded text-sm">
+                                <div className="font-semibold mb-2">Chart Debug Info:</div>
+                                <div><strong>Title:</strong> {chart.title}</div>
+                                <div><strong>Type:</strong> {chart.type}</div>
+                                <div><strong>Data Points:</strong> {chartData.length}</div>
+                                <div><strong>Metrics:</strong> {chart.metrics.join(', ')}</div>
+                                <div><strong>X-Field:</strong> {chart.xField}</div>
+                                <div className="mt-2">
+                                    <strong>Metrics Status:</strong>
+                                    <div className="ml-4">
+                                        {chart.metrics.map(metric => {
+                                            const found = dataKeys.includes(metric);
+                                            const sampleValue = chartData.length > 0 ? chartData[0][metric] : 'N/A';
+                                            return (
+                                                <div key={metric} className={found ? 'text-green-600' : 'text-red-600'}>
+                                                    {found ? '✓' : '✗'} {metric}
+                                                    {found && ` (sample: ${sampleValue})`}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <ChartDataDebugWrapper
+                                data={chartData}
+                                metrics={chart.metrics}
+                                type={chart.type}
+                                xField={chart.xField || "submissionId"}
+                                title={chart.title || `Chart ${index + 1}`}
+                                comboConfig={chart.comboConfig}
+                            />
+
+                            <ReportCharts
+                                data={chartData}
+                                metrics={chart.metrics}
+                                type={chart.type}
+                                xField={chart.xField || "submissionId"}
+                                title={chart.title || `Chart ${index + 1}`}
+                                comboConfig={chart.comboConfig}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
+    const DataInspector = ({ data, title = "Data Inspector" }) => {
+        const [isExpanded, setIsExpanded] = useState(false);
+
+        if (!data || data.length === 0) return null;
+
+        return (
+            <div className="mb-4 border rounded">
+                <div
+                    className="p-2 bg-gray-100 cursor-pointer flex justify-between items-center"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                >
+                    <span className="font-medium">{title} ({data.length} items)</span>
+                    <span>{isExpanded ? '▼' : '▶'}</span>
+                </div>
+                {isExpanded && (
+                    <div className="p-3 text-xs">
+                        <div className="mb-2"><strong>Sample Item Keys:</strong></div>
+                        <div className="bg-gray-50 p-2 rounded mb-2">
+                            {Object.keys(data[0] || {}).join(', ')}
+                        </div>
+                        <div className="mb-2"><strong>First Item:</strong></div>
+                        <pre className="bg-gray-50 p-2 rounded overflow-x-auto text-xs">
+                            {JSON.stringify(data[0], null, 2)}
+                        </pre>
                     </div>
-                ))}
+                )}
             </div>
         );
     };
@@ -307,6 +511,7 @@ export default function EnhancedReportViewer() {
                 <div className="mb-6">
                     {renderSummaryStats()}
                 </div>
+                <DataInspector data={chartData} title="Chart Data" />
 
                 {/* Charts Grid Layout */}
                 <div className="grid grid-cols-12 gap-4 auto-rows-min">

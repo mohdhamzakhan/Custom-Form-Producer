@@ -1,226 +1,272 @@
-﻿import {
-    BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-    PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer,
-    ComposedChart, Area, AreaChart, Scatter, ScatterChart
-} from "recharts";
-import { useMemo } from "react";
+﻿import React from 'react';
+import {
+    BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    ComposedChart
+} from 'recharts';
 
-const COLORS = [
-    "#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#00C49F", "#FFBB28",
-    "#FF6384", "#36A2EB", "#9966FF", "#FFCE56", "#4BC0C0"
-];
-
-// Chart type configurations
+// Define chart types that your app supports
 export const CHART_TYPES = {
     bar: {
-        label: "📊 Bar Chart",
+        label: "Bar Chart",
+        description: "Compare values across categories",
         requiresXAxis: true,
-        requiresYAxis: true,
-        allowsMultipleMetrics: true,
-        description: "Compare values across categories"
+        allowsMultipleMetrics: true
     },
     line: {
-        label: "📈 Line Chart",
+        label: "Line Chart",
+        description: "Show trends over time",
         requiresXAxis: true,
-        requiresYAxis: true,
-        allowsMultipleMetrics: true,
-        description: "Show trends over time or categories"
+        allowsMultipleMetrics: true
     },
     pie: {
-        label: "🥧 Pie Chart",
+        label: "Pie Chart",
+        description: "Show parts of a whole",
         requiresXAxis: false,
-        requiresYAxis: false,
-        allowsMultipleMetrics: false,
-        description: "Show proportions of a whole"
-    },
-    area: {
-        label: "📊 Area Chart",
-        requiresXAxis: true,
-        requiresYAxis: true,
-        allowsMultipleMetrics: true,
-        description: "Show cumulative values over time"
-    },
-    scatter: {
-        label: "⚪ Scatter Plot",
-        requiresXAxis: true,
-        requiresYAxis: true,
-        allowsMultipleMetrics: false,
-        description: "Show correlation between two variables"
+        allowsMultipleMetrics: false
     },
     combo: {
-        label: "📊📈 Bar + Line Combo",
+        label: "Combo Chart",
+        description: "Combine bars and lines",
         requiresXAxis: true,
-        requiresYAxis: true,
-        allowsMultipleMetrics: true,
-        description: "Combine bar and line charts"
+        allowsMultipleMetrics: true
     }
 };
 
-export default function ReportCharts({
-    data = [],
-    metrics = [],
-    type = "bar",
-    xField = "Line Name",
-    title = "Chart",
-    comboConfig = { barMetrics: [], lineMetrics: [] }
-}) {
-    const chartData = useMemo(() => {
-        if (!Array.isArray(data) || !Array.isArray(metrics)) return [];
+const ReportCharts = ({
+    data,
+    metrics,
+    type,
+    xField,
+    title,
+    comboConfig
+}) => {
+    console.log('ReportCharts rendering with:', {
+        data: data?.length,
+        metrics,
+        type,
+        xField,
+        title
+    });
 
-        const grouped = {};
-
-        data.forEach(entry => {
-            const xValue = entry.data?.find(d => d.fieldLabel === xField)?.value || "Unknown";
-
-            if (!grouped[xValue]) grouped[xValue] = { name: xValue };
-
-            metrics.forEach(metric => {
-                const val = entry.data?.find(d => d.fieldLabel === metric);
-                const num = parseFloat(val?.value || "0");
-                grouped[xValue][metric] = (grouped[xValue][metric] || 0) + (isNaN(num) ? 0 : num);
-            });
-        });
-
-        return Object.values(grouped);
-    }, [data, metrics, xField]);
-
-    if (!chartData || chartData.length === 0) {
-        return <div className="text-gray-500 italic">No chart data available.</div>;
+    // Validate props
+    if (!data || data.length === 0) {
+        return (
+            <div className="p-6 text-center bg-gray-50 border rounded-lg">
+                <div className="text-4xl mb-2">📊</div>
+                <h3 className="text-lg font-medium text-gray-700 mb-1">No Data Available</h3>
+                <p className="text-gray-500 text-sm">No data points found for this chart</p>
+            </div>
+        );
     }
 
-    const renderChart = () => {
-        switch (type) {
-            case "bar":
-                return (
-                    <BarChart data={chartData}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {metrics.map((metric, idx) => (
-                            <Bar
-                                key={metric}
-                                dataKey={metric}
-                                fill={COLORS[idx % COLORS.length]}
-                                label={{ position: "top", fill: "#000", fontSize: 12 }}
-                            />
-                        ))}
-                    </BarChart>
-                );
+    if (!metrics || metrics.length === 0) {
+        return (
+            <div className="p-6 text-center bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="text-4xl mb-2">⚠️</div>
+                <h3 className="text-lg font-medium text-yellow-800 mb-1">No Metrics Selected</h3>
+                <p className="text-yellow-600 text-sm">Please select metrics to display</p>
+            </div>
+        );
+    }
 
-            case "line":
-                return (
-                    <LineChart data={chartData}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {metrics.map((metric, idx) => (
-                            <Line
-                                key={metric}
-                                type="monotone"
-                                dataKey={metric}
-                                stroke={COLORS[idx % COLORS.length]}
-                                strokeWidth={2}
-                                dot={{ r: 4 }}
-                            />
-                        ))}
-                    </LineChart>
-                );
+    // Colors for charts
+    const colors = [
+        '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe',
+        '#00c49f', '#ffbb28', '#ff8042', '#8dd1e1', '#d084d0'
+    ];
 
-            case "area":
-                return (
-                    <AreaChart data={chartData}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {metrics.map((metric, idx) => (
-                            <Area
-                                key={metric}
-                                type="monotone"
-                                dataKey={metric}
-                                stackId="1"
-                                stroke={COLORS[idx % COLORS.length]}
-                                fill={COLORS[idx % COLORS.length]}
-                                fillOpacity={0.6}
-                            />
-                        ))}
-                    </AreaChart>
-                );
+    // Chart title component
+    const ChartTitle = () => (
+        title ? (
+            <div className="mb-4 text-center">
+                <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
+            </div>
+        ) : null
+    );
 
-            case "scatter":
-                return (
-                    <ScatterChart data={chartData}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Scatter
-                            dataKey={metrics[0]}
-                            fill={COLORS[0]}
-                        />
-                    </ScatterChart>
-                );
-
-            case "combo":
-                return (
-                    <ComposedChart data={chartData}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        {comboConfig.barMetrics?.map((metric, idx) => (
-                            <Bar
-                                key={`bar-${metric}`}
-                                dataKey={metric}
-                                fill={COLORS[idx % COLORS.length]}
-                            />
-                        ))}
-                        {comboConfig.lineMetrics?.map((metric, idx) => (
-                            <Line
-                                key={`line-${metric}`}
-                                type="monotone"
-                                dataKey={metric}
-                                stroke={COLORS[(idx + comboConfig.barMetrics?.length || 0) % COLORS.length]}
-                                strokeWidth={3}
-                            />
-                        ))}
-                    </ComposedChart>
-                );
-
-            case "pie":
-                return (
-                    <PieChart>
-                        <Tooltip />
-                        <Legend />
-                        <Pie
-                            data={chartData}
-                            dataKey={metrics[0]}
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={120}
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
-                        >
-                            {chartData.map((entry, i) => (
-                                <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />
-                            ))}
-                        </Pie>
-                    </PieChart>
-                );
-
-            default:
-                return <div className="text-red-500">Unknown chart type: {type}</div>;
+    // Custom tooltip
+    const CustomTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="bg-white p-3 border rounded shadow-lg">
+                    {label && <p className="font-medium">{`${label}`}</p>}
+                    {payload.map((entry, index) => (
+                        <p key={index} style={{ color: entry.color }}>
+                            {`${entry.name}: ${typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}`}
+                        </p>
+                    ))}
+                </div>
+            );
         }
+        return null;
     };
 
-    return (
-        <div className="bg-white p-4 rounded border shadow">
-            <h4 className="font-semibold text-lg mb-4">{title}</h4>
-            <ResponsiveContainer width="100%" height={400}>
-                {renderChart()}
-            </ResponsiveContainer>
-        </div>
-    );
-}
+    // Render different chart types
+    switch (type) {
+        case 'bar':
+            return (
+                <div className="w-full">
+                    <ChartTitle />
+                    <ResponsiveContainer width="100%" height={400}>
+                        <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                                dataKey={xField || 'name'}
+                                tick={{ fontSize: 12 }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={80}
+                            />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend />
+                            {metrics.map((metric, index) => (
+                                <Bar
+                                    key={metric}
+                                    dataKey={metric}
+                                    fill={colors[index % colors.length]}
+                                    name={metric}
+                                />
+                            ))}
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            );
+
+        case 'line':
+            return (
+                <div className="w-full">
+                    <ChartTitle />
+                    <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                                dataKey={xField || 'name'}
+                                tick={{ fontSize: 12 }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={80}
+                            />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend />
+                            {metrics.map((metric, index) => (
+                                <Line
+                                    key={metric}
+                                    type="monotone"
+                                    dataKey={metric}
+                                    stroke={colors[index % colors.length]}
+                                    strokeWidth={2}
+                                    name={metric}
+                                    connectNulls={false}
+                                />
+                            ))}
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            );
+
+        case 'pie':
+            // For pie charts, we need to transform the data differently
+            const pieData = data.map((item, index) => {
+                const value = item[metrics[0]]; // Pie charts use only the first metric
+                return {
+                    name: item[xField] || item.name || `Item ${index + 1}`,
+                    value: typeof value === 'number' ? value : parseFloat(value) || 0,
+                    originalItem: item
+                };
+            }).filter(item => item.value > 0); // Filter out zero values
+
+            console.log('Pie chart data:', pieData);
+
+            return (
+                <div className="w-full">
+                    <ChartTitle />
+                    <ResponsiveContainer width="100%" height={400}>
+                        <PieChart>
+                            <Pie
+                                data={pieData}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(1)}%`}
+                                outerRadius={120}
+                                fill="#8884d8"
+                                dataKey="value"
+                            >
+                                {pieData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                                ))}
+                            </Pie>
+                            <Tooltip
+                                formatter={(value, name) => [
+                                    typeof value === 'number' ? value.toLocaleString() : value,
+                                    metrics[0]
+                                ]}
+                            />
+                            <Legend />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            );
+
+        case 'combo':
+            const barMetrics = comboConfig?.barMetrics || [];
+            const lineMetrics = comboConfig?.lineMetrics || [];
+
+            return (
+                <div className="w-full">
+                    <ChartTitle />
+                    <ResponsiveContainer width="100%" height={400}>
+                        <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                                dataKey={xField || 'name'}
+                                tick={{ fontSize: 12 }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={80}
+                            />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend />
+
+                            {/* Render bars */}
+                            {barMetrics.map((metric, index) => (
+                                <Bar
+                                    key={`bar-${metric}`}
+                                    dataKey={metric}
+                                    fill={colors[index % colors.length]}
+                                    name={metric}
+                                />
+                            ))}
+
+                            {/* Render lines */}
+                            {lineMetrics.map((metric, index) => (
+                                <Line
+                                    key={`line-${metric}`}
+                                    type="monotone"
+                                    dataKey={metric}
+                                    stroke={colors[(barMetrics.length + index) % colors.length]}
+                                    strokeWidth={2}
+                                    name={metric}
+                                />
+                            ))}
+                        </ComposedChart>
+                    </ResponsiveContainer>
+                </div>
+            );
+
+        default:
+            return (
+                <div className="p-6 text-center bg-red-50 border border-red-200 rounded-lg">
+                    <div className="text-4xl mb-2">❌</div>
+                    <h3 className="text-lg font-medium text-red-800 mb-1">Unsupported Chart Type</h3>
+                    <p className="text-red-600 text-sm">Chart type "{type}" is not supported</p>
+                </div>
+            );
+    }
+};
+
+export default ReportCharts;
