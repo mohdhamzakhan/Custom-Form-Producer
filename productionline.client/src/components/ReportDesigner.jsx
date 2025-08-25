@@ -7,143 +7,9 @@ import useAdSearch from "./hooks/useAdSearch"
 import ReportCharts from "./ReportCharts"
 import CollapsibleGridTable from './CollapsibleGridTable';
 import MultiChartBuilder from './MultiChartBuilder'; // Import the new component
-
-// Mock calculated fields editor
-const CalculatedFieldsEditor = ({ calculatedFields, setCalculatedFields, selectedFields, fields }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    //const addCalculatedField = () => {
-    //    setCalculatedFields([...calculatedFields, {
-    //        id: Date.now(),
-    //        label: "",
-    //        formula: "",
-    //        description: "",
-    //        format: "decimal",
-    //        precision: 2
-    //    }]);
-    //};
-
-    const addCalculatedField = () => {
-        setCalculatedFields([...calculatedFields, {
-            Label: "",
-            Formula: "",
-            Description: "",
-            Format: "decimal",
-            Precision: 2,
-            chartLabel: "",
-            scope: "row"   // default scope
-        }]);
-    };
+import EnhancedCalculatedFieldsEditor from './CalculatedFieldsEditor';
 
 
-    const updateCalculatedField = (id, key, value) => {
-        setCalculatedFields(prev => prev.map(field =>
-            field.id === id ? { ...field, [key]: value } : field
-        ));
-    };
-
-    const removeCalculatedField = (id) => {
-        setCalculatedFields(prev => prev.filter(field => field.id !== id));
-    };
-
-    return (
-        <div className="mb-6 bg-white border rounded">
-            <div
-                className="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-50"
-                onClick={() => setIsExpanded(!isExpanded)}
-            >
-                <h3 className="font-semibold flex items-center">
-                    <BarChart3 className="w-4 h-4 mr-2" />
-                    Calculated Fields ({calculatedFields.length})
-                </h3>
-                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </div>
-
-            {isExpanded && (
-                <div className="p-4 border-t">
-                    {calculatedFields.length === 0 && (
-                        <p className="text-gray-500 italic mb-4">No calculated fields added yet</p>
-                    )}
-
-                    {calculatedFields.map(field => (
-                        <div key={field.id} className="mb-4 p-3 border rounded bg-gray-50">
-                            <div className="grid grid-cols-2 gap-3 mb-3">
-                                <input
-                                    type="text"
-                                    placeholder="Field Label"
-                                    value={field.label}
-                                    onChange={(e) => updateCalculatedField(field.id, "Label", e.target.value)}
-                                    className="border p-2 rounded"
-                                />
-                                <select
-                                    value={field.format}
-                                    onChange={(e) => updateCalculatedField(field.id, "Format", e.target.value)}
-                                    className="border p-2 rounded"
-                                >
-                                    <option value="decimal">Decimal</option>
-                                    <option value="currency">Currency</option>
-                                    <option value="percentage">Percentage</option>
-                                    <option value="integer">Integer</option>
-                                </select>
-                                <select
-                                    value={field.calculationType}
-                                    onChange={e => updateCalculatedField(field.id, "calculationType", e.target.value)}
-                                    className="border p-2 rounded"
-                                >
-                                    <option value="aggregate">Aggregate</option>
-                                    <option value="rowwise">Row-wise</option>
-                                    <option value="columnwise">Column-wise</option>
-                                </select>
-
-                                <select
-                                    value={field.scope}
-                                    onChange={e => updateCalculatedField(field.id, "scope", e.target.value)}
-                                    className="border p-2 rounded"
-                                >
-                                    <option value="row">Row</option>
-                                    <option value="column">Column</option>
-                                </select>
-                            </div>
-
-
-                            <textarea
-                                placeholder="Formula (e.g., SUM(field1) + AVG(field2))"
-                                value={field.formula}
-                                onChange={(e) => updateCalculatedField(field.id, "Formula", e.target.value)}
-                                className="w-full border p-2 rounded mb-2"
-                                rows="2"
-                            />
-
-                            <div className="flex justify-between items-center">
-                                <input
-                                    type="text"
-                                    placeholder="Description (optional)"
-                                    value={field.description}
-                                    onChange={(e) => updateCalculatedField(field.id, "Description", e.target.value)}
-                                    className="border p-2 rounded flex-1 mr-2"
-                                />
-                                <button
-                                    onClick={() => removeCalculatedField(field.id)}
-                                    className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </div>
-                    ))}
-
-                    <button
-                        onClick={addCalculatedField}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
-                    >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Calculated Field
-                    </button>
-                </div>
-            )}
-        </div>
-    );
-};
 
 // AD Search component
 const AdSearchComponent = ({ selectedUsers, setSelectedUsers }) => {
@@ -307,6 +173,7 @@ export default function EnhancedReportDesigner() {
         type: "line",
         metrics: []  // now an array
     });
+    const [summaryRows, setSummaryRows] = useState([]);
 
 
     // UI state for left panel
@@ -392,6 +259,7 @@ export default function EnhancedReportDesigner() {
                 };
             });
             setFilters(loadedFilters);
+
 
             setCalculatedFields(data.calculatedFields || []);
             // Normalize chartConfigs handling for backward compatibility
@@ -641,6 +509,7 @@ export default function EnhancedReportDesigner() {
         // Clear previous messages
         setError(null);
         setSuccess(null);
+        
         //console.log(filters)
         // Check filter validity
         const invalidFilters = filters.filter(f => !f.field || !f.condition);
@@ -649,6 +518,7 @@ export default function EnhancedReportDesigner() {
             return;
         }
 
+        console.log(calculatedFields)
         // Check calculated fields validity
         const invalidCalcs = calculatedFields.filter(c => !c.label || !c.formula);
         if (invalidCalcs.length > 0) {
@@ -703,14 +573,18 @@ export default function EnhancedReportDesigner() {
             }),
             filters: filtersToSave,
             calculatedFields: calculatedFields.map(c => ({
-                label: c.label,
-                formula: c.formula,
+                calculationType: c.calculationType || "aggregate",
                 description: c.description || "",
                 format: c.format || "decimal",
-                precision: c.precision || 2,
-                calculationType: c.calculationType || "aggregate",
+                formula: c.formula,
                 functionType: c.functionType || "",
-                sourceFields: c.sourceFields || []
+                id: c.id,
+                label: c.label,
+                precision: c.precision || 2,
+                showOneRowPerGroup: c.showOneRowPerGroup || false,
+                sortOrder: c.sortOrder,
+                sourceFields: c.sourceFields || [],
+                windowSize: c.windowSize || 3
             })),
             // UPDATED: Save multiple chart configurations
             chartConfigs: chartConfigs.map(chart => ({
@@ -1200,8 +1074,8 @@ export default function EnhancedReportDesigner() {
                         </div>
                     </div>
 
-                    {/* Calculated Fields Editor */}
-                    <CalculatedFieldsEditor
+                    {/* Enhanced Calculated Fields Editor */}
+                    <EnhancedCalculatedFieldsEditor
                         calculatedFields={calculatedFields}
                         setCalculatedFields={setCalculatedFields}
                         selectedFields={selectedFields}

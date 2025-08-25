@@ -18,6 +18,8 @@ export default function EnhancedReportViewer() {
     const [displayMode, setDisplayMode] = useState("table");
     const [viewMode, setViewMode] = useState("expanded");
     const [chartConfigs, setChartConfigs] = useState([]);
+    const [calculatedFields, setCalculatedFields] = useState([]);
+    const [summaryRows, setSummaryRows] = useState([]);
 
     useEffect(() => {
         const fetchTemplate = async () => {
@@ -27,14 +29,28 @@ export default function EnhancedReportViewer() {
                 setTemplate(res.data);
                 setFilters(res.data.filters || []);
 
+                // Add this line to load calculated fields
+                const calculatedFields = res.data.calculatedFields || [];
+
                 const resolvedFields = (res.data.fields || []).map(f => ({
                     id: f.fieldId || f.id,
                     label: f.fieldLabel || f.label,
                     type: f.type || "text",
                 }));
 
+                // Add calculated fields to the fields list for display
+                calculatedFields.forEach(cf => {
+                    resolvedFields.push({
+                        id: `calc_${cf.label}`,
+                        label: cf.label,
+                        type: "calculated"
+                    });
+                });
+
                 setFields(resolvedFields);
                 setSelectedFields(resolvedFields);
+
+                setTemplate(prev => ({ ...prev, calculatedFields }));
 
                 // Handle multiple chart configurations
                 const charts = res.data.chartConfig || [];
@@ -71,7 +87,14 @@ export default function EnhancedReportViewer() {
         try {
             setLoading(true);
             const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
-            setReportData(res.data);
+
+            // Process calculated fields with separation
+            const { processedData, summaryRows } = processCalculatedFields(res.data, calculatedFields, fields);
+            console.log('Processed report data:', processedData);
+            console.log('Summary rows:', summaryRows);
+
+            setReportData(processedData);
+            setSummaryRows(summaryRows); // You'll need to add this state
             setLoading(false);
         } catch (err) {
             setError("Failed to run filtered report: " + (err.message || "Unknown error"));
@@ -157,7 +180,6 @@ export default function EnhancedReportViewer() {
         return transformedData;
     }, [reportData]);
 
-
     const resolveFieldReference = (fieldRef, fields) => {
         // First try direct match with field ID
         let field = fields.find(f => f.id === fieldRef);
@@ -176,8 +198,6 @@ export default function EnhancedReportViewer() {
 
         return null;
     };
-
-
 
     const formatCellValue = (value, field) => {
         if (!value || value === "-" || value === "") return "—";
@@ -280,36 +300,39 @@ export default function EnhancedReportViewer() {
         </div>
     );
 
-    const renderExpandedTable = () => (
-        <div className="table-container">
-            <table className="report-table">
-                <thead>
-                    <tr>
-                        {selectedFields.map((field, i) => {
-                            const label = typeof field === 'object' ? field.label : field;
-                            const cleanedLabel = label.includes("→")
-                                ? label.split("→").pop().trim()
-                                : label;
+    //const renderExpandedTable = () => (
+    //    <div className="table-container">
+    //        <table className="report-table">
+    //            <thead>
+    //                <tr>
+    //                    {selectedFields.map((field, i) => {
+    //                        const label = typeof field === 'object' ? field.label : field;
+    //                        const cleanedLabel = label.includes("→")
+    //                            ? label.split("→").pop().trim()
+    //                            : label;
 
-                            return <th key={i}>{cleanedLabel}</th>;
-                        })}
-                    </tr>
-                </thead>
+    //                        return <th key={i}>{cleanedLabel}</th>;
+    //                    })}
+    //                </tr>
+    //            </thead>
 
-                <tbody>
-                    {reportData.map((row, i) => (
-                        <tr key={i}>
-                            {selectedFields.map((field, j) => {
-                                const fLabel = typeof field === 'object' ? field.label : field;
-                                const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
-                                return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
-                            })}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
+    //            <tbody>
+    //                {reportData.map((row, i) => (
+    //                    <tr key={i}>
+    //                        {selectedFields.map((field, j) => {
+    //                            const fLabel = typeof field === 'object' ? field.label : field;
+    //                            const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
+    //                            return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
+    //                        })}
+    //                    </tr>
+    //                ))}
+    //            </tbody>
+    //        </table>
+    //    </div>
+    //);
+    const renderExpandedTable = () => {
+        return renderExpandedTableWithSummary(reportData, summaryRows, selectedFields, fields);
+    };
 
     const renderGroupedTable = () => {
         const grouped = {};
@@ -597,8 +620,547 @@ export default function EnhancedReportViewer() {
         );
     };
 
+    const summaryRowsCSS = `
+.summary-divider {
+    background: linear-gradient(to right, #f3f4f6, #e5e7eb);
+}
+
+.summary-divider-cell {
+    padding: 12px 16px !important;
+    text-align: center;
+    border-top: 2px solid #d1d5db;
+    border-bottom: 1px solid #d1d5db;
+}
+
+.summary-divider-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: #374151;
+}
+
+.summary-divider-line::before,
+.summary-divider-line::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #9ca3af;
+    margin: 0 16px;
+}
+
+.summary-row {
+    background: #fef3c7 !important;
+    font-weight: 500;
+}
+
+.summary-row:hover {
+    background: #fde68a !important;
+}
+
+.summary-label {
+    padding: 12px 16px;
+    border-right: 1px solid #d97706;
+    vertical-align: top;
+}
+
+.summary-type {
+    font-size: 0.75rem;
+    color: #92400e;
+    font-weight: normal;
+    margin-top: 2px;
+}
+
+.summary-value {
+    padding: 12px 16px;
+    position: relative;
+}
+
+.summary-result {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.summary-formula {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-family: 'Courier New', monospace;
+    margin-top: 4px;
+}
+`;
+
     if (loading) return <div className="loading">Loading report...</div>;
     if (error) return <div className="error">{error}</div>;
+    // Add this function in your ReportViewer.jsx
+    //const processCalculatedFields = (reportData, calculatedFields, fields) => {
+    //    if (!calculatedFields || calculatedFields.length === 0) return reportData;
+
+    //    console.log('Processing calculated fields:', calculatedFields);
+
+    //    return reportData.map(row => {
+    //        const processedRow = { ...row };
+
+    //        calculatedFields.forEach(calcField => {
+    //            const { label, formula, calculationType, format, precision } = calcField;
+
+    //            try {
+    //                let result = 0;
+
+    //                if (calculationType === "rowwise") {
+    //                    result = processRowwiseFormula(formula, row.data, fields);
+    //                } else if (calculationType === "aggregate") {
+    //                    result = processAggregateFormula(formula, reportData, fields);
+    //                } else if (calculationType === "grouping") {
+    //                    result = processGroupingFormula(formula, reportData, row, fields);
+    //                } else if (calculationType === "columnwise") {
+    //                    result = processColumnwiseFormula(formula, reportData, row, fields);
+    //                }
+
+    //                // Format the result
+    //                const formattedResult = formatCalculatedValue(result, format, precision);
+
+    //                // Add the calculated field to the row data
+    //                if (!processedRow.data) processedRow.data = [];
+    //                processedRow.data.push({
+    //                    fieldLabel: label,
+    //                    value: formattedResult
+    //                });
+
+    //            } catch (error) {
+    //                console.error(`Error calculating field ${label}:`, error);
+    //                if (!processedRow.data) processedRow.data = [];
+    //                processedRow.data.push({
+    //                    fieldLabel: label,
+    //                    value: "Error"
+    //                });
+    //            }
+    //        });
+
+    //        return processedRow;
+    //    });
+    //};
+    const processRowwiseFormula = (formula, rowData, fields) => {
+        console.log('Processing rowwise formula:', formula);
+        console.log('Row data:', rowData);
+
+        let processedFormula = formula;
+
+        // Handle different function types
+        if (formula.startsWith('ADD(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            const values = fieldNames.map(fieldName => getFieldValue(fieldName, rowData, fields));
+            return values.reduce((a, b) => a + b, 0);
+        } else if (formula.startsWith('SUBTRACT(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            const values = fieldNames.map(fieldName => getFieldValue(fieldName, rowData, fields));
+            return values.length >= 2 ? values[0] - values[1] : 0;
+        } else if (formula.startsWith('MULTIPLY(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            const values = fieldNames.map(fieldName => getFieldValue(fieldName, rowData, fields));
+            return values.reduce((a, b) => a * b, 1);
+        } else if (formula.startsWith('DIVIDE(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            const values = fieldNames.map(fieldName => getFieldValue(fieldName, rowData, fields));
+            return values.length >= 2 && values[1] !== 0 ? values[0] / values[1] : 0;
+        } else if (formula.startsWith('PERCENTAGE(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            const values = fieldNames.map(fieldName => getFieldValue(fieldName, rowData, fields));
+            return values.length >= 2 && values[1] !== 0 ? (values[0] / values[1]) * 100 : 0;
+        } else if (formula.startsWith('EFFICIENCY(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            const values = fieldNames.map(fieldName => getFieldValue(fieldName, rowData, fields));
+            if (values.length >= 3) {
+                return ((values[0] / values[1]) / values[2]) * 100;
+            }
+            return 0;
+        }
+
+        // Fallback: Replace field references and evaluate
+        const fieldRegex = /"([^"]+)"/g;
+        processedFormula = processedFormula.replace(fieldRegex, (match, fieldName) => {
+            return getFieldValue(fieldName, rowData, fields);
+        });
+
+        try {
+            return eval(processedFormula);
+        } catch (e) {
+            console.error('Formula evaluation error:', e);
+            return 0;
+        }
+    };
+    const processAggregateFormula = (formula, allData, fields) => {
+        console.log('Processing aggregate formula:', formula);
+
+        if (formula.startsWith('SUM(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields));
+                return allValues.reduce((a, b) => a + b, 0);
+            }
+        } else if (formula.startsWith('AVG(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields));
+                const sum = allValues.reduce((a, b) => a + b, 0);
+                return allValues.length > 0 ? sum / allValues.length : 0;
+            }
+        } else if (formula.startsWith('COUNT(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                return allData.filter(row => {
+                    const value = getFieldValue(fieldName, row.data, fields);
+                    return value !== null && value !== undefined && value !== '';
+                }).length;
+            }
+        } else if (formula.startsWith('MIN(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields));
+                return Math.min(...allValues);
+            }
+        } else if (formula.startsWith('MAX(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields));
+                return Math.max(...allValues);
+            }
+        }
+
+        return 0;
+    };
+    const processGroupingFormula = (formula, allData, currentRow, fields) => {
+        // For grouping, we'll implement basic GROUP_SUM, GROUP_AVG etc.
+        // This is simplified - you might want more sophisticated grouping logic
+
+        if (formula.startsWith('GROUP_SUM(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length >= 2) {
+                const [valueField, groupField] = fieldNames;
+                const currentGroupValue = getFieldValue(groupField, currentRow.data, fields);
+
+                // Find all rows with same group value
+                const groupRows = allData.filter(row =>
+                    getFieldValue(groupField, row.data, fields) === currentGroupValue
+                );
+
+                const groupSum = groupRows.reduce((sum, row) =>
+                    sum + getFieldValue(valueField, row.data, fields), 0
+                );
+
+                return groupSum;
+            }
+        } else if (formula.startsWith('EFFICIENCY(')) {
+            return processRowwiseFormula(formula, currentRow.data, fields);
+        }
+
+        return 0;
+    };
+    const processColumnwiseFormula = (formula, allData, fields) => {
+        console.log('Processing columnwise formula for summary:', formula);
+
+        if (formula.startsWith('SUM(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields));
+                return allValues.reduce((a, b) => a + b, 0);
+            }
+        } else if (formula.startsWith('AVG(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields));
+                const validValues = allValues.filter(v => !isNaN(v) && v !== 0);
+                return validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
+            }
+        } else if (formula.startsWith('COUNT(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                return allData.filter(row => {
+                    const value = getFieldValue(fieldName, row.data, fields);
+                    return value !== null && value !== undefined && value !== '' && value !== 0;
+                }).length;
+            }
+        } else if (formula.startsWith('MIN(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields))
+                    .filter(v => !isNaN(v));
+                return allValues.length > 0 ? Math.min(...allValues) : 0;
+            }
+        } else if (formula.startsWith('MAX(')) {
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length > 0) {
+                const fieldName = fieldNames[0];
+                const allValues = allData.map(row => getFieldValue(fieldName, row.data, fields))
+                    .filter(v => !isNaN(v));
+                return allValues.length > 0 ? Math.max(...allValues) : 0;
+            }
+        } else if (formula.startsWith('TOTAL_EFFICIENCY(')) {
+            // Calculate overall efficiency across all rows
+            const fieldNames = extractFieldNamesFromFormula(formula);
+            if (fieldNames.length >= 2) {
+                const [outputField, inputField] = fieldNames;
+                const totalOutput = allData.reduce((sum, row) =>
+                    sum + getFieldValue(outputField, row.data, fields), 0);
+                const totalInput = allData.reduce((sum, row) =>
+                    sum + getFieldValue(inputField, row.data, fields), 0);
+
+                const targetValue = fieldNames.length >= 3 ? parseFloat(fieldNames[2]) : 1;
+                return totalInput > 0 ? ((totalOutput / totalInput) / targetValue) * 100 : 0;
+            }
+        }
+
+        return 0;
+    };
+
+    const extractFieldNamesFromFormula = (formula) => {
+        const regex = /"([^"]+)"/g;
+        const matches = [];
+        let match;
+
+        while ((match = regex.exec(formula)) !== null) {
+            matches.push(match[1]);
+        }
+
+        return matches;
+    };
+    const getFieldValue = (fieldName, rowData, fields) => {
+        if (!rowData || !Array.isArray(rowData)) return 0;
+
+        // Find the field data by label
+        const fieldData = rowData.find(d => {
+            // Try direct match first
+            if (d.fieldLabel === fieldName) return true;
+
+            // Try to find by field label from fields array
+            const field = fields.find(f => f.label === fieldName);
+            if (field && d.fieldLabel === field.id) return true;
+
+            // For grid fields, try base field match
+            if (field && field.id.includes(':')) {
+                const baseFieldId = field.id.split(':')[0];
+                return d.fieldLabel === baseFieldId;
+            }
+
+            return false;
+        });
+
+        if (!fieldData) {
+            console.warn(`Field not found: ${fieldName}`);
+            return 0;
+        }
+
+        let value = fieldData.value;
+
+        // Handle grid data (JSON arrays)
+        try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                // For grid data, try to extract column value
+                const columnName = fieldName.includes('→') ?
+                    fieldName.split('→').pop().trim() : fieldName;
+
+                if (typeof parsed[0] === 'object' && parsed[0][columnName] !== undefined) {
+                    // Sum all values in this column
+                    return parsed.reduce((sum, row) => {
+                        const val = parseFloat(row[columnName]) || 0;
+                        return sum + val;
+                    }, 0);
+                }
+
+                // If it's an array of primitives, sum them
+                return parsed.reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
+            }
+
+            // Single parsed value
+            const numValue = parseFloat(parsed);
+            return isNaN(numValue) ? 0 : numValue;
+        } catch (e) {
+            // Not JSON, try to parse as number
+            const numValue = parseFloat(value);
+            return isNaN(numValue) ? 0 : numValue;
+        }
+    };
+    const formatCalculatedValue = (value, format, precision = 2) => {
+        if (isNaN(value)) return "Error";
+
+        switch (format) {
+            case 'currency':
+                return `$${value.toFixed(precision)}`;
+            case 'percentage':
+                return `${value.toFixed(precision)}%`;
+            case 'integer':
+                return Math.round(value).toString();
+            case 'decimal':
+            default:
+                return value.toFixed(precision);
+        }
+    };
+    const extractValues = (formula) => {
+        const matches = formula.match(/[\d.]+/g);
+        return matches ? matches.map(Number) : [];
+    };
+    const processCalculatedFields = (reportData, calculatedFields, fields) => {
+        if (!calculatedFields || calculatedFields.length === 0) {
+            return { processedData: reportData, summaryRows: [] };
+        }
+
+        console.log('Processing calculated fields:', calculatedFields);
+
+        // Separate calculations by type
+        const rowwiseCalcs = calculatedFields.filter(cf => cf.calculationType === "rowwise");
+        const aggregateCalcs = calculatedFields.filter(cf => cf.calculationType === "aggregate");
+        const groupingCalcs = calculatedFields.filter(cf => cf.calculationType === "grouping");
+        const columnwiseCalcs = calculatedFields.filter(cf => cf.calculationType === "columnwise");
+
+        // Process row-wise and grouping calculations (add as columns)
+        const processedData = reportData.map(row => {
+            const processedRow = { ...row };
+
+            [...rowwiseCalcs, ...groupingCalcs].forEach(calcField => {
+                const { label, formula, calculationType, format, precision } = calcField;
+
+                try {
+                    let result = 0;
+
+                    if (calculationType === "rowwise") {
+                        result = processRowwiseFormula(formula, row.data, fields);
+                    } else if (calculationType === "grouping") {
+                        result = processGroupingFormula(formula, reportData, row, fields);
+                    }
+
+                    const formattedResult = formatCalculatedValue(result, format, precision);
+
+                    if (!processedRow.data) processedRow.data = [];
+                    processedRow.data.push({
+                        fieldLabel: label,
+                        value: formattedResult
+                    });
+
+                } catch (error) {
+                    console.error(`Error calculating field ${label}:`, error);
+                    if (!processedRow.data) processedRow.data = [];
+                    processedRow.data.push({
+                        fieldLabel: label,
+                        value: "Error"
+                    });
+                }
+            });
+
+            return processedRow;
+        });
+
+        // Process column-wise and aggregate calculations (create summary rows)
+        const summaryRows = [];
+
+        [...aggregateCalcs, ...columnwiseCalcs].forEach(calcField => {
+            const { label, formula, calculationType, format, precision } = calcField;
+
+            try {
+                let result = 0;
+
+                if (calculationType === "aggregate") {
+                    result = processAggregateFormula(formula, reportData, fields);
+                } else if (calculationType === "columnwise") {
+                    result = processColumnwiseFormula(formula, reportData, fields);
+                }
+
+                const formattedResult = formatCalculatedValue(result, format, precision);
+
+                summaryRows.push({
+                    label: label,
+                    value: formattedResult,
+                    type: calculationType,
+                    formula: formula
+                });
+
+            } catch (error) {
+                console.error(`Error calculating summary field ${label}:`, error);
+                summaryRows.push({
+                    label: label,
+                    value: "Error",
+                    type: calculationType,
+                    formula: formula
+                });
+            }
+        });
+
+        return { processedData, summaryRows };
+    };
+    const renderExpandedTableWithSummary = (reportData, summaryRows, selectedFields, fields) => {
+        // Filter selectedFields to exclude calculated fields that should be in summary
+        const columnFields = selectedFields.filter(field => {
+            const fieldType = typeof field === 'object' ? field.type : 'normal';
+            return fieldType !== 'calculated' || field.showAsColumn;
+        });
+
+        return (
+            <div className="table-container">
+                <table className="report-table">
+                    <thead>
+                        <tr>
+                            {columnFields.map((field, i) => {
+                                const label = typeof field === 'object' ? field.label : field;
+                                const cleanedLabel = label.includes("→")
+                                    ? label.split("→").pop().trim()
+                                    : label;
+
+                                return <th key={i}>{cleanedLabel}</th>;
+                            })}
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {reportData.map((row, i) => (
+                            <tr key={i}>
+                                {columnFields.map((field, j) => {
+                                    const fLabel = typeof field === 'object' ? field.label : field;
+                                    const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
+                                    return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
+                                })}
+                            </tr>
+                        ))}
+
+                        {/* Summary Rows Section */}
+                        {summaryRows.length > 0 && (
+                            <>
+                                <tr className="summary-divider">
+                                    <td colSpan={columnFields.length} className="summary-divider-cell">
+                                        <div className="summary-divider-line">
+                                            <span>📊 Summary & Totals</span>
+                                        </div>
+                                    </td>
+                                </tr>
+
+                                {summaryRows.map((summaryRow, index) => (
+                                    <tr key={`summary-${index}`} className="summary-row">
+                                        <td className="summary-label">
+                                            <strong>{summaryRow.label}</strong>
+                                            <div className="summary-type">{summaryRow.type.toUpperCase()}</div>
+                                        </td>
+                                        <td className="summary-value" colSpan={columnFields.length - 1}>
+                                            <span className="summary-result">{summaryRow.value}</span>
+                                            <div className="summary-formula">{summaryRow.formula}</div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
 
     return (
         <div className="report-viewer-wrapper">

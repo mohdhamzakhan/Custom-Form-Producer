@@ -68,13 +68,18 @@ public class ReportFilterDto
 
 public class CalculatedField
 {
-    public string Label { get; set; }
-    public string Formula { get; set; }
-    public string? Description { get; set; }
-    public string? Format { get; set; }
-    public int? Precision { get; set; }
-    public string chartLabel { get; set; }
-    public string scope { get; set; } // "row" or "column"
+    public string calculationType { get; set; }
+    public string? description { get; set; }
+    public string? format { get; set; }
+    public string formula { get; set; }
+    public string functionType { get; set; }
+    public string id { get; set; }
+    public string label { get; set; }
+    public int? precision { get; set; }
+    public bool showOneRowPerGroup { get; set; }
+    public string sortOrder { get; set; }
+    public string[] sourceFields { get; set; } // "row" or "column"
+    public int windowSize { get; set; }
 }
 //public class CalculatedField
 //{
