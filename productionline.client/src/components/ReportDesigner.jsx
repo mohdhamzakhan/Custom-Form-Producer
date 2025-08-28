@@ -710,70 +710,832 @@ export default function EnhancedReportDesigner() {
         return gridGroups;
     }
 
-    const prepareChartData = (submissionData, fields, chartConfig) => {
-        if (!chartConfig?.metrics?.length || !chartConfig?.xField || !submissionData.length) {
+    const prepareChartData = (submissionData, fields, chartConfig, calculatedFields = []) => {
+        if (!chartConfig?.metrics?.length || !submissionData.length) {
             return [];
         }
 
-        const chartData = [];
-
-        submissionData.forEach(submission => {
+        return submissionData.map((submission, index) => {
             const dataPoint = {};
 
-            // Get X-axis value
-            const xFieldData = submission.submissionData.find(d => {
-                const field = fields.find(f => f.label === chartConfig.xField);
-                return field && d.fieldLabel === field.id.split(':')[0];
-            });
+            // Handle X-axis field (both regular and calculated)
+            if (chartConfig.xField) {
+                if (chartConfig.xField.startsWith('calc_')) {
+                    const calcFieldId = chartConfig.xField.replace('calc_', '');
+                    const calcField = calculatedFields.find(cf => cf.id == calcFieldId);
+                    if (calcField) {
+                        dataPoint.name = calculateFieldValueForChart(calcField, submission, fields, submissionData, index);
+                    }
+                } else {
+                    // Handle regular field for X-axis
+                    const field = fields.find(f => f.id === chartConfig.xField);
+                    if (field) {
+                        const baseFieldId = field.id.split(':')[0];
+                        const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
 
-            if (xFieldData) {
-                try {
-                    const parsed = JSON.parse(xFieldData.fieldValue);
-                    dataPoint.name = Array.isArray(parsed) ? `Entry ${submission.id}` : parsed;
-                } catch {
-                    dataPoint.name = xFieldData.fieldValue || `Entry ${submission.id}`;
+                        if (fieldData) {
+                            try {
+                                const parsed = JSON.parse(fieldData.fieldValue);
+                                if (Array.isArray(parsed)) {
+                                    dataPoint.name = `Entry ${submission.id}`;
+                                } else {
+                                    dataPoint.name = String(parsed);
+                                }
+                            } catch {
+                                dataPoint.name = String(fieldData.fieldValue || `Entry ${submission.id}`);
+                            }
+                        } else {
+                            dataPoint.name = `Entry ${submission.id}`;
+                        }
+                    }
                 }
             } else {
                 dataPoint.name = `Entry ${submission.id}`;
             }
 
-            // Get metric values
-            chartConfig.metrics.forEach(metricLabel => {
-                const field = fields.find(f => f.label === metricLabel);
-                if (field) {
-                    const baseFieldId = field.id.split(':')[0];
-                    const columnName = field.label.includes('→')
-                        ? field.label.split('→').pop().trim()
-                        : field.label;
+            // Handle metrics (both regular and calculated)
+            chartConfig.metrics.forEach(metricId => {
+                if (metricId.startsWith('calc_')) {
+                    // Handle calculated field metric
+                    const calcFieldId = metricId.replace('calc_', '');
+                    const calcField = calculatedFields.find(cf => cf.id == calcFieldId);
 
-                    const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                    if (calcField) {
+                        const calculatedValue = parseFloat(calculateFieldValueForChart(calcField, submission, fields, submissionData, index)) || 0;
+                        dataPoint[calcField.label] = calculatedValue;
+                    }
+                } else {
+                    // Handle regular field metric
+                    const field = fields.find(f => f.id === metricId);
+                    if (field) {
+                        const baseFieldId = field.id.split(':')[0];
+                        const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
 
-                    if (fieldData) {
-                        try {
-                            const parsed = JSON.parse(fieldData.fieldValue);
-                            if (Array.isArray(parsed)) {
-                                // For grid data, sum up the column values
-                                const sum = parsed.reduce((acc, row) => {
-                                    const val = parseFloat(row[columnName]) || 0;
-                                    return acc + val;
-                                }, 0);
-                                dataPoint[metricLabel] = sum;
-                            } else {
-                                dataPoint[metricLabel] = parseFloat(parsed) || 0;
+                        if (fieldData) {
+                            try {
+                                const parsed = JSON.parse(fieldData.fieldValue);
+                                if (Array.isArray(parsed)) {
+                                    // For grid data, sum up the column values
+                                    const columnName = field.label.includes('→')
+                                        ? field.label.split('→').pop().trim()
+                                        : field.label;
+                                    const sum = parsed.reduce((acc, row) => {
+                                        const val = parseFloat(row[columnName]) || 0;
+                                        return acc + val;
+                                    }, 0);
+                                    dataPoint[field.label] = sum;
+                                } else {
+                                    dataPoint[field.label] = parseFloat(parsed) || 0;
+                                }
+                            } catch {
+                                dataPoint[field.label] = parseFloat(fieldData.fieldValue) || 0;
                             }
-                        } catch {
-                            dataPoint[metricLabel] = parseFloat(fieldData.fieldValue) || 0;
+                        } else {
+                            dataPoint[field.label] = 0;
                         }
                     }
                 }
             });
 
-            chartData.push(dataPoint);
+            return dataPoint;
         });
-
-        return chartData;
     };
 
+    const calculateFieldValue = (calcField, submission, fields) => {
+        const formula = calcField.formula;
+        const precision = calcField.precision ?? 2;
+        let computedFormula = formula;
+
+        const functionRegex = /(SUM|AVG|MIN|MAX|COUNT|ADD|SUBTRACT|MULTIPLY|DIVIDE|EFFICIENCY)\(([^)]+)\)/gi;
+        let match;
+
+        while ((match = functionRegex.exec(formula)) !== null) {
+            const func = match[1].toUpperCase();
+            const params = match[2].split(',').map(p => p.trim().replace(/['"]/g, ''));
+
+            let result = 0;
+
+            switch (func) {
+                case "SUM":
+                case "AVG":
+                case "MIN":
+                case "MAX":
+                    const fullLabel = params[0];
+                    const field = fields.find(f => f.label === fullLabel);
+                    if (field) {
+                        const baseFieldId = field.id.split(":")[0];
+                        const columnName = fullLabel.split("→").pop().trim();
+                        const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+
+                        try {
+                            const parsed = JSON.parse(fieldData?.fieldValue || "[]");
+                            const values = Array.isArray(parsed)
+                                ? parsed.map(row => Number(row[columnName]) || 0)
+                                : [Number(parsed) || 0];
+
+                            switch (func) {
+                                case "SUM":
+                                    result = values.reduce((a, b) => a + b, 0);
+                                    break;
+                                case "AVG":
+                                    result = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+                                    break;
+                                case "MIN":
+                                    result = values.length ? Math.min(...values) : 0;
+                                    break;
+                                case "MAX":
+                                    result = values.length ? Math.max(...values) : 0;
+                                    break;
+                            }
+                        } catch {
+                            result = 0;
+                        }
+                    }
+                    break;
+
+                case "ADD":
+                case "SUBTRACT":
+                case "MULTIPLY":
+                case "DIVIDE":
+                    if (params.length >= 2) {
+                        const values = params.map(param => {
+                            const field = fields.find(f => f.label === param);
+                            if (field) {
+                                const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                                try {
+                                    return parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                                } catch {
+                                    return parseFloat(fieldData?.fieldValue || "0") || 0;
+                                }
+                            }
+                            return parseFloat(param) || 0;
+                        });
+
+                        switch (func) {
+                            case "ADD":
+                                result = values.reduce((a, b) => a + b, 0);
+                                break;
+                            case "SUBTRACT":
+                                result = values.reduce((a, b) => a - b);
+                                break;
+                            case "MULTIPLY":
+                                result = values.reduce((a, b) => a * b, 1);
+                                break;
+                            case "DIVIDE":
+                                result = values[1] !== 0 ? values[0] / values[1] : 0;
+                                break;
+                        }
+                    }
+                    break;
+
+                case "EFFICIENCY":
+                    if (params.length >= 3) {
+                        const outputField = fields.find(f => f.label === params[0]);
+                        const inputField = fields.find(f => f.label === params[1]);
+                        const target = parseFloat(params[2]) || 1;
+
+                        if (outputField && inputField) {
+                            const outputData = submission.submissionData.find(d => d.fieldLabel === outputField.id.split(':')[0]);
+                            const inputData = submission.submissionData.find(d => d.fieldLabel === inputField.id.split(':')[0]);
+
+                            try {
+                                const outputValue = parseFloat(JSON.parse(outputData?.fieldValue || "0")) || 0;
+                                const inputValue = parseFloat(JSON.parse(inputData?.fieldValue || "1")) || 1;
+                                result = inputValue !== 0 ? (outputValue / inputValue) / target * 100 : 0;
+                            } catch {
+                                result = 0;
+                            }
+                        }
+                    }
+                    break;
+
+                default:
+                    result = 0;
+            }
+
+            computedFormula = computedFormula.replace(match[0], result);
+        }
+
+        try {
+            const finalResult = eval(computedFormula);
+            return Number(finalResult).toFixed(precision);
+        } catch {
+            return "0";
+        }
+    };
+
+    const calculateFieldValueForChart = (calcField, submission, fields, allSubmissions = [], currentIndex = 0) => {
+        const formula = calcField.formula;
+        const precision = calcField.precision ?? 2;
+
+        // Handle different calculation types
+        switch (calcField.calculationType) {
+            case 'rowwise':
+                return calculateRowwiseValueForChart(calcField, submission, fields, precision);
+
+            case 'aggregate':
+                return calculateAggregateValueForChart(calcField, allSubmissions, fields, precision);
+
+            case 'columnwise':
+                return calculateColumnwiseValueForChart(calcField, allSubmissions, fields, currentIndex, precision);
+
+            case 'grouping':
+                return calculateGroupingValueForChart(calcField, submission, fields, allSubmissions, precision);
+
+            default:
+                return "0";
+        }
+    };
+
+    const calculateFieldValueForPreview = (calcField, submission, fields, allSubmissions = [], currentIndex = 0) => {
+        const formula = calcField.formula;
+        const precision = calcField.precision ?? 2;
+
+        // Handle different calculation types
+        switch (calcField.calculationType) {
+            case 'rowwise':
+                return calculateRowwiseValue(calcField, submission, fields, precision);
+
+            case 'aggregate':
+                return calculateAggregateValue(calcField, allSubmissions, fields, precision);
+
+            case 'columnwise':
+                return calculateColumnwiseValue(calcField, allSubmissions, fields, currentIndex, precision);
+
+            case 'grouping':
+                return calculateGroupingValue(calcField, submission, fields, precision);
+
+            default:
+                return "0";
+        }
+    };
+
+    const calculateRowwiseValueForChart = (calcField, submission, fields, precision) => {
+        const formula = calcField.formula;
+        let computedFormula = formula;
+
+        const functionRegex = /(ADD|SUBTRACT|MULTIPLY|DIVIDE|PERCENTAGE|EFFICIENCY)\(([^)]+)\)/gi;
+        let match;
+
+        while ((match = functionRegex.exec(formula)) !== null) {
+            const func = match[1].toUpperCase();
+            const params = match[2].split(',').map(p => p.trim().replace(/['"]/g, ''));
+
+            let result = 0;
+
+            switch (func) {
+                case "EFFICIENCY":
+                    if (params.length >= 3) {
+                        const outputField = fields.find(f => f.label === params[0]);
+                        const inputField = fields.find(f => f.label === params[1]);
+                        const target = parseFloat(params[2]) || 1;
+
+                        if (outputField && inputField) {
+                            const outputData = submission.submissionData.find(d => d.fieldLabel === outputField.id.split(':')[0]);
+                            const inputData = submission.submissionData.find(d => d.fieldLabel === inputField.id.split(':')[0]);
+
+                            try {
+                                let outputValue = 0, inputValue = 1;
+
+                                if (outputData) {
+                                    const parsed = JSON.parse(outputData.fieldValue || "0");
+                                    if (Array.isArray(parsed)) {
+                                        const columnName = outputField.label.split('→').pop().trim();
+                                        outputValue = parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0);
+                                    } else {
+                                        outputValue = parseFloat(parsed) || 0;
+                                    }
+                                }
+
+                                if (inputData) {
+                                    const parsed = JSON.parse(inputData.fieldValue || "1");
+                                    if (Array.isArray(parsed)) {
+                                        const columnName = inputField.label.split('→').pop().trim();
+                                        inputValue = parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0) || 1;
+                                    } else {
+                                        inputValue = parseFloat(parsed) || 1;
+                                    }
+                                }
+
+                                result = inputValue !== 0 ? (outputValue / inputValue) / target * 100 : 0;
+                            } catch {
+                                result = 0;
+                            }
+                        }
+                    }
+                    break;
+
+                default:
+                    // Handle ADD, SUBTRACT, MULTIPLY, DIVIDE
+                    const values = params.map(param => {
+                        const field = fields.find(f => f.label === param);
+                        if (field) {
+                            const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                            try {
+                                const parsed = JSON.parse(fieldData?.fieldValue || "0");
+                                if (Array.isArray(parsed)) {
+                                    const columnName = field.label.split('→').pop().trim();
+                                    return parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0);
+                                }
+                                return parseFloat(parsed) || 0;
+                            } catch {
+                                return parseFloat(fieldData?.fieldValue || "0") || 0;
+                            }
+                        }
+                        return parseFloat(param) || 0;
+                    });
+
+                    switch (func) {
+                        case "ADD":
+                            result = values.reduce((a, b) => a + b, 0);
+                            break;
+                        case "SUBTRACT":
+                            result = values.length > 1 ? values.reduce((a, b) => a - b) : 0;
+                            break;
+                        case "MULTIPLY":
+                            result = values.reduce((a, b) => a * b, 1);
+                            break;
+                        case "DIVIDE":
+                            result = values[1] !== 0 ? values[0] / values[1] : 0;
+                            break;
+                        case "PERCENTAGE":
+                            result = values[1] !== 0 ? (values[0] / values[1]) * 100 : 0;
+                            break;
+                    }
+                    break;
+            }
+
+            computedFormula = computedFormula.replace(match[0], result);
+        }
+
+        try {
+            const finalResult = eval(computedFormula);
+            return Number(finalResult).toFixed(precision);
+        } catch {
+            return "0";
+        }
+    };
+
+    const calculateAggregateValueForChart = (calcField, allSubmissions, fields, precision) => {
+        const formula = calcField.formula;
+        let computedFormula = formula;
+
+        const functionRegex = /(SUM|AVG|MIN|MAX|COUNT)\(([^)]+)\)/gi;
+        let match;
+
+        while ((match = functionRegex.exec(formula)) !== null) {
+            const func = match[1].toUpperCase();
+            const fieldLabel = match[2].trim().replace(/['"]/g, '');
+
+            const field = fields.find(f => f.label === fieldLabel);
+            if (!field) {
+                computedFormula = computedFormula.replace(match[0], "0");
+                continue;
+            }
+
+            const allValues = [];
+            allSubmissions.forEach(submission => {
+                const baseFieldId = field.id.split(":")[0];
+                const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+
+                try {
+                    const parsed = JSON.parse(fieldData?.fieldValue || "0");
+                    if (Array.isArray(parsed)) {
+                        const columnName = field.label.split('→').pop().trim();
+                        parsed.forEach(row => {
+                            const val = parseFloat(row[columnName]) || 0;
+                            if (val !== 0) allValues.push(val);
+                        });
+                    } else {
+                        const val = parseFloat(parsed) || 0;
+                        if (val !== 0) allValues.push(val);
+                    }
+                } catch {
+                    const val = parseFloat(fieldData?.fieldValue || "0") || 0;
+                    if (val !== 0) allValues.push(val);
+                }
+            });
+
+            let result = 0;
+            switch (func) {
+                case "SUM":
+                    result = allValues.reduce((a, b) => a + b, 0);
+                    break;
+                case "AVG":
+                    result = allValues.length ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
+                    break;
+                case "MIN":
+                    result = allValues.length ? Math.min(...allValues) : 0;
+                    break;
+                case "MAX":
+                    result = allValues.length ? Math.max(...allValues) : 0;
+                    break;
+                case "COUNT":
+                    result = allValues.length;
+                    break;
+            }
+
+            computedFormula = computedFormula.replace(match[0], result);
+        }
+
+        try {
+            const finalResult = eval(computedFormula);
+            return Number(finalResult).toFixed(precision);
+        } catch {
+            return "0";
+        }
+    };
+
+    const calculateColumnwiseSummary = (calcField, allSubmissions, fields) => {
+        const precision = calcField.precision ?? 2;
+
+        switch (calcField.functionType) {
+            case "RUNNING_TOTAL":
+                // For running total, summary shows the final cumulative value
+                const field = fields.find(f => f.label === calcField.formula.match(/"([^"]+)"/)?.[1]);
+                if (field) {
+                    let total = 0;
+                    allSubmissions.forEach(submission => {
+                        const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                        try {
+                            const parsed = JSON.parse(fieldData?.fieldValue || "0");
+                            total += parseFloat(parsed) || 0;
+                        } catch {
+                            total += parseFloat(fieldData?.fieldValue || "0") || 0;
+                        }
+                    });
+                    return Number(total).toFixed(precision);
+                }
+                return "0";
+
+            case "PERCENT_OF_TOTAL":
+                return "100.00"; // Total percentage should always be 100%
+
+            case "RANK":
+                return `1-${allSubmissions.length}`; // Show ranking range
+
+            case "CUMULATIVE_AVG":
+                // Show final cumulative average
+                const avgField = fields.find(f => f.label === calcField.formula.match(/"([^"]+)"/)?.[1]);
+                if (avgField) {
+                    let sum = 0, count = 0;
+                    allSubmissions.forEach(submission => {
+                        const fieldData = submission.submissionData.find(d => d.fieldLabel === avgField.id.split(':')[0]);
+                        try {
+                            const value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                            if (value !== 0) {
+                                sum += value;
+                                count++;
+                            }
+                        } catch {
+                            const value = parseFloat(fieldData?.fieldValue || "0") || 0;
+                            if (value !== 0) {
+                                sum += value;
+                                count++;
+                            }
+                        }
+                    });
+                    return count > 0 ? Number(sum / count).toFixed(precision) : "0";
+                }
+                return "0";
+
+            default:
+                return "—";
+        }
+    };
+
+    const calculateColumnwiseValue = (calcField, allSubmissions, fields, currentIndex, precision) => {
+        const field = fields.find(f => f.label === calcField.formula.match(/"([^"]+)"/)?.[1]);
+        if (!field) return "0";
+
+        switch (calcField.functionType) {
+            case "RUNNING_TOTAL":
+                let runningTotal = 0;
+                for (let i = 0; i <= currentIndex; i++) {
+                    const submission = allSubmissions[i];
+                    const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                    try {
+                        const value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                        runningTotal += value;
+                    } catch {
+                        const value = parseFloat(fieldData?.fieldValue || "0") || 0;
+                        runningTotal += value;
+                    }
+                }
+                return Number(runningTotal).toFixed(precision);
+
+            case "RANK":
+                // Calculate rank for current submission
+                const currentSubmission = allSubmissions[currentIndex];
+                const currentFieldData = currentSubmission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                const currentValue = parseFloat(JSON.parse(currentFieldData?.fieldValue || "0")) || 0;
+
+                const allValues = allSubmissions.map((sub, idx) => {
+                    const fieldData = sub.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                    const value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                    return { value, index: idx };
+                }).sort((a, b) => calcField.sortOrder === 'DESC' ? b.value - a.value : a.value - b.value);
+
+                const rank = allValues.findIndex(item => item.index === currentIndex) + 1;
+                return rank.toString();
+
+            case "PERCENT_OF_TOTAL":
+                const currentSubmissionPct = allSubmissions[currentIndex];
+                const currentFieldDataPct = currentSubmissionPct.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                const currentValuePct = parseFloat(JSON.parse(currentFieldDataPct?.fieldValue || "0")) || 0;
+
+                const totalValue = allSubmissions.reduce((sum, submission) => {
+                    const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                    const value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                    return sum + value;
+                }, 0);
+
+                const percentage = totalValue !== 0 ? (currentValuePct / totalValue) * 100 : 0;
+                return Number(percentage).toFixed(precision);
+
+            default:
+                return "0";
+        }
+    };
+
+    const calculateColumnwiseValueForChart = (calcField, allSubmissions, fields, currentIndex, precision) => {
+        const fieldMatch = calcField.formula.match(/"([^"]+)"/);
+        if (!fieldMatch) return "0";
+
+        const fieldLabel = fieldMatch[1];
+        const field = fields.find(f => f.label === fieldLabel);
+        if (!field) return "0";
+
+        switch (calcField.functionType) {
+            case "RUNNING_TOTAL":
+                let runningTotal = 0;
+                for (let i = 0; i <= currentIndex; i++) {
+                    const submission = allSubmissions[i];
+                    const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                    try {
+                        const value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                        runningTotal += value;
+                    } catch {
+                        const value = parseFloat(fieldData?.fieldValue || "0") || 0;
+                        runningTotal += value;
+                    }
+                }
+                return Number(runningTotal).toFixed(precision);
+
+            case "RANK":
+                const currentSubmission = allSubmissions[currentIndex];
+                const currentFieldData = currentSubmission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                let currentValue = 0;
+                try {
+                    currentValue = parseFloat(JSON.parse(currentFieldData?.fieldValue || "0")) || 0;
+                } catch {
+                    currentValue = parseFloat(currentFieldData?.fieldValue || "0") || 0;
+                }
+
+                const allValues = allSubmissions.map((sub, idx) => {
+                    const fieldData = sub.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                    let value = 0;
+                    try {
+                        value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                    } catch {
+                        value = parseFloat(fieldData?.fieldValue || "0") || 0;
+                    }
+                    return { value, index: idx };
+                }).sort((a, b) => calcField.sortOrder === 'DESC' ? b.value - a.value : a.value - b.value);
+
+                const rank = allValues.findIndex(item => item.index === currentIndex) + 1;
+                return rank.toString();
+
+            case "PERCENT_OF_TOTAL":
+                const currentSubmissionPct = allSubmissions[currentIndex];
+                const currentFieldDataPct = currentSubmissionPct.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                let currentValuePct = 0;
+                try {
+                    currentValuePct = parseFloat(JSON.parse(currentFieldDataPct?.fieldValue || "0")) || 0;
+                } catch {
+                    currentValuePct = parseFloat(currentFieldDataPct?.fieldValue || "0") || 0;
+                }
+
+                const totalValue = allSubmissions.reduce((sum, submission) => {
+                    const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                    let value = 0;
+                    try {
+                        value = parseFloat(JSON.parse(fieldData?.fieldValue || "0")) || 0;
+                    } catch {
+                        value = parseFloat(fieldData?.fieldValue || "0") || 0;
+                    }
+                    return sum + value;
+                }, 0);
+
+                const percentage = totalValue !== 0 ? (currentValuePct / totalValue) * 100 : 0;
+                return Number(percentage).toFixed(precision);
+
+            default:
+                return "0";
+        }
+    };
+
+    const calculateGroupingValueForChart = (calcField, submission, fields, allSubmissions, precision) => {
+        // For chart purposes, return individual values that will be grouped by the chart library
+        const fieldMatch = calcField.formula.match(/"([^"]+)"/);
+        if (!fieldMatch) return "0";
+
+        const fieldLabel = fieldMatch[1];
+        const field = fields.find(f => f.label === fieldLabel);
+        if (!field) return "0";
+
+        const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+        try {
+            const parsed = JSON.parse(fieldData?.fieldValue || "0");
+            if (Array.isArray(parsed)) {
+                const columnName = field.label.split('→').pop().trim();
+                return parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0).toFixed(precision);
+            }
+            return Number(parseFloat(parsed) || 0).toFixed(precision);
+        } catch {
+            return Number(parseFloat(fieldData?.fieldValue || "0") || 0).toFixed(precision);
+        }
+    };
+
+    const calculateRowwiseValue = (calcField, submission, fields, precision) => {
+        const formula = calcField.formula;
+        let computedFormula = formula;
+
+        const functionRegex = /(ADD|SUBTRACT|MULTIPLY|DIVIDE|PERCENTAGE|EFFICIENCY)\(([^)]+)\)/gi;
+        let match;
+
+        while ((match = functionRegex.exec(formula)) !== null) {
+            const func = match[1].toUpperCase();
+            const params = match[2].split(',').map(p => p.trim().replace(/['"]/g, ''));
+
+            let result = 0;
+
+            switch (func) {
+                case "ADD":
+                case "SUBTRACT":
+                case "MULTIPLY":
+                case "DIVIDE":
+                    const values = params.map(param => {
+                        const field = fields.find(f => f.label === param);
+                        if (field) {
+                            const fieldData = submission.submissionData.find(d => d.fieldLabel === field.id.split(':')[0]);
+                            try {
+                                const parsed = JSON.parse(fieldData?.fieldValue || "0");
+                                if (Array.isArray(parsed)) {
+                                    const columnName = field.label.split('→').pop().trim();
+                                    return parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0);
+                                }
+                                return parseFloat(parsed) || 0;
+                            } catch {
+                                return parseFloat(fieldData?.fieldValue || "0") || 0;
+                            }
+                        }
+                        return parseFloat(param) || 0;
+                    });
+
+                    switch (func) {
+                        case "ADD":
+                            result = values.reduce((a, b) => a + b, 0);
+                            break;
+                        case "SUBTRACT":
+                            result = values.length > 1 ? values.reduce((a, b) => a - b) : 0;
+                            break;
+                        case "MULTIPLY":
+                            result = values.reduce((a, b) => a * b, 1);
+                            break;
+                        case "DIVIDE":
+                            result = values[1] !== 0 ? values[0] / values[1] : 0;
+                            break;
+                    }
+                    break;
+
+                case "EFFICIENCY":
+                    if (params.length >= 3) {
+                        const outputField = fields.find(f => f.label === params[0]);
+                        const inputField = fields.find(f => f.label === params[1]);
+                        const target = parseFloat(params[2]) || 1;
+
+                        if (outputField && inputField) {
+                            const outputData = submission.submissionData.find(d => d.fieldLabel === outputField.id.split(':')[0]);
+                            const inputData = submission.submissionData.find(d => d.fieldLabel === inputField.id.split(':')[0]);
+
+                            try {
+                                let outputValue = 0, inputValue = 1;
+
+                                if (outputData) {
+                                    const parsed = JSON.parse(outputData.fieldValue || "0");
+                                    if (Array.isArray(parsed)) {
+                                        const columnName = outputField.label.split('→').pop().trim();
+                                        outputValue = parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0);
+                                    } else {
+                                        outputValue = parseFloat(parsed) || 0;
+                                    }
+                                }
+
+                                if (inputData) {
+                                    const parsed = JSON.parse(inputData.fieldValue || "1");
+                                    if (Array.isArray(parsed)) {
+                                        const columnName = inputField.label.split('→').pop().trim();
+                                        inputValue = parsed.reduce((sum, row) => sum + (parseFloat(row[columnName]) || 0), 0) || 1;
+                                    } else {
+                                        inputValue = parseFloat(parsed) || 1;
+                                    }
+                                }
+
+                                result = inputValue !== 0 ? (outputValue / inputValue) / target * 100 : 0;
+                            } catch {
+                                result = 0;
+                            }
+                        }
+                    }
+                    break;
+            }
+
+            computedFormula = computedFormula.replace(match[0], result);
+        }
+
+        try {
+            const finalResult = eval(computedFormula);
+            return Number(finalResult).toFixed(precision);
+        } catch {
+            return "0";
+        }
+    };
+
+    const calculateAggregateValue = (calcField, allSubmissions, fields, precision) => {
+        const formula = calcField.formula;
+        let computedFormula = formula;
+
+        const functionRegex = /(SUM|AVG|MIN|MAX|COUNT)\(([^)]+)\)/gi;
+        let match;
+
+        while ((match = functionRegex.exec(formula)) !== null) {
+            const func = match[1].toUpperCase();
+            const fieldLabel = match[2].trim().replace(/['"]/g, '');
+
+            const field = fields.find(f => f.label === fieldLabel);
+            if (!field) {
+                computedFormula = computedFormula.replace(match[0], "0");
+                continue;
+            }
+
+            const allValues = [];
+            allSubmissions.forEach(submission => {
+                const baseFieldId = field.id.split(":")[0];
+                const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+
+                try {
+                    const parsed = JSON.parse(fieldData?.fieldValue || "0");
+                    if (Array.isArray(parsed)) {
+                        const columnName = field.label.split('→').pop().trim();
+                        parsed.forEach(row => {
+                            const val = parseFloat(row[columnName]) || 0;
+                            if (val !== 0) allValues.push(val);
+                        });
+                    } else {
+                        const val = parseFloat(parsed) || 0;
+                        if (val !== 0) allValues.push(val);
+                    }
+                } catch {
+                    const val = parseFloat(fieldData?.fieldValue || "0") || 0;
+                    if (val !== 0) allValues.push(val);
+                }
+            });
+
+            let result = 0;
+            switch (func) {
+                case "SUM":
+                    result = allValues.reduce((a, b) => a + b, 0);
+                    break;
+                case "AVG":
+                    result = allValues.length ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
+                    break;
+                case "MIN":
+                    result = allValues.length ? Math.min(...allValues) : 0;
+                    break;
+                case "MAX":
+                    result = allValues.length ? Math.max(...allValues) : 0;
+                    break;
+                case "COUNT":
+                    result = allValues.length;
+                    break;
+            }
+
+            computedFormula = computedFormula.replace(match[0], result);
+        }
+
+        try {
+            const finalResult = eval(computedFormula);
+            return Number(finalResult).toFixed(precision);
+        } catch {
+            return "0";
+        }
+    };
+
+    const calculateGroupingValue = (calcField, submission, fields, precision) => {
+        // For preview, just show sample grouping result
+        return "Group Total";
+    };
 
     return (
         <div className="flex h-screen bg-gray-100">
@@ -1283,8 +2045,9 @@ export default function EnhancedReportDesigner() {
                             <div>
                                 <h4 className="font-semibold mb-3">📋 Data Table Preview</h4>
                                 <div className="border rounded overflow-hidden">
+                                    {/* Table Header */}
                                     <div className="bg-gray-50 border-b">
-                                        <div className="grid gap-4 font-semibold text-sm mb-2" style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}>
+                                        <div className="grid gap-4 font-semibold text-sm p-3" style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}>
                                             <div></div>
                                             {selectedFields.map(fieldId => {
                                                 const field = fields.find(f => f.id === fieldId);
@@ -1296,173 +2059,170 @@ export default function EnhancedReportDesigner() {
                                                 );
                                             })}
                                             {calculatedFields.map((cf, i) => (
-                                                <div key={`cf-${i}`}>{cf.label}</div>
+                                                <div key={`cf-${i}`} className="text-blue-600">
+                                                    {cf.label}
+                                                    <div className="text-xs font-normal text-gray-500">
+                                                        ({cf.calculationType})
+                                                    </div>
+                                                </div>
                                             ))}
                                         </div>
                                     </div>
-                                    <div className="p-4">
+
+                                    {/* Table Body */}
+                                    <div className="max-h-96 overflow-y-auto">
                                         {submissionData.length === 0 ? (
-                                            <p className="text-gray-500 italic">No approved submissions available</p>
+                                            <p className="text-gray-500 italic p-4">No approved submissions available</p>
                                         ) : (
-                                            submissionData.slice(0, 3).map((submission, rowIdx) => {
-                                                // Your existing table preview code remains the same...
-                                                // (Keep all the existing table rendering logic here)
+                                            <>
+                                                {/* Regular Data Rows */}
+                                                {submissionData.slice(0, 3).map((submission, rowIdx) => {
+                                                    const hasGrid = selectedFields.some(fieldId => {
+                                                        const field = fields.find(f => f.id === fieldId);
+                                                        if (!field) return false;
+                                                        const baseFieldId = fieldId.split(":")[0];
+                                                        const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                                                        try {
+                                                            const parsed = JSON.parse(fieldData?.fieldValue || "");
+                                                            return Array.isArray(parsed) && typeof parsed[0] === "object";
+                                                        } catch {
+                                                            return false;
+                                                        }
+                                                    });
 
-                                                // Determine if this row has any grid data fields
-                                                const hasGrid = selectedFields.some(fieldId => {
-                                                    const field = fields.find(f => f.id === fieldId);
-                                                    if (!field) return false;
-                                                    const baseFieldId = fieldId.split(":")[0];
-                                                    const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
-                                                    try {
-                                                        const parsed = JSON.parse(fieldData?.fieldValue || "");
-                                                        return Array.isArray(parsed) && typeof parsed[0] === "object";
-                                                    } catch {
-                                                        return false;
-                                                    }
-                                                });
-
-                                                return (
-                                                    <div key={rowIdx} className="mb-2">
-                                                        {/* Main row */}
-                                                        <div
-                                                            className="grid gap-4 items-center text-sm"
-                                                            style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}
-                                                        >
-                                                            <button
-                                                                className="text-blue-500 hover:underline focus:outline-none"
-                                                                onClick={() => hasGrid && toggleExpand(rowIdx)}
-                                                                style={{
-                                                                    background: "none",
-                                                                    border: "none",
-                                                                    cursor: hasGrid ? "pointer" : "default",
-                                                                    opacity: hasGrid ? "1" : "0.4"
-                                                                }}
-                                                                aria-label={expandedSubmissions.includes(rowIdx) ? "Collapse" : "Expand"}
-                                                                tabIndex={hasGrid ? 0 : -1}
-                                                                disabled={!hasGrid}
+                                                    return (
+                                                        <div key={rowIdx} className="border-b last:border-b-0">
+                                                            {/* Main row */}
+                                                            <div
+                                                                className="grid gap-4 items-center text-sm p-3 hover:bg-gray-50"
+                                                                style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}
                                                             >
-                                                                {hasGrid ? (expandedSubmissions.includes(rowIdx) ? "▼" : "▶") : ""}
-                                                            </button>
+                                                                <button
+                                                                    className="text-blue-500 hover:underline focus:outline-none"
+                                                                    onClick={() => hasGrid && toggleExpand(rowIdx)}
+                                                                    style={{
+                                                                        background: "none",
+                                                                        border: "none",
+                                                                        cursor: hasGrid ? "pointer" : "default",
+                                                                        opacity: hasGrid ? "1" : "0.4"
+                                                                    }}
+                                                                    disabled={!hasGrid}
+                                                                >
+                                                                    {hasGrid ? (expandedSubmissions.includes(rowIdx) ? "▼" : "▶") : ""}
+                                                                </button>
 
-                                                            {/* Normal Fields */}
-                                                            {selectedFields.map(fieldId => {
-                                                                const field = fields.find(f => f.id === fieldId);
-                                                                if (!field) return <div key={fieldId}>—</div>;
-                                                                const baseFieldId = fieldId.split(":")[0];
-                                                                const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
-                                                                const raw = fieldData?.fieldValue;
-
-                                                                try {
-                                                                    const parsed = JSON.parse(raw);
-                                                                    if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                                                                        return <div key={fieldId}>{parsed.length} rows</div>;
-                                                                    }
-                                                                    return <div key={fieldId}>{parsed || "—"}</div>;
-                                                                } catch {
-                                                                    return <div key={fieldId}>{raw || "—"}</div>;
-                                                                }
-                                                            })}
-
-                                                            {/* Calculated Fields */}
-                                                            {calculatedFields.map((calcField, i) => {
-                                                                const formula = calcField.formula;
-                                                                const precision = calcField.precision ?? 2;
-                                                                let computedFormula = formula;
-
-                                                                const functionRegex = /(SUM|AVG|MIN|MAX)\(([^)]+)\)/gi;
-                                                                let match;
-
-                                                                while ((match = functionRegex.exec(formula)) !== null) {
-                                                                    const func = match[1].toUpperCase();
-                                                                    const fullLabel = match[2].trim();
-
-                                                                    const field = fields.find(f => f.label === fullLabel);
-                                                                    if (!field) {
-                                                                        computedFormula = computedFormula.replace(match[0], "0");
-                                                                        continue;
-                                                                    }
-
-                                                                    const baseFieldId = field.id.split(":")[0];
-                                                                    const columnName = fullLabel.split("→").pop().trim();
+                                                                {/* Normal Fields */}
+                                                                {selectedFields.map(fieldId => {
+                                                                    const field = fields.find(f => f.id === fieldId);
+                                                                    if (!field) return <div key={fieldId}>—</div>;
+                                                                    const baseFieldId = fieldId.split(":")[0];
                                                                     const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                                                                    const raw = fieldData?.fieldValue;
 
                                                                     try {
-                                                                        const parsed = JSON.parse(fieldData?.fieldValue || "[]");
-                                                                        const values = Array.isArray(parsed)
-                                                                            ? parsed.map(row => Number(row[columnName]) || 0)
-                                                                            : [];
-
-                                                                        let result = 0;
-                                                                        switch (func) {
-                                                                            case "SUM":
-                                                                                result = values.reduce((a, b) => a + b, 0);
-                                                                                break;
-                                                                            case "AVG":
-                                                                                result = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-                                                                                break;
-                                                                            case "MIN":
-                                                                                result = values.length ? Math.min(...values) : 0;
-                                                                                break;
-                                                                            case "MAX":
-                                                                                result = values.length ? Math.max(...values) : 0;
-                                                                                break;
+                                                                        const parsed = JSON.parse(raw);
+                                                                        if (Array.isArray(parsed) && typeof parsed[0] === "object") {
+                                                                            return <div key={fieldId}>{parsed.length} rows</div>;
                                                                         }
-
-                                                                        computedFormula = computedFormula.replace(match[0], result);
+                                                                        return <div key={fieldId}>{parsed || "—"}</div>;
                                                                     } catch {
-                                                                        computedFormula = computedFormula.replace(match[0], "0");
+                                                                        return <div key={fieldId}>{raw || "—"}</div>;
                                                                     }
-                                                                }
+                                                                })}
 
-                                                                try {
-                                                                    const result = eval(computedFormula);
+                                                                {/* Calculated Fields */}
+                                                                {calculatedFields.map((calcField, i) => {
+                                                                    const calculatedValue = calculateFieldValueForPreview(calcField, submission, fields, submissionData, rowIdx);
+                                                                    const displayValue = calcField.format === 'percentage'
+                                                                        ? `${calculatedValue}%`
+                                                                        : calculatedValue;
+
                                                                     return (
-                                                                        <div key={`cf-${i}`}>
-                                                                            {Number(result).toFixed(precision)}
+                                                                        <div key={`cf-${i}`} className="font-medium text-blue-700">
+                                                                            {displayValue}
                                                                         </div>
                                                                     );
-                                                                } catch {
+                                                                })}
+                                                            </div>
+
+                                                            {/* Nested grid rows (existing code) */}
+                                                            {expandedSubmissions.includes(rowIdx) && (
+                                                                <div className="pl-10 pt-2 pb-2 bg-gray-25">
+                                                                    {(() => {
+                                                                        const gridGroups = groupGridColumns(fields, selectedFields);
+                                                                        return Object.entries(gridGroups).map(([parentId, columns]) => {
+                                                                            const parentField = fields.find(f => f.id === parentId);
+                                                                            const parentLabel = parentField ? parentField.label : parentId;
+                                                                            const fieldData = submission.submissionData.find(d => d.fieldLabel === parentId);
+                                                                            let gridRows = [];
+                                                                            try {
+                                                                                gridRows = JSON.parse(fieldData?.fieldValue || "[]");
+                                                                                if (!Array.isArray(gridRows)) gridRows = [];
+                                                                            } catch {
+                                                                                gridRows = [];
+                                                                            }
+                                                                            if (gridRows.length === 0) return null;
+                                                                            return (
+                                                                                <CollapsibleGridTable
+                                                                                    key={parentId}
+                                                                                    label={parentLabel}
+                                                                                    columns={columns}
+                                                                                    rows={gridRows}
+                                                                                    maxPreviewRows={3}
+                                                                                />
+                                                                            );
+                                                                        });
+                                                                    })()}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+
+                                                {/* Summary Row for Column-wise Calculations */}
+                                                {calculatedFields.some(cf => cf.calculationType === 'columnwise') && (
+                                                    <div className="bg-blue-50 border-t-2 border-blue-200">
+                                                        <div
+                                                            className="grid gap-4 items-center text-sm p-3 font-semibold"
+                                                            style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}
+                                                        >
+                                                            <div className="text-blue-600">📊</div>
+
+                                                            {/* Empty cells for regular fields */}
+                                                            {selectedFields.map(fieldId => (
+                                                                <div key={`summary-${fieldId}`} className="text-gray-400">—</div>
+                                                            ))}
+
+                                                            {/* Summary values for calculated fields */}
+                                                            {calculatedFields.map((calcField, i) => {
+                                                                if (calcField.calculationType === 'columnwise') {
+                                                                    // Calculate summary value for column-wise calculations
+                                                                    const summaryValue = calculateColumnwiseSummary(calcField, submissionData, fields);
+                                                                    const displayValue = calcField.format === 'percentage'
+                                                                        ? `${summaryValue}%`
+                                                                        : summaryValue;
+
                                                                     return (
-                                                                        <div key={`cf-${i}`} className="text-red-500">Err</div>
+                                                                        <div key={`summary-cf-${i}`} className="text-blue-700 font-bold">
+                                                                            {displayValue}
+                                                                            <div className="text-xs font-normal text-blue-500">
+                                                                                Final {calcField.functionType}
+                                                                            </div>
+                                                                        </div>
                                                                     );
+                                                                } else {
+                                                                    return <div key={`summary-cf-${i}`} className="text-gray-400">—</div>;
                                                                 }
                                                             })}
                                                         </div>
-
-                                                        {/* Nested grid rows */}
-                                                        {expandedSubmissions.includes(rowIdx) && (
-                                                            <div className="pl-10 pt-2">
-                                                                {(() => {
-                                                                    const gridGroups = groupGridColumns(fields, selectedFields);
-                                                                    return Object.entries(gridGroups).map(([parentId, columns]) => {
-                                                                        const parentField = fields.find(f => f.id === parentId);
-                                                                        const parentLabel = parentField ? parentField.label : parentId;
-                                                                        const fieldData = submission.submissionData.find(d => d.fieldLabel === parentId);
-                                                                        let gridRows = [];
-                                                                        try {
-                                                                            gridRows = JSON.parse(fieldData?.fieldValue || "[]");
-                                                                            if (!Array.isArray(gridRows)) gridRows = [];
-                                                                        } catch {
-                                                                            gridRows = [];
-                                                                        }
-                                                                        if (gridRows.length === 0) return null;
-                                                                        return (
-                                                                            <CollapsibleGridTable
-                                                                                key={parentId}
-                                                                                label={parentLabel}
-                                                                                columns={columns}
-                                                                                rows={gridRows}
-                                                                                maxPreviewRows={3}
-                                                                            />
-                                                                        );
-                                                                    });
-                                                                })()}
-                                                            </div>
-                                                        )}
+                                                        <div className="px-3 pb-2">
+                                                            <p className="text-xs text-blue-600">
+                                                                📋 Summary Row: Final results for column-wise calculations
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                );
-                                            })
+                                                )}
+                                            </>
                                         )}
                                     </div>
                                 </div>

@@ -215,6 +215,12 @@ const ReportCharts = ({
             const barMetrics = comboConfig?.barMetrics || [];
             const lineMetrics = comboConfig?.lineMetrics || [];
 
+
+            console.log("Combo Metrics", comboConfig)
+            console.log("Bar Metrics" , barMetrics)
+            console.log("Line Metrics" , lineMetrics)
+            console.log("data" , data)
+
             return (
                 <div className="w-full">
                     <ChartTitle />

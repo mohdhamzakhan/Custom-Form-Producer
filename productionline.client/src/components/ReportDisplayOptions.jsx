@@ -1,14 +1,7 @@
-// Add this component to handle different views in ReportViewer.jsx
-
+﻿// Updated ReportDisplayOptions.jsx
 import { useState } from 'react';
 
-function ReportDisplayOptions({
-    reportData,
-    headers,
-    calculatedFields,
-    displayMode,
-    setDisplayMode
-}) {
+function ReportDisplayOptions({ reportData, headers, calculatedFields, displayMode, setDisplayMode, summaryRows }) {
     const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
 
     // Display options
@@ -27,46 +20,47 @@ function ReportDisplayOptions({
         }
     };
 
-    // Evaluate formula safely
-    const evaluateFormula = (formula, rowData) => {
-        let evaluated = formula;
-        rowData.forEach(field => {
-            const value = isNaN(Number(field.value)) ? 0 : Number(field.value);
-            evaluated = evaluated.replaceAll(`{${field.fieldLabel}}`, value);
-        });
-        try {
-            return eval(evaluated);
-        } catch {
-            return "-";
-        }
+    // Get calculated field value from row data
+    const getCalculatedFieldValue = (calcField, rowData) => {
+        const fieldData = rowData.find(d => d.fieldLabel === calcField.label);
+        return fieldData ? fieldData.value : '—';
     };
 
     // Get summary statistics
     const getSummaryStats = () => {
         if (!reportData.length) return [];
 
-        // Get all numeric fields
-        const numericFields = headers.filter(header => {
+        // Get all numeric fields (including calculated ones)
+        const allFields = [...headers, ...calculatedFields.map(cf => cf.label)];
+
+        const numericFields = allFields.filter(fieldName => {
             // Check if the field has numeric values
             const fieldValues = reportData.map(row => {
-                const field = row.data.find(f => f.fieldLabel === header);
+                const field = row.data.find(f => f.fieldLabel === fieldName);
                 return field ? field.value : null;
             });
 
             // Consider field numeric if at least 50% of values are numbers
-            const numericCount = fieldValues.filter(val =>
-                val !== null && !isNaN(Number(val))
-            ).length;
+            const numericCount = fieldValues.filter(val => {
+                if (val === null || val === undefined || val === '') return false;
+                const numVal = parseFloat(val.toString().replace(/[$,%]/g, ''));
+                return !isNaN(numVal);
+            }).length;
 
             return numericCount > fieldValues.length * 0.5;
         });
 
         // Calculate stats for numeric fields
-        return numericFields.map(field => {
+        return numericFields.map(fieldName => {
             const values = reportData.map(row => {
-                const fieldData = row.data.find(f => f.fieldLabel === field);
-                return fieldData ? Number(fieldData.value) : null;
-            }).filter(val => val !== null && !isNaN(val));
+                const fieldData = row.data.find(f => f.fieldLabel === fieldName);
+                if (!fieldData) return null;
+
+                // Clean the value (remove currency symbols, etc.)
+                const cleanValue = fieldData.value.toString().replace(/[$,%]/g, '');
+                const numValue = parseFloat(cleanValue);
+                return isNaN(numValue) ? null : numValue;
+            }).filter(val => val !== null);
 
             // Skip if no valid values
             if (!values.length) return null;
@@ -78,7 +72,7 @@ function ReportDisplayOptions({
             const max = Math.max(...values);
 
             return {
-                field,
+                field: fieldName,
                 min,
                 max,
                 avg,
@@ -107,72 +101,56 @@ function ReportDisplayOptions({
     };
 
     // Table view (default)
+    // In ReportDisplayOptions.jsx, update this section:
     const renderTableView = () => {
         return (
             <>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Select a row to view details:
-                    </label>
-                    <select
-                        className="border p-2 rounded w-full"
-                        value={selectedSubmissionId || ''}
-                        onChange={(e) => {
-                            setSelectedSubmissionId(e.target.value);
-                            if (e.target.value) {
-                                setDisplayMode('detail');
-                            }
-                        }}
-                    >
-                        <option value="">-- Select a submission --</option>
-                        {reportData.map(row => (
-                            <option key={row.submissionId} value={row.submissionId}>
-                                ID: {row.submissionId} - {formatDate(row.submittedAt)}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="overflow-auto border rounded">
-                    <table className="min-w-full">
-                        <thead className="bg-gray-100">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200">
+                        <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-4 py-2 border-b text-left">Submission ID</th>
-                                <th className="px-4 py-2 border-b text-left">Submitted At</th>
+                                <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">
+                                    Submission ID
+                                </th>
+                                <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">
+                                    Submitted At
+                                </th>
                                 {headers.map((header, idx) => (
-                                    <th key={idx} className="px-4 py-2 border-b text-left">{header}</th>
+                                    <th key={idx} className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">
+                                        {/* Fix: Make sure header is a string, not object */}
+                                        {typeof header === 'object' ? header.label : header}
+                                    </th>
                                 ))}
                                 {calculatedFields.map((calc, idx) => (
-                                    <th key={idx} className="px-4 py-2 border-b text-right">
-                                        {calc.label}
+                                    <th key={idx} className="px-4 py-2 border-b text-left text-sm font-semibold text-blue-700">
+                                        {calc.label} <span className="text-xs">(Calculated)</span>
                                         {calc.description && (
-                                            <span className="block text-xs text-gray-500">{calc.description}</span>
+                                            <div className="text-xs text-gray-500 mt-1 font-normal">
+                                                {calc.description}
+                                            </div>
                                         )}
                                     </th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
-                            {reportData.map((row, index) => (
-                                <tr
-                                    key={index}
-                                    className={`border-b hover:bg-blue-50 cursor-pointer ${selectedSubmissionId === row.submissionId ? 'bg-blue-100' : ''
-                                        }`}
-                                    onClick={() => {
-                                        setSelectedSubmissionId(row.submissionId);
-                                        setDisplayMode('detail');
-                                    }}
-                                >
-                                    <td className="px-4 py-2">{row.submissionId}</td>
-                                    <td className="px-4 py-2">{formatDate(row.submittedAt)}</td>
-                                    {row.data.map((field, idx) => (
-                                        <td key={idx} className="px-4 py-2">
-                                            {field.value}
-                                        </td>
-                                    ))}
-                                    {calculatedFields.map((calc, idx) => (
-                                        <td key={idx} className="px-4 py-2 font-semibold text-right">
-                                            {evaluateFormula(calc.formula, row.data)}
+                            {reportData.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-gray-50">
+                                    <td className="px-4 py-2 border-b text-sm">{row.submissionId}</td>
+                                    <td className="px-4 py-2 border-b text-sm">{formatDate(row.submittedAt)}</td>
+                                    {headers.map((header, fieldIdx) => {
+                                        // Fix: Extract header name properly
+                                        const headerName = typeof header === 'object' ? header.label : header;
+                                        const field = row.data.find(f => f.fieldLabel === headerName);
+                                        return (
+                                            <td key={fieldIdx} className="px-4 py-2 border-b text-sm">
+                                                {field ? field.value : '—'}
+                                            </td>
+                                        );
+                                    })}
+                                    {calculatedFields.map((calc, calcIdx) => (
+                                        <td key={calcIdx} className="px-4 py-2 border-b text-sm text-blue-700 font-medium">
+                                            {getCalculatedFieldValue(calc, row.data)}
                                         </td>
                                     ))}
                                 </tr>
@@ -184,215 +162,139 @@ function ReportDisplayOptions({
         );
     };
 
-    // Detail view (single row)
+
+    // Detail view implementation (similar updates)
     const renderDetailView = () => {
-        const row = getRowById(selectedSubmissionId);
-
-        if (!row) {
-            return (
-                <div className="p-6 text-center">
-                    <p>No submission selected</p>
-                    <button
-                        className="bg-blue-600 text-white px-4 py-2 rounded mt-4"
-                        onClick={() => setDisplayMode('table')}
-                    >
-                        Back to Table View
-                    </button>
-                </div>
-            );
-        }
-
         return (
-            <div className="border rounded p-6 bg-white">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold">
-                        Submission Details #{row.submissionId}
-                    </h3>
-                    <button
-                        className="bg-blue-600 text-white px-4 py-2 rounded"
-                        onClick={() => setDisplayMode('table')}
-                    >
-                        Back to Table View
-                    </button>
-                </div>
+            <div className="space-y-4">
+                <select
+                    value={selectedSubmissionId || ''}
+                    onChange={(e) => setSelectedSubmissionId(e.target.value)}
+                    className="mb-4 p-2 border border-gray-300 rounded"
+                >
+                    <option value="">Select a submission</option>
+                    {reportData.map(row => (
+                        <option key={row.submissionId} value={row.submissionId}>
+                            {row.submissionId} - {formatDate(row.submittedAt)}
+                        </option>
+                    ))}
+                </select>
 
-                <div className="grid grid-cols-2 gap-6">
-                    <div>
-                        <div className="mb-4">
-                            <span className="block text-gray-500 text-sm">Submitted At</span>
-                            <span className="text-lg">{formatDate(row.submittedAt)}</span>
-                        </div>
+                {selectedSubmissionId ? (
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                        {(() => {
+                            const selectedRow = getRowById(selectedSubmissionId);
+                            if (!selectedRow) return <p>No submission selected</p>;
 
-                        <div className="border-t pt-4">
-                            <h4 className="font-bold mb-2">Form Fields</h4>
-                            <div className="space-y-3">
-                                {row.data.map((field, idx) => (
-                                    <div key={idx} className="grid grid-cols-2">
-                                        <span className="text-gray-600">{field.fieldLabel}</span>
-                                        <span className="font-medium">{field.value}</span>
+                            return (
+                                <div className="space-y-4">
+                                    <h3 className="text-lg font-semibold">Submission Details</h3>
+                                    <p><strong>ID:</strong> {selectedRow.submissionId}</p>
+                                    <p><strong>Submitted:</strong> {formatDate(selectedRow.submittedAt)}</p>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {selectedRow.data.map((field, idx) => (
+                                            <div key={idx} className="border border-gray-200 rounded p-3">
+                                                <label className="font-medium text-gray-700">
+                                                    {field.fieldLabel}
+                                                    {field.fieldType === 'calculated' && (
+                                                        <span className="text-blue-600 text-xs ml-2">(Calculated)</span>
+                                                    )}
+                                                </label>
+                                                <p className="mt-1 text-gray-900">{field.value}</p>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
+                            );
+                        })()}
                     </div>
-
-                    <div>
-                        {calculatedFields.length > 0 && (
-                            <div className="mb-6">
-                                <h4 className="font-bold mb-3">Calculated Fields</h4>
-                                {calculatedFields.map((calc, idx) => (
-                                    <div
-                                        key={idx}
-                                        className="bg-gray-50 p-4 rounded mb-2 border-l-4 border-blue-500"
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <span className="font-bold">{calc.label}</span>
-                                            <span className="text-xl font-mono">
-                                                {evaluateFormula(calc.formula, row.data)}
-                                            </span>
-                                        </div>
-                                        {calc.description && (
-                                            <p className="text-sm text-gray-600 mt-1">{calc.description}</p>
-                                        )}
-                                        <div className="text-xs text-gray-500 mt-2">
-                                            Formula: {calc.formula}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
+                ) : (
+                    <p className="text-gray-500">No submission selected</p>
+                )}
             </div>
         );
     };
 
-    // Summary view (aggregated stats)
+    // Summary view implementation
     const renderSummaryView = () => {
         const stats = getSummaryStats();
 
         return (
-            <div className="border rounded p-6 bg-white">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold">
-                        Summary Statistics
-                    </h3>
-                    <button
-                        className="bg-blue-600 text-white px-4 py-2 rounded"
-                        onClick={() => setDisplayMode('table')}
-                    >
-                        Back to Table View
-                    </button>
-                </div>
+            <div className="space-y-6">
+                <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h3 className="text-lg font-semibold mb-4">Summary Statistics</h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="col-span-2">
-                        <div className="mb-4">
-                            <span className="block text-gray-500 text-sm">Total Records</span>
-                            <span className="text-2xl font-bold">{reportData.length}</span>
-                        </div>
-
-                        <div className="overflow-auto">
-                            <table className="min-w-full border border-gray-300">
-                                <thead className="bg-gray-100">
-                                    <tr>
-                                        <th className="px-4 py-2 border">Field</th>
-                                        <th className="px-4 py-2 border">Min</th>
-                                        <th className="px-4 py-2 border">Max</th>
-                                        <th className="px-4 py-2 border">Average</th>
-                                        <th className="px-4 py-2 border">Sum</th>
-                                        <th className="px-4 py-2 border">Count</th>
+                    {stats.length > 0 ? (
+                        <table className="min-w-full bg-white border border-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">Field</th>
+                                    <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">Min</th>
+                                    <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">Max</th>
+                                    <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">Average</th>
+                                    <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">Sum</th>
+                                    <th className="px-4 py-2 border-b text-left text-sm font-semibold text-gray-900">Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {stats.map((stat, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50">
+                                        <td className="px-4 py-2 border-b text-sm font-medium">{stat.field}</td>
+                                        <td className="px-4 py-2 border-b text-sm">{stat.min.toFixed(2)}</td>
+                                        <td className="px-4 py-2 border-b text-sm">{stat.max.toFixed(2)}</td>
+                                        <td className="px-4 py-2 border-b text-sm">{stat.avg.toFixed(2)}</td>
+                                        <td className="px-4 py-2 border-b text-sm">{stat.sum.toFixed(2)}</td>
+                                        <td className="px-4 py-2 border-b text-sm">{stat.count}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    {stats.map((stat, idx) => (
-                                        <tr key={idx}>
-                                            <td className="px-4 py-2 border font-medium">{stat.field}</td>
-                                            <td className="px-4 py-2 border text-right">{stat.min.toFixed(2)}</td>
-                                            <td className="px-4 py-2 border text-right">{stat.max.toFixed(2)}</td>
-                                            <td className="px-4 py-2 border text-right">{stat.avg.toFixed(2)}</td>
-                                            <td className="px-4 py-2 border text-right">{stat.sum.toFixed(2)}</td>
-                                            <td className="px-4 py-2 border text-right">{stat.count}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {calculatedFields.length > 0 && (
-                        <div className="col-span-2 mt-6">
-                            <h4 className="font-bold mb-3">Calculated Fields Summary</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {calculatedFields.map((calc, idx) => {
-                                    // Calculate average, min, max for this formula
-                                    const values = reportData.map(row => {
-                                        return evaluateFormula(calc.formula, row.data);
-                                    }).filter(val => val !== "-" && !isNaN(val));
-
-                                    if (!values.length) return null;
-
-                                    const sum = values.reduce((acc, val) => acc + val, 0);
-                                    const avg = sum / values.length;
-                                    const min = Math.min(...values);
-                                    const max = Math.max(...values);
-
-                                    return (
-                                        <div
-                                            key={idx}
-                                            className="bg-gray-50 p-4 rounded border-l-4 border-green-500"
-                                        >
-                                            <div className="flex justify-between items-center">
-                                                <span className="font-bold">{calc.label}</span>
-                                            </div>
-
-                                            {calc.description && (
-                                                <p className="text-sm text-gray-600 mt-1">{calc.description}</p>
-                                            )}
-
-                                            <div className="grid grid-cols-2 gap-2 mt-3">
-                                                <div>
-                                                    <span className="text-gray-500 text-sm">Average</span>
-                                                    <span className="block text-lg font-mono">{avg.toFixed(2)}</span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-gray-500 text-sm">Min / Max</span>
-                                                    <span className="block text-lg font-mono">
-                                                        {min.toFixed(2)} / {max.toFixed(2)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                }).filter(Boolean)}
-                            </div>
-                        </div>
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <p className="text-gray-500">No numeric fields available for statistics</p>
                     )}
                 </div>
+
+                {/* Calculated Fields Summary */}
+                {calculatedFields.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                        <h3 className="text-lg font-semibold text-blue-800 mb-4">Calculated Fields</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {calculatedFields.map((calc, idx) => (
+                                <div key={idx} className="bg-white border border-blue-200 rounded p-4">
+                                    <h4 className="font-medium text-blue-700">{calc.label}</h4>
+                                    {calc.description && (
+                                        <p className="text-sm text-gray-600 mt-1">{calc.description}</p>
+                                    )}
+                                    <p className="text-xs text-gray-500 mt-2 font-mono">{calc.formula}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
 
     return (
-        <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold">Report Results</h3>
-                <div className="flex space-x-2">
-                    {displayOptions.map(option => (
-                        <button
-                            key={option.id}
-                            className={`px-3 py-1 rounded ${displayMode === option.id
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-200 hover:bg-gray-300'
-                                }`}
-                            onClick={() => setDisplayMode(option.id)}
-                        >
-                            {option.label}
-                        </button>
-                    ))}
-                </div>
+        <div className="space-y-4">
+            {/* Display Mode Toggle */}
+            <div className="flex space-x-2 mb-4">
+                {displayOptions.map(option => (
+                    <button
+                        key={option.id}
+                        onClick={() => setDisplayMode(option.id)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${displayMode === option.id
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            }`}
+                    >
+                        {option.label}
+                    </button>
+                ))}
             </div>
 
+            {/* Render the selected display */}
             {renderDisplay()}
         </div>
     );
