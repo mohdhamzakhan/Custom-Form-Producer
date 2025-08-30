@@ -487,7 +487,7 @@ const FormBuilder = () => {
 
             <DndProvider backend={HTML5Backend}>
 
-                <div className="max-w-6xl mx-auto p-4">
+                <div className="max-w-8xl mx-auto p-2">
                     <div className="mb-6 flex justify-between items-center">
                         <h1 className="text-2xl font-bold">Form Builder</h1>
                         <div className="flex items-center gap-4">
@@ -650,7 +650,7 @@ const FormBuilder = () => {
                     </div>
 
                     <div className="mb-6 flex gap-2 flex-wrap">
-                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "grid"].map(
+                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image"].map(
                             (type) => (
                                 <button
                                     key={type}
@@ -860,39 +860,47 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
         updateField({ remarkTriggers: updatedTriggers });
     };
 
-
-
     return (
         <div
             ref={ref}
             className={`bg-white p-4 rounded border h-full ${isDragging ? "opacity-50" : ""
                 }`}
         >
-            <div className="flex items-center gap-4 mb-4">
-                <GripVertical className="text-gray-400" />
-                <input
-                    type="text"
-                    value={field.label}
-                    onChange={(e) => updateField({ label: e.target.value })}
-                    className="flex-1 px-2 py-1 border rounded"
-                />
+            <div className="flex flex-col gap-2 mb-4">
+                <div className="flex items-center gap-4">
+                    <GripVertical className="text-gray-400" />
+                    <input
+                        type="text"
+                        value={field.label}
+                        onChange={(e) => updateField({ label: e.target.value })}
+                        className="flex-1 px-2 py-1 border rounded"
+                    />
+                    <button
+                        onClick={removeField}
+                        className="text-red-500 hover:text-red-600"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* small dropdown */}
                 <select
                     value={field.width}
                     onChange={(e) => updateField({ width: e.target.value })}
-                    className="px-2 py-1 border rounded"
+                    className="px-2 py-1 border rounded w-32"
                 >
                     <option value="w-full">Full</option>
                     <option value="w-1/2">Half</option>
                     <option value="w-1/3">Third</option>
                     <option value="w-1/4">Quarter</option>
+                    <option value="w-1/5">Fifth</option>
+                    <option value="w-1/6">Sixth</option>
+                    <option value="w-1/7">Seventh</option>
+                    <option value="w-1/8">Eighth</option>
                 </select>
-                <button
-                    onClick={removeField}
-                    className="text-red-500 hover:text-red-600"
-                >
-                    <X size={16} />
-                </button>
             </div>
+
+
 
             <div className="flex items-center gap-2 mb-4">
                 <input
@@ -942,9 +950,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </p>
                 </div>
             )}
-
-           
-
             {field.type === "grid" && (
                 <div className="mt-4">
                     <h4 className="text-sm font-semibold mb-2">Grid Configuration</h4>
@@ -1127,6 +1132,31 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             className="w-full px-2 py-1 border rounded"
                                             placeholder="Option 1, Option 2, Option 3"
                                         />
+                                        <label className="block text-xs text-gray-500 mt-2">
+                                            Remarks required for options:
+                                        </label>
+                                        {console.log(column.remarksOptions)}
+                                        <select
+                                            multiple
+                                            value={column.remarksOptions || []}   // <-- must always be an array
+                                            onChange={(e) => {
+                                                const selected = Array.from(
+                                                    e.target.selectedOptions,
+                                                    opt => opt.value
+                                                );
+                                                const updatedColumns = [...field.columns];
+                                                updatedColumns[colIndex].remarksOptions = selected;
+                                                updateField({ ...field, columns: updatedColumns });
+                                            }}
+                                            className="w-full px-2 py-1 border rounded mt-1 h-24"
+                                        >
+                                            {(column.options || []).map((opt, i) => (
+                                                <option key={i} value={opt}>
+                                                    {opt}
+                                                </option>
+                                            ))}
+                                        </select>
+
 
                                     </div>
                                 )}
@@ -1377,7 +1407,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
-
             {field.type === "numeric" && (
                 <div className="mb-4">
                     <div className="grid grid-cols-2 gap-4 mb-4">
@@ -1509,7 +1538,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
-
             {field.type === "date" && (
                 <div className="mb-4">
                     <div className="flex items-center gap-2 mb-3">
@@ -1525,7 +1553,73 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
+            {field.type === "time" && (
+                <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                        <input
+                            type="time"
+                            value={field.timeValue || ""}   // <-- bind to value
+                            onChange={(e) => updateField({ timeValue: e.target.value })}
+                            className="border rounded px-2 py-1"
+                        />
+                        <label className="text-sm text-gray-600">
+                            Select time
+                        </label>
+                    </div>
+                </div>
+            )}
+            {field.type === "image" && (
+                <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                    const formData = new FormData();
+                                    formData.append("file", file);
 
+                                    // Pass the old image path so backend can delete it
+                                    if (field.imageValue) {
+                                        formData.append("oldPath", field.imageValue);
+                                    }
+
+                                    try {
+                                        const res = await fetch(
+                                            `${APP_CONSTANTS.API_BASE_URL}/api/form-builder/upload-image`,
+                                            {
+                                                method: "POST",
+                                                body: formData,
+                                            }
+                                        );
+                                        const data = await res.json();
+
+                                        if (data.url) {
+                                            updateField({ imageValue: data.url }); // Save only path
+                                        }
+                                    } catch (err) {
+                                        console.error("Upload failed:", err);
+                                    }
+                                }
+                            }}
+                            className="text-sm"
+                        />
+                        <label className="text-sm text-gray-600">Upload Image</label>
+                    </div>
+
+                    {/* Show preview if uploaded */}
+                    {field.imageValue && (
+                        <div className="mt-2">
+                            <img
+                                src={field.imageValue}
+                                alt="Uploaded Preview"
+                                className="w-20 h-20 object-contain border rounded"
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
 
             {(field.type === "dropdown" ||
                 field.type === "checkbox" ||

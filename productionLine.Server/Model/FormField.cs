@@ -120,6 +120,9 @@ namespace productionLine.Server.Model
 
         [Column("INITIAL_ROWS")]
         public int? InitialRows { get; set; }
+
+        [Column("IMAGEVALUE")]
+        public string? ImageValue { get; set; }
     }
 
 
@@ -168,6 +171,8 @@ namespace productionLine.Server.Model
         public string? EndTime { get; set; }
         [JsonPropertyName("required")]
         public bool? Required { get; set; }
+        [JsonPropertyName("remarksOptions")]
+        public List<string>? RemarksOptions { get; set; }
 
         public ICollection<RemarkTrigger> RemarkTriggers { get; set; } = new List<RemarkTrigger>();
     }

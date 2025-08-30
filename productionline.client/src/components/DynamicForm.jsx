@@ -423,6 +423,22 @@ export default function DynamicForm() {
         }
     };
 
+    function validateRows(rows, columns) {
+        for (const row of rows) {
+            for (const col of columns) {
+                if (
+                    col.type === "dropdown" &&
+                    col.remarksOptions?.includes(row[col.name]) &&
+                    !row[`${col.name}_remarks`]
+                ) {
+                    return { valid: false, message: `Remarks required for ${col.name}` };
+                }
+            }
+        }
+        return { valid: true };
+    }
+
+
     const evaluateFormula = (formula) => {
         console.log(formula)
         if (!formula) return "";
@@ -844,6 +860,33 @@ export default function DynamicForm() {
                     </div>
                 );
 
+            case "time":
+                return (
+                    <div className="mb-4 w-full">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">
+                            {field.label}{" "}
+                            {field.required && <span className="text-red-500">*</span>}
+                        </label>
+
+                        {/* Wrap timepicker and optional textbox in a vertical flex container */}
+                        <div className="flex flex-col gap-1">
+                            <input
+                                type="time"
+                                className="border p-2 w-full"
+                                value={formValues[field.id] || ""}
+                                onChange={(e) =>
+                                    handleInputChange(field.id, e.target.value, field.type, field)
+                                }
+                            />
+                        </div>
+
+                        {formErrors[field.id] && (
+                            <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
+                        )}
+                    </div>
+                );
+
+
             case "date":
                 return (
                     <div className="mb-4 w-full">
@@ -956,7 +999,6 @@ export default function DynamicForm() {
                 );
 
             case "grid":
-                // Replace or update the grid cell rendering part to check for calculation type
                 return (
                     <div className="mb-4 w-full">
                         <label className="block text-gray-700 text-sm font-bold mb-2">{field.label}</label>
@@ -965,21 +1007,32 @@ export default function DynamicForm() {
                                 <thead>
                                     <tr>
                                         {(field.columns || []).map((col, idx) => (
-                                            <th key={idx} className="py-2 px-4 border-b">{col.name}</th>
+                                            <th
+                                                key={idx}
+                                                className="py-2 px-4 border-b"
+                                                style={{ width: col.width || "auto" }} 
+                                            >
+                                                {col.name}
+                                            </th>
                                         ))}
-                                        <th className="py-2 px-4 border-b">Actions</th>
+                                        <th className="py-2 px-4 border-b" style={{ width: "100px" }}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {(formValues[field.id] || []).map((row, rowIndex) => (
                                         <tr key={rowIndex}>
                                             {(field.columns || []).map((col, colIdx) => (
-                                                <td key={colIdx} className="py-2 px-4 border-b">
+                                                <td
+                                                    key={colIdx}
+                                                    className="py-2 px-4 border-b"
+                                                    style={{ width: col.width || "auto" }} 
+                                                >
                                                     {(() => {
                                                         const style = {
                                                             color: col.textColor || "inherit",
                                                             backgroundColor: col.backgroundColor || "inherit",
                                                         };
+
                                                         if (col.type === "calculation") {
                                                             const calculatedValue = evaluateRowFormula(col.formula, row);
                                                             if (row[col.name] !== calculatedValue) {
@@ -1034,11 +1087,9 @@ export default function DynamicForm() {
                                                                 />
                                                             );
                                                         }
-                                                        if (col.type === "dependentDropdown") {
-                                                            // Get the parent column value from the current row
-                                                            const parentValue = row[col.parentColumn] || "";
 
-                                                            // Get the dependent options based on the parent value
+                                                        if (col.type === "dependentDropdown") {
+                                                            const parentValue = row[col.parentColumn] || "";
                                                             const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
 
                                                             return (
@@ -1048,7 +1099,6 @@ export default function DynamicForm() {
                                                                         onChange={(e) => {
                                                                             const newValue = e.target.value;
                                                                             const updatedRow = { ...row, [col.name]: newValue };
-
                                                                             handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
                                                                         }}
                                                                         disabled={!parentValue}
@@ -1073,7 +1123,6 @@ export default function DynamicForm() {
                                                                     )}
                                                                 </div>
                                                             );
-
                                                         }
 
                                                         if (col.type === "dropdown") {
@@ -1095,6 +1144,11 @@ export default function DynamicForm() {
                                                                                 }
                                                                             });
 
+                                                                            // If the new value is not in remarksOptions, clear remarks
+                                                                            if (!(col.remarksOptions || []).includes(newValue)) {
+                                                                                updatedRow[`${col.name}_remarks`] = "";
+                                                                            }
+
                                                                             handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
                                                                         }}
                                                                         className="border rounded px-2 py-1 w-full"
@@ -1111,6 +1165,31 @@ export default function DynamicForm() {
                                                                         ))}
                                                                     </select>
 
+                                                                    {/* ✅ Remarks field appears only if selected option requires it */}
+                                                                    {console.log(col)}
+                                                                    {col.remarksOptions?.includes(row[col.name]) && (
+                                                                        <input
+                                                                            type="text"
+                                                                            required   // <-- mandatory
+                                                                            placeholder={`Enter remarks for ${row[col.name]}`}
+                                                                            value={row[`${col.name}_remarks`] || ""}
+                                                                            onChange={(e) => {
+                                                                                const updatedRow = {
+                                                                                    ...row,
+                                                                                    [`${col.name}_remarks`]: e.target.value,
+                                                                                };
+                                                                                handleGridChange(
+                                                                                    field.id,
+                                                                                    rowIndex,
+                                                                                    `${col.name}_remarks`,
+                                                                                    e.target.value,
+                                                                                    updatedRow
+                                                                                );
+                                                                            }}
+                                                                            className="border rounded px-2 py-1 w-full mt-2"
+                                                                        />
+                                                                    )}
+
                                                                     {row[col.name] && (
                                                                         <div className="text-xs text-gray-600 mt-1">
                                                                             You selected: <span className="font-semibold">{row[col.name]}</span>
@@ -1118,7 +1197,6 @@ export default function DynamicForm() {
                                                                     )}
                                                                 </div>
                                                             );
-
                                                         }
 
 
@@ -1138,13 +1216,11 @@ export default function DynamicForm() {
                                                                     </p>
                                                                 )}
                                                             </div>
-
                                                         );
                                                     })()}
-
                                                 </td>
                                             ))}
-                                            <td className="py-2 px-4 border-b">
+                                            <td className="py-2 px-4 border-b" style={{ width: "auto" }}>
                                                 <button
                                                     type="button"
                                                     onClick={() => removeGridRow(field.id, rowIndex)}
@@ -1168,6 +1244,7 @@ export default function DynamicForm() {
                         </button>
                     </div>
                 );
+
 
 
 

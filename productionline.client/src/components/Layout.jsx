@@ -81,7 +81,7 @@ export default function Layout({ children }) {
     return (
         <div className="min-h-screen bg-gray-50">
             <Navbar user={user} links={navLinks} onLogout={handleLogout} />
-            <div className="max-w-7xl mx-auto px-4 py-6">
+            <div className="max-w-8xl mx-auto px-15 py-5">
                 {children}
             </div>
         </div>

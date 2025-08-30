@@ -35,5 +35,6 @@ namespace productionLine.Server.DTO
         public string? StartTime { get; set; }
         public string? EndTime { get; set; }
         public bool? Required { get; set; }
+        public List<string>? RemarksOptions { get; set; }
     }
 }

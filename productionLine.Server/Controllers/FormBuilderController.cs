@@ -23,87 +23,116 @@ namespace productionLine.Server.Controllers
             {
                 return BadRequest("Form is null.");
             }
-            if (form.Id > 0)
+
+            if (form.Id > 0) // Update existing form
             {
-                Form existingForm = await _context.Forms.Include((Form f) => f.Fields)
-                    .ThenInclude((FormField f) => f.Columns).Include((Form f) => f.Fields)
-                    .ThenInclude((FormField f) => f.RemarkTriggers)
-                    .Include((Form f) => f.Approvers)
-                    .FirstOrDefaultAsync((Form f) => f.Id == form.Id);
+                Form existingForm = await _context.Forms
+                    .Include(f => f.Fields).ThenInclude(f => f.Columns)
+                    .Include(f => f.Fields).ThenInclude(f => f.RemarkTriggers)
+                    .Include(f => f.Approvers)
+                    .FirstOrDefaultAsync(f => f.Id == form.Id);
+
                 if (existingForm == null)
                 {
                     return NotFound("Form not found.");
                 }
+
+                // 🔹 Delete old image files for removed fields
+                var oldImageFields = existingForm.Fields
+                    .Where(f => f.Type == "image" && !string.IsNullOrEmpty(f.ImageValue))
+                    .ToList();
+
+                foreach (var oldField in oldImageFields)
+                {
+                    // if the old image is not present in new form, delete from disk
+                    bool stillExists = form.Fields.Any(nf =>
+                        nf.Id == oldField.Id && nf.ImageValue == oldField.ImageValue);
+
+                    if (!stillExists)
+                    {
+                        var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", oldField.ImageValue.TrimStart('/'));
+                        if (System.IO.File.Exists(filePath))
+                        {
+                            System.IO.File.Delete(filePath);
+                        }
+                    }
+                }
+
+                // Update form data
                 existingForm.Name = form.Name;
                 existingForm.FormLink = form.FormLink;
+
                 _context.FormFields.RemoveRange(existingForm.Fields);
                 _context.FormApprovers.RemoveRange(existingForm.Approvers);
+
                 foreach (FormField field in form.Fields)
                 {
                     if (field.Id == Guid.Empty)
-                    {
                         field.Id = Guid.NewGuid();
-                    }
+
                     if (field.Columns != null)
                     {
                         foreach (GridColumn col in field.Columns)
                         {
                             if (string.IsNullOrWhiteSpace(col.Id))
-                            {
                                 col.Id = Guid.NewGuid().ToString();
-                            }
                         }
                     }
-                    if (field.RemarkTriggers == null)
+
+                    if (field.RemarkTriggers != null)
                     {
-                        continue;
-                    }
-                    foreach (RemarkTrigger trigger in field.RemarkTriggers)
-                    {
-                        trigger.FormField = field;
+                        foreach (RemarkTrigger trigger in field.RemarkTriggers)
+                        {
+                            trigger.FormField = field;
+                        }
                     }
                 }
+
                 foreach (FormApprover approver in form.Approvers)
                 {
                     approver.Id = 0;
                     approver.FormId = existingForm.Id;
                 }
+
                 existingForm.Fields = form.Fields;
                 existingForm.Approvers = form.Approvers;
+
                 await _context.SaveChangesAsync();
                 return Ok(existingForm);
             }
+
+            // 🔹 Create new form
             foreach (FormField field2 in form.Fields)
             {
                 if (field2.Id == Guid.Empty)
-                {
                     field2.Id = Guid.NewGuid();
-                }
+
                 field2.Form = form;
+
                 if (field2.Columns != null)
                 {
                     foreach (GridColumn col2 in field2.Columns)
                     {
                         if (string.IsNullOrWhiteSpace(col2.Id))
-                        {
                             col2.Id = Guid.NewGuid().ToString();
-                        }
                     }
                 }
-                if (field2.RemarkTriggers == null)
+
+                if (field2.RemarkTriggers != null)
                 {
-                    continue;
-                }
-                foreach (RemarkTrigger trigger2 in field2.RemarkTriggers)
-                {
-                    trigger2.FormFieldId = field2.Id;
-                    trigger2.FormField = null;
+                    foreach (RemarkTrigger trigger2 in field2.RemarkTriggers)
+                    {
+                        trigger2.FormFieldId = field2.Id;
+                        trigger2.FormField = null;
+                    }
                 }
             }
+
             _context.Forms.Add(form);
             await _context.SaveChangesAsync();
             return Ok(form);
         }
+
 
 
         [HttpGet]
@@ -176,7 +205,8 @@ namespace productionLine.Server.Controllers
                         DependentOptions = ct.DependentOptions,
                         StartTime = ct.StartTime,
                         EndTime = ct.EndTime,
-                        Required = ct.Required
+                        Required = ct.Required,
+                        RemarksOptions = ct.RemarksOptions
                     }).ToList() ?? new List<GridColumnDto>()),
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,
@@ -188,5 +218,55 @@ namespace productionLine.Server.Controllers
             };
             return Ok(formDto);
         }
+
+        [HttpPost("upload-image")]
+        public async Task<IActionResult> UploadImage(IFormFile file, [FromForm] string? oldPath)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads");
+            if (!Directory.Exists(uploadsFolder))
+                Directory.CreateDirectory(uploadsFolder);
+
+            // 🔹 Delete old file if provided
+            if (!string.IsNullOrEmpty(oldPath))
+            {
+                var oldFilePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", oldPath.TrimStart('/'));
+                if (System.IO.File.Exists(oldFilePath))
+                {
+                    System.IO.File.Delete(oldFilePath);
+                }
+            }
+
+            // 🔹 Save new file
+            var fileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            var fileUrl = $"/uploads/{fileName}"; // relative path
+
+            return Ok(new { url = fileUrl });
+        }
+
+        [HttpDelete("delete-image")]
+        public IActionResult DeleteImage(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return BadRequest();
+
+            var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", path.TrimStart('/'));
+            if (System.IO.File.Exists(fullPath))
+            {
+                System.IO.File.Delete(fullPath);
+            }
+
+            return Ok();
+        }
+
+
     }
 }

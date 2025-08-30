@@ -227,6 +227,7 @@ namespace productionLine.Server.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { message = "Template saved successfully." });
         }
+
         [HttpPost("run/{templateId}")]
         public async Task<IActionResult> RunReport(int templateId, [FromBody] Dictionary<string, string> runtimeValues)
         {

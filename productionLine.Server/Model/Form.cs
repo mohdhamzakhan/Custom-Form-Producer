@@ -32,5 +32,6 @@ namespace productionLine.Server.Model
         [JsonPropertyName("approvers")] // 👈 Important for JSON
         public List<FormApprover> Approvers { get; set; } = new List<FormApprover>(); // 👈 Important
 
+
     }
 }

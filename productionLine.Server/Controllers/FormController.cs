@@ -325,7 +325,8 @@ namespace productionLine.Server.Controllers
                         DependentOptions = ct.DependentOptions,
                         StartTime = ct.StartTime,
                         EndTime = ct.EndTime,
-                        Required = ct.Required
+                        Required = ct.Required,
+                        RemarksOptions = ct.RemarksOptions
                     }).ToList() ?? new List<GridColumnDto>()),
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,
