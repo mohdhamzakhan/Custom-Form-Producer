@@ -366,6 +366,8 @@ const FormBuilder = () => {
                 })
             };
 
+            console.log(formData)
+
             console.log("Payload being sent to the backend:", JSON.stringify(formData, null, 2));
 
             const url = formId
@@ -1594,7 +1596,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             }
                                         );
                                         const data = await res.json();
-
+                                        console.log(res)
                                         if (data.url) {
                                             updateField({ imageValue: data.url }); // Save only path
                                         }

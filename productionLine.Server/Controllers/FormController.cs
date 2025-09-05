@@ -183,6 +183,7 @@ namespace productionLine.Server.Controllers
                     existingField.RemarkTriggersJson = field.RemarkTriggersJson;
                     existingField.RequireRemarksOutOfRange = field.RequireRemarksOutOfRange;
                     existingField.RequiresRemarksJson = field.RequiresRemarksJson;
+                    existingField.ImageValue = field.ImageValue;
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
                         Operator = rt.Operator,

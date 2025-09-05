@@ -133,8 +133,6 @@ namespace productionLine.Server.Controllers
             return Ok(form);
         }
 
-
-
         [HttpGet]
         public async Task<IActionResult> GetAllForms()
         {
