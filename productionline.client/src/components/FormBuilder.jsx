@@ -892,6 +892,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     className="px-2 py-1 border rounded w-32"
                 >
                     <option value="w-full">Full</option>
+                    <option value="w-2/3">75%</option>
                     <option value="w-1/2">Half</option>
                     <option value="w-1/3">Third</option>
                     <option value="w-1/4">Quarter</option>
