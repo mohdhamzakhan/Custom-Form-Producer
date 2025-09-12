@@ -43,6 +43,33 @@ const FormBuilder = () => {
     const [loadingForms, setLoadingForms] = useState(false);
 
 
+    // Add these new state variables after the existing ones
+    const [linkedForm, setLinkedForm] = useState(null);
+    const [keyFields, setKeyFields] = useState([]);
+    const [linkedFormFields, setLinkedFormFields] = useState([]);
+
+    // Add this function to fetch linked form details
+    const fetchLinkedFormDetails = async (formId) => {
+        if (!formId) {
+            setLinkedForm(null);
+            setLinkedFormFields([]);
+            return;
+        }
+
+        try {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}`);
+            if (response.ok) {
+                const formData = await response.json();
+                setLinkedForm(formData);
+                setLinkedFormFields(formData.fields || []);
+            }
+        } catch (error) {
+            console.error("Error fetching linked form:", error);
+        }
+    };
+
+
+
 
     useEffect(() => {
         fetchFormLayout();
@@ -490,17 +517,125 @@ const FormBuilder = () => {
             <DndProvider backend={HTML5Backend}>
 
                 <div className="max-w-8xl mx-auto p-2">
-                    <div className="mb-6 flex justify-between items-center">
-                        <h1 className="text-2xl font-bold">Form Builder</h1>
-                        <div className="flex items-center gap-4">
-                            <input
-                                type="text"
-                                placeholder="Enter the Form Name"
-                                value={formName}
-                                onChange={(e) => setFormName(e.target.value)}
-                                className="w-1/2 py-2 px-3 border rounded text-lg"
-                            />
+                    <div className="mb-6">
+                        <h1 className="text-2xl font-bold mb-4">Form Builder</h1>
 
+                        {/* Form Name and Linking Configuration */}
+                        <div className="bg-gray-50 p-4 rounded border mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Form Name</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Enter the Form Name"
+                                        value={formName}
+                                        onChange={(e) => setFormName(e.target.value)}
+                                        className="w-full py-2 px-3 border rounded"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Link to Form (Optional)</label>
+                                    <select
+                                        value={linkedForm?.id || ""}
+                                        onChange={(e) => {
+                                            const selectedFormId = e.target.value;
+                                            if (selectedFormId) {
+                                                fetchLinkedFormDetails(selectedFormId);
+                                            } else {
+                                                setLinkedForm(null);
+                                                setLinkedFormFields([]);
+                                                setKeyFields([]);
+                                            }
+                                        }}
+                                        className="w-full py-2 px-3 border rounded"
+                                    >
+                                        <option value="">Select a form to link...</option>
+                                        {availableForms.map(form => (
+                                            <option key={form.id} value={form.id}>
+                                                {form.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Key Fields Configuration */}
+                            {linkedForm && (
+                                <div className="mt-4 p-3 bg-white rounded border">
+                                    <h3 className="text-sm font-semibold mb-2">Configure Bridge/Key Fields</h3>
+                                    <p className="text-xs text-gray-600 mb-3">
+                                        Select fields that will be used to match records between forms
+                                    </p>
+
+                                    <div className="space-y-2">
+                                        {keyFields.map((keyField, index) => (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <select
+                                                    value={keyField.currentFormField || ""}
+                                                    onChange={(e) => {
+                                                        const updated = [...keyFields];
+                                                        updated[index].currentFormField = e.target.value;
+                                                        setKeyFields(updated);
+                                                    }}
+                                                    className="flex-1 px-2 py-1 border rounded text-sm"
+                                                >
+                                                    <option value="">Select field from current form</option>
+                                                    {formFields
+                                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
+                                                        .map(field => (
+                                                            <option key={field.id} value={field.id}>
+                                                                {field.label}
+                                                            </option>
+                                                        ))}
+                                                </select>
+
+                                                <span className="text-gray-500">=</span>
+
+                                                <select
+                                                    value={keyField.linkedFormField || ""}
+                                                    onChange={(e) => {
+                                                        const updated = [...keyFields];
+                                                        updated[index].linkedFormField = e.target.value;
+                                                        setKeyFields(updated);
+                                                    }}
+                                                    className="flex-1 px-2 py-1 border rounded text-sm"
+                                                >
+                                                    <option value="">Select field from {linkedForm.name}</option>
+                                                    {linkedFormFields
+                                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
+                                                        .map(field => (
+                                                            <option key={field.id} value={field.id}>
+                                                                {field.label}
+                                                            </option>
+                                                        ))}
+                                                </select>
+
+                                                <button
+                                                    onClick={() => {
+                                                        const updated = keyFields.filter((_, i) => i !== index);
+                                                        setKeyFields(updated);
+                                                    }}
+                                                    className="text-red-500 hover:text-red-600"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+
+                                        <button
+                                            onClick={() => setKeyFields([...keyFields, { currentFormField: "", linkedFormField: "" }])}
+                                            className="text-sm text-blue-500 hover:text-blue-600 flex items-center gap-1"
+                                        >
+                                            <Plus size={14} /> Add Key Field Pair
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-4">
                             <button
                                 onClick={() => setShowCopyFormat(!showCopyFormat)}
                                 className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
@@ -517,13 +652,15 @@ const FormBuilder = () => {
                             </button>
                             <button
                                 onClick={handleClearForm}
-                                className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                                className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
                             >
                                 <Trash size={16} />
                                 Clear
                             </button>
                         </div>
                     </div>
+
+
 
                     {/* Copy Format Section */}
                     {showCopyFormat && (
@@ -662,6 +799,14 @@ const FormBuilder = () => {
                                     Add {type.charAt(0).toUpperCase() + type.slice(1)}
                                 </button>
                             )
+                        )}
+                        {linkedForm && (
+                            <button
+                                onClick={() => addField("linkedTextbox")}
+                                className="bg-purple-100 px-4 py-2 rounded hover:bg-purple-200 text-purple-800"
+                            >
+                                Add Linked Field
+                            </button>
                         )}
                     </div>
 
