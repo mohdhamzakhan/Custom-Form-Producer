@@ -49,25 +49,144 @@ const FormBuilder = () => {
     const [linkedFormFields, setLinkedFormFields] = useState([]);
 
     // Add this function to fetch linked form details
+    // Replace your fetchLinkedFormDetails function with this safe version
     const fetchLinkedFormDetails = async (formId) => {
+        console.log("=== fetchLinkedFormDetails called with formId:", formId);
+
         if (!formId) {
+            console.log("No formId provided, clearing linked form data");
             setLinkedForm(null);
             setLinkedFormFields([]);
+            setKeyFields([]); // Also clear key fields when no form is linked
             return;
         }
 
         try {
+            console.log("Fetching form details from API...");
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}`);
-            if (response.ok) {
-                const formData = await response.json();
-                setLinkedForm(formData);
-                setLinkedFormFields(formData.fields || []);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+
+            const formData = await response.json();
+
+            console.log("=== RAW LINKED FORM DATA ===");
+            console.log(formData);
+
+            // Set the linked form
+            setLinkedForm(formData);
+
+            // Safely process the fields
+            const fields = formData.fields || [];
+            console.log("Raw fields from API:", fields);
+
+            if (!Array.isArray(fields)) {
+                console.error("Fields is not an array:", fields);
+                setLinkedFormFields([]);
+                return;
+            }
+
+            // Process each field safely
+            const processedFields = fields.map((field, index) => {
+                console.log(`=== PROCESSING LINKED FIELD ${index} ===`);
+                console.log("Field:", field);
+
+                if (!field) {
+                    console.warn(`Field at index ${index} is null/undefined`);
+                    return null;
+                }
+
+                // Create a safe copy of the field
+                const processedField = {
+                    ...field,
+                    id: field.id || `field_${index}`,
+                    label: field.label || field.name || `Field ${index}`,
+                    type: field.type || 'textbox'
+                };
+
+                // Handle grid fields specially
+                if (field.type === "grid") {
+                    console.log("=== PROCESSING GRID FIELD ===");
+                    console.log("columnsJson:", field.columnsJson);
+                    console.log("columns:", field.columns);
+                    console.log("column:", field.column);
+
+                    let columns = [];
+
+                    // Try multiple ways to get columns
+                    if (field.columnsJson) {
+                        try {
+                            if (typeof field.columnsJson === 'string') {
+                                columns = JSON.parse(field.columnsJson);
+                                console.log("Parsed columnsJson successfully:", columns);
+                            } else if (Array.isArray(field.columnsJson)) {
+                                columns = field.columnsJson;
+                                console.log("Using columnsJson as array:", columns);
+                            } else {
+                                console.warn("columnsJson is not string or array:", typeof field.columnsJson);
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse columnsJson:", e);
+                            console.log("Raw columnsJson:", field.columnsJson);
+                        }
+                    }
+
+                    // Fallback to columns property
+                    if ((!columns || columns.length === 0) && field.columns && Array.isArray(field.columns)) {
+                        columns = field.columns;
+                        console.log("Using field.columns as fallback:", columns);
+                    }
+
+                    // Fallback to column property (old format)
+                    if ((!columns || columns.length === 0) && field.column && Array.isArray(field.column)) {
+                        columns = field.column;
+                        console.log("Using field.column as fallback:", columns);
+                    }
+
+                    // Ensure columns is always an array
+                    if (!Array.isArray(columns)) {
+                        console.warn("columns is not an array, using empty array");
+                        columns = [];
+                    }
+
+                    // Validate and clean up columns
+                    const validColumns = columns.filter((col, colIndex) => {
+                        if (!col) {
+                            console.warn(`Column at index ${colIndex} is null/undefined`);
+                            return false;
+                        }
+                        if (!col.id) {
+                            console.warn(`Column at index ${colIndex} has no id:`, col);
+                            col.id = `col_${colIndex}`; // Generate ID if missing
+                        }
+                        if (!col.name) {
+                            console.warn(`Column at index ${colIndex} has no name:`, col);
+                            col.name = `Column ${colIndex}`;
+                        }
+                        return true;
+                    });
+
+                    console.log("Valid columns after processing:", validColumns);
+
+                    processedField.columns = validColumns;
+                }
+
+                return processedField;
+            }).filter(Boolean); // Remove any null fields
+
+            console.log("=== FINAL PROCESSED LINKED FIELDS ===");
+            console.log(processedFields);
+
+            setLinkedFormFields(processedFields);
+
         } catch (error) {
             console.error("Error fetching linked form:", error);
+            alert(`Error loading linked form: ${error.message}`);
+            setLinkedForm(null);
+            setLinkedFormFields([]);
         }
     };
-
 
 
 
@@ -92,15 +211,30 @@ const FormBuilder = () => {
             searchAdDirectory(searchTerm);
         }
     }, [searchTerm, searchAdDirectory]);
-
-
     const fetchAvailableForms = async () => {
         setLoadingForms(true);
         try {
-            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms`);
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms?includeFields=true`);
             if (response.ok) {
                 const forms = await response.json();
-                setAvailableForms(forms);
+                // Process forms to include parsed grid columns
+                const processedForms = forms.map(form => ({
+                    ...form,
+                    fields: (form.fields || []).map(field => {
+                        if (field.type === "grid" && field.columnsJson) {
+                            try {
+                                field.columns = typeof field.columnsJson === 'string'
+                                    ? JSON.parse(field.columnsJson)
+                                    : field.columnsJson;
+                            } catch (e) {
+                                console.warn('Failed to parse columnsJson for form', form.id, 'field', field.id);
+                                field.columns = [];
+                            }
+                        }
+                        return field;
+                    })
+                }));
+                setAvailableForms(processedForms);
             }
         } catch (error) {
             console.error("Error fetching available forms:", error);
@@ -108,7 +242,6 @@ const FormBuilder = () => {
             setLoadingForms(false);
         }
     };
-
     const handleClearForm = () => {
         localStorage.removeItem("formBuilderFields");
         setFormFields([]); // Optional: Reset state if needed
@@ -175,6 +308,23 @@ const FormBuilder = () => {
             // Copy the format but keep current form name and ID
             setFormFields(sortedFields);
             setApprovers(data.approvers || []); // Optionally copy approvers too
+
+            if (data.linkedFormId) {
+                fetchLinkedFormDetails(data.linkedFormId);
+            }
+
+            if (data.keyFields && data.keyFields.length > 0) {
+                const reconstructedKeyFields = data.keyFields.map(kf => ({
+                    currentFormField: kf.currentFieldType === 'gridColumn'
+                        ? `${kf.currentParentFieldId}.${kf.currentColumnId}`
+                        : kf.currentFormField,
+                    linkedFormField: kf.linkedFieldType === 'gridColumn'
+                        ? `${kf.linkedParentFieldId}.${kf.linkedColumnId}`
+                        : kf.linkedFormField
+                }));
+                setKeyFields(reconstructedKeyFields);
+            }
+
 
             alert(`Successfully copied format from "${data.name}". You can now modify and save as a new form.`);
             setShowCopyFormat(false);
@@ -292,6 +442,7 @@ const FormBuilder = () => {
             setLoading(false);
         }
     };
+
     const saveForm = async () => {
         if (!formName.trim()) {
             alert("Please enter a form name.");
@@ -329,6 +480,27 @@ const FormBuilder = () => {
             const formData = {
                 ...baseForm,
                 form: baseForm,
+                linkedFormId: linkedForm?.id || null,
+                keyFields: keyFields.map(keyField => ({
+                    currentFormField: keyField.currentFormField,
+                    linkedFormField: keyField.linkedFormField,
+                    // Parse grid column references
+                    currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
+                    linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
+                    // Extract parent field ID and column ID for grid columns
+                    currentParentFieldId: keyField.currentFormField?.includes('.')
+                        ? keyField.currentFormField.split('.')[0]
+                        : null,
+                    currentColumnId: keyField.currentFormField?.includes('.')
+                        ? keyField.currentFormField.split('.')[1]
+                        : null,
+                    linkedParentFieldId: keyField.linkedFormField?.includes('.')
+                        ? keyField.linkedFormField.split('.')[0]
+                        : null,
+                    linkedColumnId: keyField.linkedFormField?.includes('.')
+                        ? keyField.linkedFormField.split('.')[1]
+                        : null,
+                })),
                 approvers: approvers.map((a) => ({
                     adObjectId: a.name,
                     name: a.name,
@@ -387,6 +559,38 @@ const FormBuilder = () => {
                             const referencedField = formFields.find(f => f.name === fieldName);
                             return referencedField ? referencedField.id : match;
                         });
+                    }
+                    if (field.type === "linkedTextbox") {
+                        fieldObj.linkedFormId = field.linkedFormId;
+                        fieldObj.linkedFieldId = field.linkedFieldId;
+                        fieldObj.displayMode = field.displayMode || "readonly";
+                        fieldObj.displayFormat = field.displayFormat || "{value}";
+                        fieldObj.allowManualEntry = field.allowManualEntry || false;
+                        fieldObj.showLookupButton = field.showLookupButton !== false;
+
+                        // Process key field mappings
+                        fieldObj.keyFieldMappings = (field.keyFieldMappings || []).map(mapping => ({
+                            currentField: mapping.currentField,
+                            linkedField: mapping.linkedField,
+                            // Parse grid column references if needed
+                            currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
+                            linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
+                            currentParentFieldId: mapping.currentField?.includes('.')
+                                ? mapping.currentField.split('.')[0]
+                                : null,
+                            currentColumnId: mapping.currentField?.includes('.')
+                                ? mapping.currentField.split('.')[1]
+                                : null,
+                            linkedParentFieldId: mapping.linkedField?.includes('.')
+                                ? mapping.linkedField.split('.')[0]
+                                : null,
+                            linkedColumnId: mapping.linkedField?.includes('.')
+                                ? mapping.linkedField.split('.')[1]
+                                : null,
+                        }));
+
+                        // Store as JSON for database
+                        fieldObj.keyFieldMappingsJson = JSON.stringify(fieldObj.keyFieldMappings);
                     }
 
                     return fieldObj;
@@ -478,6 +682,16 @@ const FormBuilder = () => {
             ...(type === "date" && {
                 showDayInTextbox: false, // user-controlled option
             }),
+            ...(type === "linkedTextbox" && {
+                // Linked field specific properties
+                linkedFormId: linkedForm?.id || null,
+                linkedFieldId: "", // Which field from the linked form to display
+                displayMode: "readonly", // "readonly", "editable", "lookup"
+                keyFieldMappings: [], // How to match records between forms
+                displayFormat: "{value}", // How to format the displayed value
+                allowManualEntry: false, // Whether user can type directly
+                showLookupButton: true, // Whether to show a lookup/search button
+            }),
         };
         setFormFields([...formFields, newField]);
     };
@@ -494,7 +708,6 @@ const FormBuilder = () => {
         setFormFields((prevFields) => prevFields.filter((_, i) => i !== index));
     }
 
-
     const addApprover = (item) => {
         if (approvers.some(a => a.id === item.id)) {
             alert("This approver has already been added.");
@@ -509,14 +722,409 @@ const FormBuilder = () => {
         setApprovers(approvers.filter((_, i) => i !== index));
     };
 
+    const getAllFormFieldsWithGridColumns = (fields) => {
+        const allFields = [];
+
+        fields.forEach(field => {
+            if (field.type === "grid" && field.columns) {
+                // Add grid columns as selectable fields
+                field.columns.forEach(column => {
+                    allFields.push({
+                        id: `${field.id}.${column.id}`, // Use dot notation for grid column reference
+                        label: `${field.label} > ${column.name}`, // Show hierarchy
+                        type: column.type,
+                        isGridColumn: true,
+                        parentFieldId: field.id,
+                        columnId: column.id
+                    });
+                });
+            } else if (["textbox", "numeric", "dropdown", "calculation"].includes(field.type)) {
+                // Add regular fields
+                allFields.push({
+                    id: field.id,
+                    label: field.label,
+                    type: field.type,
+                    isGridColumn: false
+                });
+            }
+        });
+
+        return allFields;
+    };
+
+
+    const KeyFieldsConfigurationSection = () => {
+        const currentFormFields = getAllFormFieldsWithGridColumns(formFields);
+        const linkedFormAllFields = getAllFormFieldsWithGridColumns(linkedFormFields);
+
+        // Debug output
+        console.log("=== KEY FIELDS UI DEBUG ===");
+        console.log("Current form fields:", currentFormFields);
+        console.log("Linked form fields:", linkedFormAllFields);
+
+        return (
+            <div className="mt-4 p-3 bg-white rounded border">
+                <h3 className="text-sm font-semibold mb-2">Configure Bridge/Key Fields</h3>
+                <p className="text-xs text-gray-600 mb-3">
+                Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name > Column Name"
+                </p>
+
+                {/* Debug info */}
+                <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                    <h4 className="text-xs font-semibold text-yellow-800 mb-1">Debug Info:</h4>
+                    <div className="text-xs text-yellow-700">
+                        <div>Current form fields: {currentFormFields.length} total</div>
+                        <div>- Regular fields: {currentFormFields.filter(f => !f.isGridColumn).length}</div>
+                        <div>- Grid columns: {currentFormFields.filter(f => f.isGridColumn).length}</div>
+                        <div>Linked form fields: {linkedFormAllFields.length} total</div>
+                        <div>- Regular fields: {linkedFormAllFields.filter(f => !f.isGridColumn).length}</div>
+                        <div>- Grid columns: {linkedFormAllFields.filter(f => f.isGridColumn).length}</div>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    {keyFields.map((keyField, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                            <select
+                                value={keyField.currentFormField || ""}
+                                onChange={(e) => {
+                                    const updated = [...keyFields];
+                                    updated[index].currentFormField = e.target.value;
+                                    setKeyFields(updated);
+                                    console.log("Selected current form field:", e.target.value);
+                                }}
+                                className="flex-1 px-2 py-1 border rounded text-sm"
+                            >
+                                <option value="">Select field from current form</option>
+                                <optgroup label="Regular Fields">
+                                    {currentFormFields
+                                        .filter(f => !f.isGridColumn)
+                                        .map(field => (
+                                            <option key={field.id} value={field.id}>
+                                                {field.label}
+                                            </option>
+                                        ))}
+                                </optgroup>
+                                {currentFormFields.filter(f => f.isGridColumn).length > 0 && (
+                                    <optgroup label="Grid Columns">
+                                        {currentFormFields
+                                            .filter(f => f.isGridColumn)
+                                            .map(field => (
+                                                <option key={field.id} value={field.id}>
+                                                    {field.label}
+                                                </option>
+                                            ))}
+                                    </optgroup>
+                                )}
+                            </select>
+
+                            <span className="text-gray-500">=</span>
+
+                            <select
+                                value={keyField.linkedFormField || ""}
+                                onChange={(e) => {
+                                    const updated = [...keyFields];
+                                    updated[index].linkedFormField = e.target.value;
+                                    setKeyFields(updated);
+                                    console.log("Selected linked form field:", e.target.value);
+                                }}
+                                className="flex-1 px-2 py-1 border rounded text-sm"
+                            >
+                                <option value="">Select field from {linkedForm.name}</option>
+                                <optgroup label="Regular Fields">
+                                    {linkedFormAllFields
+                                        .filter(f => !f.isGridColumn)
+                                        .map(field => (
+                                            <option key={field.id} value={field.id}>
+                                                {field.label}
+                                            </option>
+                                        ))}
+                                </optgroup>
+                                {linkedFormAllFields.filter(f => f.isGridColumn).length > 0 && (
+                                    <optgroup label="Grid Columns">
+                                        {linkedFormAllFields
+                                            .filter(f => f.isGridColumn)
+                                            .map(field => (
+                                                <option key={field.id} value={field.id}>
+                                                    {field.label}
+                                                </option>
+                                            ))}
+                                    </optgroup>
+                                )}
+                            </select>
+
+                            <button
+                                onClick={() => {
+                                    const updated = keyFields.filter((_, i) => i !== index);
+                                    setKeyFields(updated);
+                                }}
+                                className="text-red-500 hover:text-red-600"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    ))}
+
+                    <button
+                        onClick={() => setKeyFields([...keyFields, { currentFormField: "", linkedFormField: "" }])}
+                        className="text-sm text-blue-500 hover:text-blue-600 flex items-center gap-1"
+                    >
+                        <Plus size={14} /> Add Key Field Pair
+                    </button>
+                </div>
+
+                {/* Enhanced preview */}
+                {keyFields.length > 0 && (
+                    <div className="mt-4 p-2 bg-gray-50 rounded border">
+                        <h4 className="text-xs font-semibold text-gray-700 mb-2">Bridge Configuration Summary:</h4>
+                        <div className="space-y-1">
+                            {keyFields.map((keyField, index) => {
+                                if (keyField.currentFormField && keyField.linkedFormField) {
+                                    const currentField = currentFormFields.find(f => f.id === keyField.currentFormField);
+                                    const linkedField = linkedFormAllFields.find(f => f.id === keyField.linkedFormField);
+
+                                    return (
+                                        <div key={index} className="text-xs text-gray-600">
+                                            <span className="font-medium">{currentField?.label || 'Unknown'}</span>
+                                            <span className="text-gray-400"> ↔ </span>
+                                            <span className="font-medium">{linkedField?.label || 'Unknown'}</span>
+                                            {currentField?.isGridColumn && <span className="ml-2 px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Grid Column</span>}
+                                            {linkedField?.isGridColumn && <span className="ml-2 px-1 py-0.5 bg-green-100 text-green-700 rounded text-xs">Linked Grid Column</span>}
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Raw data dump for debugging */}
+                <details className="mt-4">
+                    <summary className="text-xs text-gray-500 cursor-pointer">Show raw data (for debugging)</summary>
+                    <div className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-40">
+                        <div className="mb-2">
+                            <strong>Linked Form Fields:</strong>
+                            <pre>{JSON.stringify(linkedFormFields, null, 2)}</pre>
+                        </div>
+                        <div>
+                            <strong>Processed Fields:</strong>
+                            <pre>{JSON.stringify(linkedFormAllFields, null, 2)}</pre>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        );
+    };
+
+    const debugFetchFormLayout = async () => {
+        // ... existing fetchFormLayout code ...
+
+        // Add this after you get the data from the API
+        console.log("=== FETCH FORM LAYOUT DEBUG ===");
+        console.log("Raw API response:", data);
+
+        // When processing fields, add debugging
+        const transformedFields = (data.fields || []).map((field, index) => {
+            const isGrid = field.type === "grid";
+            const isLinkedField = field.type === "linkedTextbox";
+
+            const transformedField = {
+                ...field,
+                id: field.id || generateGuid(),
+                order: field.order !== undefined ? field.order : index,
+                columns: isGrid
+                    ? (field.column || field.columns || []).map(col => ({
+                        ...col,
+                        type: col.type || "textbox",
+                        name: col.name || "",
+                        id: col.id || generateGuid(),
+                        width: col.width || "1fr",
+                        options: col.options || [],
+                        textColor: col.textColor || "#000000",
+                        backgroundColor: col.backgroundColor || "#ffffff",
+                        formula: col.formula || "",
+                        min: col.min ?? null,
+                        max: col.max ?? null,
+                        decimal: col.decimal ?? null,
+                        parentColumn: col.parentColumn || "",
+                        dependentOptions: col.dependentOptions || {},
+                        startTime: col.startTime || "",
+                        endTime: col.endTime || ""
+                    }))
+                    : undefined,
+                column: undefined, // Remove old key
+                formula: field.formula || "",
+                resultDecimal: field.resultDecimal || false,
+                fieldReferences: field.fieldReferencesJson || [],
+                remarkTriggers: field.remarkTriggers || []
+            };
+
+            // Handle linked field specific properties
+            if (isLinkedField) {
+                transformedField.linkedFormId = field.linkedFormId;
+                transformedField.linkedFieldId = field.linkedFieldId;
+                transformedField.displayMode = field.displayMode || "readonly";
+                transformedField.displayFormat = field.displayFormat || "{value}";
+                transformedField.allowManualEntry = field.allowManualEntry || false;
+                transformedField.showLookupButton = field.showLookupButton !== false;
+
+                // Parse key field mappings
+                if (field.keyFieldMappingsJson) {
+                    try {
+                        const mappings = JSON.parse(field.keyFieldMappingsJson);
+                        transformedField.keyFieldMappings = mappings.map(mapping => ({
+                            currentField: mapping.currentFieldType === 'gridColumn'
+                                ? `${mapping.currentParentFieldId}.${mapping.currentColumnId}`
+                                : mapping.currentField,
+                            linkedField: mapping.linkedFieldType === 'gridColumn'
+                                ? `${mapping.linkedParentFieldId}.${mapping.linkedColumnId}`
+                                : mapping.linkedField
+                        }));
+                    } catch (e) {
+                        console.warn('Failed to parse keyFieldMappingsJson:', e);
+                        transformedField.keyFieldMappings = [];
+                    }
+                } else if (field.keyFieldMappings) {
+                    transformedField.keyFieldMappings = field.keyFieldMappings;
+                } else {
+                    transformedField.keyFieldMappings = [];
+                }
+            }
+
+            return transformedField;
+        });
+    };
+
+    // Temporary debug component - add this to your FormBuilder component
+    const GridDebugComponent = () => {
+        return (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded">
+                <h3 className="text-lg font-semibold mb-3 text-red-800">Grid Debug Information</h3>
+
+                <div className="space-y-4">
+                    <div>
+                        <h4 className="font-medium text-red-700">Current Form Fields:</h4>
+                        <div className="mt-2 p-2 bg-white rounded border max-h-60 overflow-auto">
+                            {formFields.map((field, index) => (
+                                <div key={field.id} className="mb-3 p-2 border-b border-gray-200">
+                                    <div className="text-sm font-medium">Field {index}: {field.label} ({field.type})</div>
+                                    {field.type === "grid" && (
+                                        <div className="ml-4 mt-1 text-xs">
+                                            <div>Columns property: {field.columns ? 'EXISTS' : 'MISSING'}</div>
+                                            <div>ColumnsJson property: {field.columnsJson ? 'EXISTS' : 'MISSING'}</div>
+                                            <div>Column property: {field.column ? 'EXISTS' : 'MISSING'}</div>
+                                            {field.columns && (
+                                                <div className="mt-1">
+                                                    <div>Columns count: {Array.isArray(field.columns) ? field.columns.length : 'NOT ARRAY'}</div>
+                                                    {Array.isArray(field.columns) && field.columns.map((col, colIndex) => (
+                                                        <div key={colIndex} className="ml-2 text-gray-600">
+                                                            - {col.name} ({col.type}) [ID: {col.id}]
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {field.columnsJson && (
+                                                <div className="mt-1">
+                                                    <div>ColumnsJson type: {typeof field.columnsJson}</div>
+                                                    <details>
+                                                        <summary className="cursor-pointer">Show columnsJson</summary>
+                                                        <pre className="text-xs bg-gray-100 p-1 mt-1 rounded overflow-auto max-h-32">
+                                                            {JSON.stringify(field.columnsJson, null, 2)}
+                                                        </pre>
+                                                    </details>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {linkedForm && (
+                        <div>
+                            <h4 className="font-medium text-red-700">Linked Form Fields:</h4>
+                            <div className="mt-2 p-2 bg-white rounded border max-h-60 overflow-auto">
+                                {linkedFormFields.map((field, index) => (
+                                    <div key={field.id || index} className="mb-3 p-2 border-b border-gray-200">
+                                        <div className="text-sm font-medium">Field {index}: {field.label} ({field.type})</div>
+                                        {field.type === "grid" && (
+                                            <div className="ml-4 mt-1 text-xs">
+                                                <div>Columns property: {field.columns ? 'EXISTS' : 'MISSING'}</div>
+                                                <div>ColumnsJson property: {field.columnsJson ? 'EXISTS' : 'MISSING'}</div>
+                                                {field.columns && (
+                                                    <div className="mt-1">
+                                                        <div>Columns count: {Array.isArray(field.columns) ? field.columns.length : 'NOT ARRAY'}</div>
+                                                        {Array.isArray(field.columns) && field.columns.map((col, colIndex) => (
+                                                            <div key={colIndex} className="ml-2 text-gray-600">
+                                                                - {col.name} ({col.type}) [ID: {col.id}]
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div>
+                        <h4 className="font-medium text-red-700">Available Fields for Bridge:</h4>
+                        <div className="mt-2 p-2 bg-white rounded border">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div className="text-sm font-medium mb-2">Current Form:</div>
+                                    {getAllFormFieldsWithGridColumns(formFields).map((field, index) => (
+                                        <div key={index} className="text-xs mb-1">
+                                            {field.isGridColumn ? '📊' : '📝'} {field.label}
+                                            <span className="ml-2 text-gray-500">({field.id})</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div>
+                                    <div className="text-sm font-medium mb-2">Linked Form:</div>
+                                    {getAllFormFieldsWithGridColumns(linkedFormFields).map((field, index) => (
+                                        <div key={index} className="text-xs mb-1">
+                                            {field.isGridColumn ? '📊' : '📝'} {field.label}
+                                            <span className="ml-2 text-gray-500">({field.id})</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button
+                    onClick={() => {
+                        console.log("=== MANUAL DEBUG TRIGGER ===");
+                        console.log("formFields:", formFields);
+                        console.log("linkedFormFields:", linkedFormFields);
+                        console.log("linkedForm:", linkedForm);
+                    }}
+                    className="mt-3 bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                >
+                    Log Data to Console
+                </button>
+            </div>
+        );
+    };
+
+    // Add this component to your FormBuilder return statement, right after the form name section:
+    // <GridDebugComponent />
+
     if (loading) return <div className="p-4">Loading form builder...</div>;
+
 
     return (
         <Layout>
 
             <DndProvider backend={HTML5Backend}>
-
                 <div className="max-w-8xl mx-auto p-2">
+                <GridDebugComponent />
                     <div className="mb-6">
                         <h1 className="text-2xl font-bold mb-4">Form Builder</h1>
 
@@ -561,67 +1169,97 @@ const FormBuilder = () => {
                             </div>
 
                             {/* Key Fields Configuration */}
+                            // Replace the Key Fields Configuration section with this fixed version
                             {linkedForm && (
                                 <div className="mt-4 p-3 bg-white rounded border">
                                     <h3 className="text-sm font-semibold mb-2">Configure Bridge/Key Fields</h3>
                                     <p className="text-xs text-gray-600 mb-3">
-                                        Select fields that will be used to match records between forms
+            Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name > Column Name"
                                     </p>
 
                                     <div className="space-y-2">
-                                        {keyFields.map((keyField, index) => (
-                                            <div key={index} className="flex items-center gap-2">
-                                                <select
-                                                    value={keyField.currentFormField || ""}
-                                                    onChange={(e) => {
-                                                        const updated = [...keyFields];
-                                                        updated[index].currentFormField = e.target.value;
-                                                        setKeyFields(updated);
-                                                    }}
-                                                    className="flex-1 px-2 py-1 border rounded text-sm"
-                                                >
-                                                    <option value="">Select field from current form</option>
-                                                    {formFields
-                                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
-                                                        .map(field => (
-                                                            <option key={field.id} value={field.id}>
-                                                                {field.label}
-                                                            </option>
-                                                        ))}
-                                                </select>
+                                        {keyFields.map((keyField, index) => {
+                                            // Get available fields for current form (including grid columns)
+                                            const currentFormFields = getAllFormFieldsWithGridColumns(formFields);
+                                            // Get available fields for linked form (including grid columns)
+                                            const linkedFormFields2 = getAllFormFieldsWithGridColumns(linkedFormFields);
 
-                                                <span className="text-gray-500">=</span>
+                                            return (
+                                                <div key={index} className="flex items-center gap-2">
+                                                    <select
+                                                        value={keyField.currentFormField || ""}
+                                                        onChange={(e) => {
+                                                            const updated = [...keyFields];
+                                                            updated[index].currentFormField = e.target.value;
+                                                            setKeyFields(updated);
+                                                        }}
+                                                        className="flex-1 px-2 py-1 border rounded text-sm"
+                                                    >
+                                                        <option value="">Select field from current form</option>
+                                                        <optgroup label="Regular Fields">
+                                                            {currentFormFields
+                                                                .filter(f => !f.isGridColumn)
+                                                                .map(field => (
+                                                                    <option key={field.id} value={field.id}>
+                                                                        {field.label}
+                                                                    </option>
+                                                                ))}
+                                                        </optgroup>
+                                                        <optgroup label="Grid Columns">
+                                                            {currentFormFields
+                                                                .filter(f => f.isGridColumn)
+                                                                .map(field => (
+                                                                    <option key={field.id} value={field.id}>
+                                                                        {field.label}
+                                                                    </option>
+                                                                ))}
+                                                        </optgroup>
+                                                    </select>
 
-                                                <select
-                                                    value={keyField.linkedFormField || ""}
-                                                    onChange={(e) => {
-                                                        const updated = [...keyFields];
-                                                        updated[index].linkedFormField = e.target.value;
-                                                        setKeyFields(updated);
-                                                    }}
-                                                    className="flex-1 px-2 py-1 border rounded text-sm"
-                                                >
-                                                    <option value="">Select field from {linkedForm.name}</option>
-                                                    {linkedFormFields
-                                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
-                                                        .map(field => (
-                                                            <option key={field.id} value={field.id}>
-                                                                {field.label}
-                                                            </option>
-                                                        ))}
-                                                </select>
+                                                    <span className="text-gray-500">=</span>
 
-                                                <button
-                                                    onClick={() => {
-                                                        const updated = keyFields.filter((_, i) => i !== index);
-                                                        setKeyFields(updated);
-                                                    }}
-                                                    className="text-red-500 hover:text-red-600"
-                                                >
-                                                    <X size={16} />
-                                                </button>
-                                            </div>
-                                        ))}
+                                                    <select
+                                                        value={keyField.linkedFormField || ""}
+                                                        onChange={(e) => {
+                                                            const updated = [...keyFields];
+                                                            updated[index].linkedFormField = e.target.value;
+                                                            setKeyFields(updated);
+                                                        }}
+                                                        className="flex-1 px-2 py-1 border rounded text-sm"
+                                                    >
+                                                        <option value="">Select field from {linkedForm.name}</option>
+                                                        <optgroup label="Regular Fields">
+                                                            {linkedFormFields2
+                                                                .filter(f => !f.isGridColumn)
+                                                                .map(field => (
+                                                                    <option key={field.id} value={field.id}>
+                                                                        {field.label}
+                                                                    </option>
+                                                                ))}
+                                                        </optgroup>
+                                                        <optgroup label="Grid Columns">
+                                                            {linkedFormFields2
+                                                                .filter(f => f.isGridColumn)
+                                                                .map(field => (
+                                                                    <option key={field.id} value={field.id}>
+                                                                        {field.label}
+                                                                    </option>
+                                                                ))}
+                                                        </optgroup>
+                                                    </select>
+
+                                                    <button
+                                                        onClick={() => {
+                                                            const updated = keyFields.filter((_, i) => i !== index);
+                                                            setKeyFields(updated);
+                                                        }}
+                                                        className="text-red-500 hover:text-red-600"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
 
                                         <button
                                             onClick={() => setKeyFields([...keyFields, { currentFormField: "", linkedFormField: "" }])}
@@ -630,6 +1268,33 @@ const FormBuilder = () => {
                                             <Plus size={14} /> Add Key Field Pair
                                         </button>
                                     </div>
+
+                                    {/* Preview of selected bridge fields */}
+                                    {keyFields.length > 0 && (
+                                        <div className="mt-4 p-2 bg-gray-50 rounded border">
+                                            <h4 className="text-xs font-semibold text-gray-700 mb-2">Bridge Configuration Summary:</h4>
+                                            <div className="space-y-1">
+                                                {keyFields.map((keyField, index) => {
+                                                    if (keyField.currentFormField && keyField.linkedFormField) {
+                                                        const currentField = getAllFormFieldsWithGridColumns(formFields)
+                                                            .find(f => f.id === keyField.currentFormField);
+                                                        const linkedField = getAllFormFieldsWithGridColumns(linkedFormFields)
+                                                            .find(f => f.id === keyField.linkedFormField);
+
+                                                        return (
+                                                            <div key={index} className="text-xs text-gray-600">
+                                                                <span className="font-medium">{currentField?.label || 'Unknown'}</span>
+                                                                <span className="text-gray-400"> ↔ </span>
+                                                                <span className="font-medium">{linkedField?.label || 'Unknown'}</span>
+                                                                {currentField?.isGridColumn && <span className="ml-2 px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Grid Column</span>}
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -885,11 +1550,13 @@ const ApproverItem = ({ approver, index, moveApprover, removeApprover }) => {
     );
 };
 
-const FormField = ({ field, index, allFields, moveField, updateField, removeField }) => {
+const FormField = ({ field, index, allFields, availableForms, moveField, updateField, removeField }) => {
     const [previewParentValue, setPreviewParentValue] = useState("");
     const [previewChildOptions, setPreviewChildOptions] = useState([]);
 
 
+
+    const safeAvailableForms = availableForms || [];
 
     useEffect(() => {
         const dependentDropdownCol = field.columns?.find(col => col.type === "dependentDropdown");
@@ -944,6 +1611,43 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
         value: "",
         operator: "=",
     });
+
+    const getAllFormFieldsWithGridColumns = (fields) => {
+        if (!fields || !Array.isArray(fields)) {
+            return [];
+        }
+
+        const allFieldsWithColumns = [];
+
+        fields.forEach((fieldItem) => {
+            if (!fieldItem) return;
+
+            if (fieldItem.type === "grid" && fieldItem.columns && Array.isArray(fieldItem.columns)) {
+                fieldItem.columns.forEach((column) => {
+                    if (column && column.id && column.name) {
+                        allFieldsWithColumns.push({
+                            id: `${fieldItem.id}.${column.id}`,
+                            label: `${fieldItem.label || 'Grid'} > ${column.name}`,
+                            type: column.type || 'textbox',
+                            isGridColumn: true,
+                            parentFieldId: fieldItem.id,
+                            columnId: column.id
+                        });
+                    }
+                });
+            } else if (["textbox", "numeric", "dropdown", "calculation"].includes(fieldItem.type)) {
+                allFieldsWithColumns.push({
+                    id: fieldItem.id,
+                    label: fieldItem.label || `${fieldItem.type} field`,
+                    type: fieldItem.type,
+                    isGridColumn: false
+                });
+            }
+        });
+
+        return allFieldsWithColumns;
+    };
+
 
     const addOption = () => {
         if (!newOption.trim()) return;
@@ -1059,7 +1763,307 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                 />
                 <label className="text-sm text-gray-600">Required</label>
             </div>
+            {field.type === "linkedTextbox" && (
+                <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded">
+                    <h4 className="text-sm font-semibold mb-3 text-purple-800">Linked Field Configuration</h4>
 
+                    {/* Linked Form Selection */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium mb-1">Source Form</label>
+                        <select
+                            value={field.linkedFormId || ""}
+                            onChange={(e) => {
+                                const selectedFormId = e.target.value;
+                                updateField({
+                                    linkedFormId: selectedFormId,
+                                    linkedFieldId: "", // Reset field selection when form changes
+                                    keyFieldMappings: [] // Reset mappings
+                                });
+                            }}
+                            className="w-full px-2 py-1 border rounded"
+                        >
+                            <option value="">Select source form...</option>
+                            {safeAvailableForms.map(form => (
+                                <option key={form.id} value={form.id}>
+                                    {form.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Linked Field Selection */}
+                    {field.linkedFormId && (
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-1">Field to Display</label>
+                            <select
+                                value={field.linkedFieldId || ""}
+                                onChange={(e) => updateField({ linkedFieldId: e.target.value })}
+                                className="w-full px-2 py-1 border rounded"
+                            >
+                                <option value="">Select field to display...</option>
+                                {/* Get available fields from the selected linked form */}
+                                {(() => {
+                                    const selectedForm = safeAvailableForms.find(f => f.id.toString() === field.linkedFormId.toString());
+                                    if (!selectedForm || !selectedForm.fields) return null;
+
+                                    return selectedForm.fields.map(linkedField => {
+                                        // Handle both regular fields and grid columns
+                                        if (linkedField.type === "grid" && linkedField.columns) {
+                                            return linkedField.columns.map(column => (
+                                                <option key={`${linkedField.id}.${column.id}`} value={`${linkedField.id}.${column.id}`}>
+                                                    📊 {linkedField.label} > {column.name}
+                                                </option>
+                                            ));
+                                        } else if (["textbox", "numeric", "dropdown", "calculation"].includes(linkedField.type)) {
+                                            return (
+                                                <option key={linkedField.id} value={linkedField.id}>
+                                                    📝 {linkedField.label}
+                                                </option>
+                                            );
+                                        }
+                                        return null;
+                                    }).flat().filter(Boolean);
+                                })()}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Display Mode */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium mb-1">Display Mode</label>
+                        <select
+                            value={field.displayMode || "readonly"}
+                            onChange={(e) => updateField({ displayMode: e.target.value })}
+                            className="w-full px-2 py-1 border rounded"
+                        >
+                            <option value="readonly">Read-only (display linked value)</option>
+                            <option value="lookup">Lookup (search and select)</option>
+                            <option value="editable">Editable (can modify linked value)</option>
+                        </select>
+                    </div>
+
+                    {/* Key Field Mappings */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium mb-2">Record Matching Rules</label>
+                        <p className="text-xs text-gray-600 mb-3">
+                            Define how records should be matched between the current form and the linked form.
+                        </p>
+
+                        {(field.keyFieldMappings || []).map((mapping, mappingIndex) => (
+                            <div key={mappingIndex} className="flex items-center gap-2 mb-2">
+                                <select
+                                    value={mapping.currentField || ""}
+                                    onChange={(e) => {
+                                        const updated = [...(field.keyFieldMappings || [])];
+                                        updated[mappingIndex].currentField = e.target.value;
+                                        updateField({ keyFieldMappings: updated });
+                                    }}
+                                    className="flex-1 px-2 py-1 border rounded text-sm"
+                                >
+                                    <option value="">Select current form field...</option>
+                                    {getAllFormFieldsWithGridColumns(allFields)
+                                        .filter(f => f.id !== field.id) // Don't include self
+                                        .map(f => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.isGridColumn ? '📊' : '📝'} {f.label}
+                                            </option>
+                                        ))}
+                                </select>
+
+                                <span className="text-gray-500">=</span>
+
+                                <select
+                                    value={mapping.linkedField || ""}
+                                    onChange={(e) => {
+                                        const updated = [...(field.keyFieldMappings || [])];
+                                        updated[mappingIndex].linkedField = e.target.value;
+                                        updateField({ keyFieldMappings: updated });
+                                    }}
+                                    className="flex-1 px-2 py-1 border rounded text-sm"
+                                >
+                                    <option value="">Select linked form field...</option>
+                                    {(() => {
+                                        if (!field.linkedFormId) return null;
+
+                                        const selectedForm = safeAvailableForms.find(f => f.id.toString() === field.linkedFormId.toString());
+                                        if (!selectedForm || !selectedForm.fields) return null;
+
+                                        return selectedForm.fields.map(linkedField => {
+                                            if (linkedField.type === "grid" && linkedField.columns) {
+                                                return linkedField.columns.map(column => (
+                                                    <option key={`${linkedField.id}.${column.id}`} value={`${linkedField.id}.${column.id}`}>
+                                                        📊 {linkedField.label} > {column.name}
+                                                    </option>
+                                                ));
+                                            } else if (["textbox", "numeric", "dropdown"].includes(linkedField.type)) {
+                                                return (
+                                                    <option key={linkedField.id} value={linkedField.id}>
+                                                        📝 {linkedField.label}
+                                                    </option>
+                                                );
+                                            }
+                                            return null;
+                                        }).flat().filter(Boolean);
+                                    })()}
+                                </select>
+
+                                <button
+                                    onClick={() => {
+                                        const updated = (field.keyFieldMappings || []).filter((_, i) => i !== mappingIndex);
+                                        updateField({ keyFieldMappings: updated });
+                                    }}
+                                    className="text-red-500 hover:text-red-600"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        ))}
+
+                        <button
+                            onClick={() => {
+                                const updated = [...(field.keyFieldMappings || []), { currentField: "", linkedField: "" }];
+                                updateField({ keyFieldMappings: updated });
+                            }}
+                            className="text-sm text-purple-600 hover:text-purple-700 flex items-center gap-1"
+                        >
+                            <Plus size={14} /> Add Matching Rule
+                        </button>
+                    </div>
+
+                    {/* Display Options */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={field.allowManualEntry || false}
+                                onChange={(e) => updateField({ allowManualEntry: e.target.checked })}
+                                className="h-4 w-4"
+                            />
+                            <label className="text-sm text-gray-600">Allow Manual Entry</label>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={field.showLookupButton !== false} // Default to true
+                                onChange={(e) => updateField({ showLookupButton: e.target.checked })}
+                                className="h-4 w-4"
+                            />
+                            <label className="text-sm text-gray-600">Show Lookup Button</label>
+                        </div>
+                    </div>
+
+                    {/* Display Format */}
+                    <div className="mt-4">
+                        <label className="block text-sm font-medium mb-1">Display Format</label>
+                        <input
+                            type="text"
+                            value={field.displayFormat || "{value}"}
+                            onChange={(e) => updateField({ displayFormat: e.target.value })}
+                            placeholder="{value} or custom format"
+                            className="w-full px-2 py-1 border rounded"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                            Use {`{value}`} to insert the linked field value, or create custom formats like "{`value`} - {`otherField`}"
+                        </p>
+                    </div>
+
+                    {/* Configuration Summary */}
+                    <div className="mt-4 p-2 bg-white rounded border">
+                        <h5 className="text-xs font-semibold mb-2">Configuration Summary:</h5>
+                        <div className="text-xs text-gray-600 space-y-1">
+                            <div>
+                                <strong>Source:</strong> {
+                                    field.linkedFormId
+                                        ? safeAvailableForms.find(f => f.id.toString() === field.linkedFormId.toString())?.name || 'Unknown Form'
+                                        : 'Not selected'
+                                }
+                            </div>
+                            <div>
+                                <strong>Display Field:</strong> {field.linkedFieldId || 'Not selected'}
+                            </div>
+                            <div>
+                                <strong>Mode:</strong> {field.displayMode || 'readonly'}
+                            </div>
+                            <div>
+                                <strong>Matching Rules:</strong> {(field.keyFieldMappings || []).length} configured
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Preview and validation */}
+                    {field.linkedFormId && field.linkedFieldId && (
+                        <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded">
+                            <h5 className="text-sm font-semibold mb-2">Preview</h5>
+                            <div className="space-y-2">
+                                {/* Show how the field will appear based on display mode */}
+                                {field.displayMode === "readonly" && (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value="[Linked Value Will Appear Here]"
+                                            disabled
+                                            className="flex-1 px-2 py-1 border rounded bg-gray-100 text-gray-600"
+                                        />
+                                        <span className="text-xs text-gray-500">Read-only</span>
+                                    </div>
+                                )}
+
+                                {field.displayMode === "lookup" && (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value="[Click lookup to select]"
+                                            disabled
+                                            className="flex-1 px-2 py-1 border rounded"
+                                        />
+                                        {field.showLookupButton !== false && (
+                                            <button className="px-2 py-1 bg-blue-500 text-white rounded text-xs">
+                                                🔍 Lookup
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {field.displayMode === "editable" && (
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value="[Editable linked value]"
+                                            className="flex-1 px-2 py-1 border rounded"
+                                        />
+                                        <span className="text-xs text-gray-500">Editable</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Validation warnings */}
+                    <div className="mt-2">
+                        {!field.linkedFormId && (
+                            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
+                                ⚠️ Please select a source form for this linked field
+                            </div>
+                        )}
+                        {field.linkedFormId && !field.linkedFieldId && (
+                            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
+                                ⚠️ Please select which field to display from the linked form
+                            </div>
+                        )}
+                        {field.linkedFormId && field.linkedFieldId && (!field.keyFieldMappings || field.keyFieldMappings.length === 0) && (
+                            <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
+                                ⚠️ Please configure at least one matching rule to determine which records to link
+                            </div>
+                        )}
+                        {field.linkedFormId && field.linkedFieldId && (field.keyFieldMappings || []).length > 0 && (
+                            <div className="text-xs text-green-600 bg-green-50 border border-green-200 rounded p-2">
+                                ✅ Linked field is properly configured
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
             {field.type === "calculation" && (
                 <div className="mb-4">
                     <label className="block text-sm font-medium mb-1">Formula</label>
@@ -1768,7 +2772,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     )}
                 </div>
             )}
-
             {(field.type === "dropdown" ||
                 field.type === "checkbox" ||
                 field.type === "radio") && (
