@@ -65,6 +65,9 @@ namespace productionLine.Server.Controllers
                 _context.FormFields.RemoveRange(existingForm.Fields);
                 _context.FormApprovers.RemoveRange(existingForm.Approvers);
 
+                existingForm.LinkedFormId = form.LinkedFormId;
+                existingForm.KeyFieldMappings = form.KeyFieldMappings;
+
                 foreach (FormField field in form.Fields)
                 {
                     if (field.Id == Guid.Empty)
@@ -85,6 +88,12 @@ namespace productionLine.Server.Controllers
                         {
                             trigger.FormField = field;
                         }
+                    }
+                    if (field.Type == "linkedTextbox")
+                    {
+                        field.LinkedFormId = field.LinkedFormId;
+                        field.LinkedFieldId = field.LinkedFieldId;
+                        field.KeyFieldMappings = field.KeyFieldMappings;
                     }
                 }
 
@@ -158,6 +167,8 @@ namespace productionLine.Server.Controllers
                 Id = form.Id,
                 FormLink = form.FormLink,
                 Name = form.Name,
+                LinkedFormId = form.LinkedFormId, // Move this to Form level
+                KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
                 Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
                 {
                     Id = a.Id,
@@ -179,6 +190,10 @@ namespace productionLine.Server.Controllers
                     RequireRemarks = f.RequiresRemarks,
                     IsDecimal = f.Decimal,
                     Max = f.Max,
+                    // Remove these from field level:
+                    LinkedFormId = f.LinkedFormId,
+                    LinkedFieldId = f.LinkedFieldId,
+                    KeyFieldMappings = f.KeyFieldMappings,
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
@@ -216,7 +231,6 @@ namespace productionLine.Server.Controllers
             };
             return Ok(formDto);
         }
-
         [HttpPost("upload-image")]
         public async Task<IActionResult> UploadImage(IFormFile file, [FromForm] string? oldPath)
         {

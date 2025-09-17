@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
+﻿using productionLine.Server.Model;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace productionLine.Server.DTO
 {
@@ -23,6 +24,8 @@ namespace productionLine.Server.DTO
         public int? MinRows { get; set; }
         public int? MaxRows { get; set; }
         public int? InitialRows { get; set; }
-
+        public int? LinkedFormId { get; set; }
+        public Guid? LinkedFieldId { get; set; }
+        public List<KeyFieldMapping>? KeyFieldMappings { get; set; }
     }
 }

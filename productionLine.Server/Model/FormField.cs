@@ -123,8 +123,31 @@ namespace productionLine.Server.Model
 
         [Column("IMAGEVALUE")]
         public string? ImageValue { get; set; }
+        [Column("LINKED_FORM_ID")]
+        public int? LinkedFormId { get; set; }
+
+        [Column("LINKED_FIELD_ID")]
+        public Guid? LinkedFieldId { get; set; }
+
+        [Column("KEY_FIELD_MAPPINGS", TypeName = "CLOB")]
+        public string? KeyFieldMappingsJson { get; set; }
+
+        [NotMapped]
+        public List<KeyFieldMapping>? KeyFieldMappings
+        {
+            get => string.IsNullOrEmpty(KeyFieldMappingsJson) ? null : JsonSerializer.Deserialize<List<KeyFieldMapping>>(KeyFieldMappingsJson);
+            set => KeyFieldMappingsJson = JsonSerializer.Serialize(value);
+        }
     }
 
+    public class KeyFieldMapping
+    {
+        [JsonPropertyName("currentFormField")]
+        public string CurrentFormField { get; set; }
+
+        [JsonPropertyName("linkedFormField")]
+        public string LinkedFormField { get; set; }
+    }
 
     public class GridColumn
     {

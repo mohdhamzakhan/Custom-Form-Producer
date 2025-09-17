@@ -150,11 +150,17 @@ namespace productionLine.Server.Controllers
                 return NotFound();
             }
             _context.Entry(existingForm).Property((Form f) => f.RowVersion).OriginalValue = form.RowVersion;
+
+            // Update form-level properties
             existingForm.Name = form.Name;
+            existingForm.LinkedFormId = form.LinkedFormId; // Add this line
+            existingForm.KeyFieldMappings = form.KeyFieldMappings; // Add this line
+
             existingForm.Fields.Select((FormField f) => f.Id).ToHashSet();
             HashSet<Guid> incomingFieldIds = form.Fields.Select((FormField f) => f.Id).ToHashSet();
             List<FormField> fieldsToRemove = existingForm.Fields.Where((FormField f) => !incomingFieldIds.Contains(f.Id)).ToList();
             _context.FormFields.RemoveRange(fieldsToRemove);
+
             foreach (FormField field in form.Fields)
             {
                 FormField existingField = existingForm.Fields.FirstOrDefault((FormField f) => f.Id == field.Id);
@@ -184,6 +190,12 @@ namespace productionLine.Server.Controllers
                     existingField.RequireRemarksOutOfRange = field.RequireRemarksOutOfRange;
                     existingField.RequiresRemarksJson = field.RequiresRemarksJson;
                     existingField.ImageValue = field.ImageValue;
+
+                    // Fix: Use field-level properties, not form-level
+                    existingField.LinkedFormId = field.LinkedFormId; // Changed from form.LinkedFormId
+                    existingField.LinkedFieldId = field.LinkedFieldId;
+                    existingField.KeyFieldMappings = field.KeyFieldMappings;
+
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
                         Operator = rt.Operator,
@@ -218,6 +230,12 @@ namespace productionLine.Server.Controllers
                     RemarkTriggersJson = field.RemarkTriggersJson,
                     RequireRemarksOutOfRange = field.RequireRemarksOutOfRange,
                     RequiresRemarksJson = field.RequiresRemarksJson,
+
+                    // Fix: Use field-level properties, not form-level
+                    LinkedFormId = field.LinkedFormId, // Changed from form.LinkedFormId
+                    LinkedFieldId = field.LinkedFieldId,
+                    KeyFieldMappings = field.KeyFieldMappings,
+
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
                         Operator = rt.Operator,
@@ -255,7 +273,6 @@ namespace productionLine.Server.Controllers
             }
         }
 
-
         // ✅ Get form by ID
         [HttpGet("{id}")]
         public async Task<IActionResult> GetForm(int id)
@@ -279,18 +296,34 @@ namespace productionLine.Server.Controllers
         [HttpGet("link/{formLink}")]
         public async Task<IActionResult> GetFormByLink(string formLink)
         {
-            Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
-                .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
+            Form form = await _context.Forms
+                .Include(f => f.Fields.OrderBy(field => field.Order))
+                .ThenInclude(field => field.RemarkTriggers)
+                .Include(f => f.Approvers.OrderBy(a => a.Level))
+                .FirstOrDefaultAsync(f => f.FormLink.ToLower() == formLink.ToLower());
+
             if (form == null)
             {
                 return NotFound("Form not found.");
             }
+
             FormDto formDto = new FormDto
             {
                 Id = form.Id,
                 FormLink = form.FormLink,
                 Name = form.Name,
-                Fields = form.Fields.Select((FormField f) => new FieldDto
+                LinkedFormId = form.LinkedFormId, // Add this line
+                KeyFieldMappings = form.KeyFieldMappings, // Add this line
+                Approvers = (form.Approvers?.Select(a => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
+                Fields = form.Fields.Select(f => new FieldDto
                 {
                     Id = f.Id,
                     Name = f.Label,
@@ -303,13 +336,15 @@ namespace productionLine.Server.Controllers
                     IsDecimal = f.Decimal,
                     Max = f.Max,
                     Min = f.Min,
-                    RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
+                    LinkedFieldId = f.LinkedFieldId, // Add this line
+                    RemarkTriggers = (f.RemarkTriggers?.Select(rt => new RemarkTriggerDto
                     {
                         Id = rt.Id,
                         Operator = rt.Operator,
-                        Value = rt.Value
+                        Value = rt.Value,
+                        FormFieldId = rt.FormFieldId
                     }).ToList() ?? new List<RemarkTriggerDto>()),
-                    Column = (f.Columns?.Select((GridColumn ct) => new GridColumnDto
+                    Column = (f.Columns?.Select(ct => new GridColumnDto
                     {
                         Formula = ct.Formula,
                         Name = ct.Name,
@@ -682,6 +717,36 @@ namespace productionLine.Server.Controllers
                     .Include((FormSubmission s) => s.SubmissionData)
                              where s.Approvals.Any((FormApproval a) => userNames.Contains(a.ApproverName) && a.Status == "Pending")
                              select s).ToListAsync());
+        }
+
+        [HttpGet("linked-data/{formId}")]
+        public async Task<IActionResult> GetLinkedData(int formId, [FromQuery] string keyMappings)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(keyMappings))
+                {
+                    return BadRequest("Key mappings are required");
+                }
+
+                var mappings = JsonSerializer.Deserialize<List<KeyFieldMapping>>(keyMappings);
+                if (!mappings.Any())
+                {
+                    return Ok(new { data = (object)null });
+                }
+
+                // Get all submissions for the linked form
+                var submissions = await _context.FormSubmissions
+                    .Where(s => s.FormId == formId)
+                    .Include(s => s.SubmissionData)
+                    .ToListAsync();
+
+                return Ok(new { data = submissions });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
 
     }

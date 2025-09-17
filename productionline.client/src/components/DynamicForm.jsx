@@ -116,6 +116,48 @@ export default function DynamicForm() {
             setFormValues(updatedValues);
         }
     }, [formData]);
+    // Add this useEffect to handle automatic linked data loading
+    useEffect(() => {
+        const loadLinkedDataAutomatically = async () => {
+            if (!formData?.keyFieldMappings?.length) return;
+
+            // Check if all key fields have values
+            const keyValues = {};
+            let hasAllKeyValues = true;
+
+            formData.keyFieldMappings.forEach(mapping => {
+                const currentValue = formValues[mapping.currentFormField];
+                if (!currentValue) {
+                    hasAllKeyValues = false;
+                    return;
+                }
+                keyValues[mapping.currentFormField] = currentValue;
+            });
+
+            if (hasAllKeyValues) {
+                const linkedSubmissions = await fetchLinkedData(formData.keyFieldMappings);
+                if (linkedSubmissions) {
+                    const matchingSubmission = findMatchingSubmission(linkedSubmissions, keyValues, formData.keyFieldMappings);
+
+                    if (matchingSubmission) {
+                        // Auto-populate all linked fields
+                        const updatedValues = { ...formValues };
+
+                        formData.fields.forEach(field => {
+                            if (field.type === "linkedTextbox" && field.linkedFieldId) {
+                                const linkedValue = extractLinkedFieldValue(matchingSubmission, field.linkedFieldId);
+                                updatedValues[field.id] = linkedValue || "";
+                            }
+                        });
+
+                        setFormValues(updatedValues);
+                    }
+                }
+            }
+        };
+
+        loadLinkedDataAutomatically();
+    }, [formValues, formData]); // Trigger when form values change
 
 
     // Update handleGridChange to clear dependent values
@@ -656,6 +698,135 @@ export default function DynamicForm() {
         return date.toLocaleDateString(undefined, { weekday: "long" });
     };
 
+    const fetchLinkedData = async (keyMappings) => {
+        if (!formData.linkedFormId || !keyMappings.length) return null;
+
+        try {
+            const response = await fetch(
+                `${APP_CONSTANTS.API_BASE_URL}/api/forms/linked-data/${formData.linkedFormId}?keyMappings=${encodeURIComponent(JSON.stringify(keyMappings))}`
+            );
+
+            if (!response.ok) throw new Error("Failed to fetch linked data");
+
+            const result = await response.json();
+            return result.data;
+        } catch (error) {
+            console.error("Error fetching linked data:", error);
+            return null;
+        }
+    };
+
+    const handleLookupLinkedData = async (field) => {
+        if (!formData.keyFieldMappings || !formData.keyFieldMappings.length) {
+            alert("No key field mappings configured for this form");
+            return;
+        }
+
+        // Get current form values for key fields
+        const keyValues = {};
+        let hasAllKeyValues = true;
+
+        formData.keyFieldMappings.forEach(mapping => {
+            const currentValue = formValues[mapping.currentFormField];
+            if (!currentValue) {
+                hasAllKeyValues = false;
+                return;
+            }
+            keyValues[mapping.currentFormField] = currentValue;
+        });
+
+        if (!hasAllKeyValues) {
+            alert("Please fill in all key fields before looking up linked data");
+            return;
+        }
+
+        // Fetch linked data
+        const linkedSubmissions = await fetchLinkedData(formData.keyFieldMappings);
+        if (!linkedSubmissions || !linkedSubmissions.length) {
+            alert("No matching linked data found");
+            return;
+        }
+
+        // Find matching submission based on key mappings
+        const matchingSubmission = findMatchingSubmission(linkedSubmissions, keyValues, formData.keyFieldMappings);
+
+        if (matchingSubmission) {
+            // Extract the specific field value
+            const linkedFieldValue = extractLinkedFieldValue(matchingSubmission, field.linkedFieldId);
+
+            setFormValues(prev => ({
+                ...prev,
+                [field.id]: linkedFieldValue || ""
+            }));
+
+            alert("Linked data loaded successfully!");
+        } else {
+            alert("No matching record found in linked form");
+        }
+    };
+
+    const findMatchingSubmission = (submissions, keyValues, keyMappings) => {
+        return submissions.find(submission => {
+            return keyMappings.every(mapping => {
+                const currentValue = keyValues[mapping.currentFormField];
+                const linkedField = mapping.linkedFormField;
+
+                // Handle grid column references
+                if (linkedField.includes('.')) {
+                    const [gridFieldId, columnId] = linkedField.split('.');
+                    const gridData = submission.submissionData.find(sd => sd.fieldLabel === gridFieldId);
+                    if (gridData) {
+                        try {
+                            const gridRows = JSON.parse(gridData.fieldValue);
+                            const columnName = getColumnNameById(columnId); // You'll need to implement this
+                            return gridRows.some(row => row[columnName] === currentValue);
+                        } catch (e) {
+                            return false;
+                        }
+                    }
+                    return false;
+                } else {
+                    // Regular field
+                    const linkedData = submission.submissionData.find(sd => sd.fieldLabel === linkedField);
+                    return linkedData && linkedData.fieldValue === currentValue;
+                }
+            });
+        });
+    };
+
+    // Helper function to extract linked field value
+    const extractLinkedFieldValue = (submission, linkedFieldId) => {
+        if (!linkedFieldId) return "";
+
+        // Handle grid column references
+        if (linkedFieldId.includes('.')) {
+            const [gridFieldId, columnId] = linkedFieldId.split('.');
+            const gridData = submission.submissionData.find(sd => sd.fieldLabel === gridFieldId);
+            if (gridData) {
+                try {
+                    const gridRows = JSON.parse(gridData.fieldValue);
+                    const columnName = getColumnNameById(columnId);
+                    // Return the first matching row's value or combine multiple rows
+                    const values = gridRows.map(row => row[columnName]).filter(Boolean);
+                    return values.join(', ');
+                } catch (e) {
+                    return "";
+                }
+            }
+            return "";
+        } else {
+            // Regular field
+            const linkedData = submission.submissionData.find(sd => sd.fieldLabel === linkedFieldId);
+            return linkedData ? linkedData.fieldValue : "";
+        }
+    };
+
+    // Helper function to get column name by ID (you'll need to implement this based on your form structure)
+    const getColumnNameById = (columnId) => {
+        // This should look up the column name from the linked form's field definition
+        // For now, return the columnId as fallback
+        return columnId;
+    };
 
     // Render different field types
     const renderField = (field) => {
@@ -886,7 +1057,6 @@ export default function DynamicForm() {
                     </div>
                 );
 
-
             case "date":
                 return (
                     <div className="mb-4 w-full">
@@ -921,10 +1091,6 @@ export default function DynamicForm() {
                         )}
                     </div>
                 );
-
-
-
-
 
             case "radio":
                 return (
@@ -1245,7 +1411,46 @@ export default function DynamicForm() {
                     </div>
                 );
 
+            case "linkedTextbox":
+                return (
+                    <div className="mb-4 w-full">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">
+                            {field.label}{" "}
+                            {field.required && <span className="text-red-500">*</span>}
+                        </label>
 
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                className="shadow appearance-none border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-50"
+                                value={formValues[field.id] || ""}
+                                readOnly={!field.allowManualEntry}
+                                onChange={(e) => {
+                                    if (field.allowManualEntry) {
+                                        handleInputChange(field.id, e.target.value, field.type, field);
+                                    }
+                                }}
+                                placeholder={`Linked data from ${formData.linkedForm?.name || 'linked form'}`}
+                            />
+
+                            {field.showLookupButton && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleLookupLinkedData(field)}
+                                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+                                >
+                                    Lookup
+                                </button>
+                            )}
+                        </div>
+
+                        {formErrors[field.id] && (
+                            <p className="text-red-500 text-xs mt-1">
+                                {formErrors[field.id]}
+                            </p>
+                        )}
+                    </div>
+                );
 
 
             default:

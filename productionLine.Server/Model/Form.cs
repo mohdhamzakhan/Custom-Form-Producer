@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace productionLine.Server.Model
@@ -32,6 +33,17 @@ namespace productionLine.Server.Model
         [JsonPropertyName("approvers")] // 👈 Important for JSON
         public List<FormApprover> Approvers { get; set; } = new List<FormApprover>(); // 👈 Important
 
+        [Column("LINKED_FORM_ID")]
+        public int? LinkedFormId { get; set; }
 
+        [Column("KEY_FIELD_MAPPINGS", TypeName = "CLOB")]
+        public string? KeyFieldMappingsJson { get; set; }
+
+        [NotMapped]
+        public List<KeyFieldMapping>? KeyFieldMappings
+        {
+            get => string.IsNullOrEmpty(KeyFieldMappingsJson) ? null : JsonSerializer.Deserialize<List<KeyFieldMapping>>(KeyFieldMappingsJson);
+            set => KeyFieldMappingsJson = JsonSerializer.Serialize(value);
+        }
     }
 }

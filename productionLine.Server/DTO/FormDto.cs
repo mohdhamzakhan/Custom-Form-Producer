@@ -1,12 +1,16 @@
-﻿namespace productionLine.Server.DTO
+﻿using productionLine.Server.Model;
+
+namespace productionLine.Server.DTO
 {
     public class FormDto
     {
         public int Id { get; set; }
         public string FormLink { get; set; }
         public string Name { get; set; }
+        public int? LinkedFormId { get; set; }
+        public List<KeyFieldMapping>? KeyFieldMappings { get; set; }
         public List<FieldDto> Fields { get; set; } = new();
-        public List<ApproverDto> Approvers { get; set; } // 👈 Add this
+        public List<ApproverDto> Approvers { get; set; }
     }
 
     public class ApproverDto
