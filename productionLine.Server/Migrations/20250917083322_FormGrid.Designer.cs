@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250917083322_FormGrid")]
+    partial class FormGrid
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -205,6 +208,7 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("LABEL");
 
                     b.Property<string>("LinkedColumnId")
+                        .IsRequired()
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("LINKED_COLUMN_ID");
 
@@ -213,6 +217,7 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("LINKED_FIELD_ID");
 
                     b.Property<string>("LinkedFieldType")
+                        .IsRequired()
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("LINKED_FIELD_TYPE");
 

@@ -402,7 +402,13 @@ const FormBuilder = () => {
                     linkedFormField: keyField.linkedFormField,
                     // Parse grid column references
                     currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
-                    linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
+                    linkedFieldId: keyField.linkedFieldId || null,
+                    linkedFieldType: keyField.linkedFieldType || "field",
+                    linkedGridFieldId: keyField.linkedGridFieldId || null,
+                    linkedColumnId: keyField.linkedColumnId || null,
+                    linkedFieldReference: keyField.linkedFieldType === "gridColumn" && keyField.linkedGridFieldId && keyField.linkedColumnId
+                        ? `${keyField.linkedGridFieldId}.${keyField.linkedColumnId}`
+                        : keyField.linkedFieldId || "",
                     // Extract parent field ID and column ID for grid columns
                     currentParentFieldId: keyField.currentFormField?.includes('.')
                         ? keyField.currentFormField.split('.')[0]
@@ -516,9 +522,11 @@ const FormBuilder = () => {
                 keyFields: keyFields.map(keyField => ({
                     currentFormField: keyField.currentFormField,
                     linkedFormField: keyField.linkedFormField,
+
                     // Parse grid column references
                     currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
                     linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
+
                     // Extract parent field ID and column ID for grid columns
                     currentParentFieldId: keyField.currentFormField?.includes('.')
                         ? keyField.currentFormField.split('.')[0]
@@ -533,6 +541,7 @@ const FormBuilder = () => {
                         ? keyField.linkedFormField.split('.')[1]
                         : null,
                 })),
+
                 approvers: approvers.map((a) => ({
                     adObjectId: a.name,
                     name: a.name,
@@ -584,8 +593,48 @@ const FormBuilder = () => {
 
                     // Handle grid type
                     if (field.type === "grid" && field.columns) {
-                        fieldObj.columns = field.columns;
-                        fieldObj.columnsJson = JSON.stringify(field.columns);
+                        // Process each column for special types like linkedTextbox
+                        const processedColumns = field.columns.map(column => {
+                            const processedColumn = { ...column };
+
+                            // Handle linkedTextbox columns within grids
+                            if (column.type === "linkedTextbox") {
+                                processedColumn.linkedFormId = column.linkedFormId || (linkedForm?.id || null);
+                                processedColumn.linkedFieldId = column.linkedFieldId;
+                                processedColumn.displayMode = column.displayMode || "readonly";
+                                processedColumn.displayFormat = column.displayFormat || "{value}";
+                                processedColumn.allowManualEntry = column.allowManualEntry || false;
+                                processedColumn.showLookupButton = column.showLookupButton !== false;
+
+                                // Process key field mappings for grid column
+                                processedColumn.keyFieldMappings = (column.keyFieldMappings || []).map(mapping => ({
+                                    currentField: mapping.currentField,
+                                    linkedField: mapping.linkedField,
+                                    currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
+                                    linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
+                                    currentParentFieldId: mapping.currentField?.includes('.')
+                                        ? mapping.currentField.split('.')[0]
+                                        : null,
+                                    currentColumnId: mapping.currentField?.includes('.')
+                                        ? mapping.currentField.split('.')[1]
+                                        : null,
+                                    linkedParentFieldId: mapping.linkedField?.includes('.')
+                                        ? mapping.linkedField.split('.')[0]
+                                        : null,
+                                    linkedColumnId: mapping.linkedField?.includes('.')
+                                        ? mapping.linkedField.split('.')[1]
+                                        : null,
+                                }));
+
+                                // Store as JSON for database
+                                processedColumn.keyFieldMappingsJson = JSON.stringify(processedColumn.keyFieldMappings);
+                            }
+
+                            return processedColumn;
+                        });
+
+                        fieldObj.columns = processedColumns;
+                        fieldObj.columnsJson = JSON.stringify(processedColumns);
                     }
 
                     // Handle calculation type
@@ -694,13 +743,15 @@ const FormBuilder = () => {
             options: [],
             requiresRemarks: [],
             ...(type === "linkedTextbox" && {
-                linkedFormId: linkedForm?.id || null,
-                linkedFieldId: null, // This will be set when user selects a field
+                linkedFieldId: null,
+                linkedFieldType: "field",
+                linkedGridFieldId: null,
+                linkedColumnId: null,
+                linkedFieldReference: "",
                 displayMode: "readonly",
                 displayFormat: "{value}",
                 allowManualEntry: false,
                 showLookupButton: true,
-                keyFieldMappingsJson: "[]"
             }),
             ...(type === "numeric" && {
                 min: 0,
@@ -1293,6 +1344,7 @@ const FormBuilder = () => {
                                                         </optgroup>
                                                     </select>
 
+
                                                     <button
                                                         onClick={() => {
                                                             const updated = keyFields.filter((_, i) => i !== index);
@@ -1812,54 +1864,88 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         <div>
                             <label className="block text-sm font-medium mb-1">Select Field from {linkedForm?.name || 'Linked Form'}</label>
                             <select
-                                value={field.linkedFieldId || ""}
-                                onChange={(e) => updateField({ linkedFieldId: e.target.value })}
+                                // Fix 1: Use linkedFieldReference instead of linkedFieldId for binding
+                                value={field.linkedFieldReference || field.linkedFieldId || ""}
+                                onChange={(e) => {
+                                    const selectedValue = e.target.value;
+                                    if (selectedValue.includes('.')) {
+                                        // Grid column reference
+                                        const [gridFieldId, columnId] = selectedValue.split('.');
+                                        updateField({
+                                            linkedFieldId: null,
+                                            linkedFieldType: "gridColumn",
+                                            linkedGridFieldId: gridFieldId,
+                                            linkedColumnId: columnId,
+                                            linkedFieldReference: selectedValue
+                                        });
+                                    } else {
+                                        // Regular field
+                                        updateField({
+                                            linkedFieldId: selectedValue,
+                                            linkedFieldType: "field",
+                                            linkedGridFieldId: null,
+                                            linkedColumnId: null,
+                                            linkedFieldReference: selectedValue
+                                        });
+                                    }
+                                }}
                                 className="w-full px-2 py-1 border rounded"
                             >
                                 <option value="">Select a field...</option>
-                                {linkedFormFields
-                                    .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
-                                    .map(linkedField => (
-                                        <option key={linkedField.id} value={linkedField.id}>
-                                            {linkedField.label} ({linkedField.type})
-                                        </option>
-                                    ))}
-                                {/* Grid column fields */}
-                                {linkedFormFields
-                                    .filter(f => f.type === "grid")
-                                    .map(gridField =>
-                                        (gridField.columns || [])
-                                            .filter(col => ["textbox", "numeric", "dropdown"].includes(col.type))
-                                            .map(column => (
-                                                <option key={`${gridField.id}.${column.id}`} value={`${gridField.id}.${column.id}`}>
-                                                    {gridField.label} → {column.name}
-                                                </option>
-                                            ))
-                                    )}
+
+                                {/* Regular fields */}
+                                <optgroup label="Regular Fields">
+                                    {linkedFormFields
+                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
+                                        .map(field => (
+                                            <option key={field.id} value={field.id}>
+                                                {field.label} ({field.type})
+                                            </option>
+                                        ))}
+                                </optgroup>
+
+                                {/* Grid column fields - Fix 2: Flatten the nested mapping */}
+                                <optgroup label="Grid Columns">
+                                    {linkedFormFields
+                                        .filter(f => f.type === "grid")
+                                        .flatMap(gridField =>
+                                            (gridField.columns || [])
+                                                .filter(col => ["textbox", "numeric", "dropdown"].includes(col.type))
+                                                .map(column => (
+                                                    <option key={`${gridField.id}.${column.id}`} value={`${gridField.id}.${column.id}`}>
+                                                        {gridField.label} → {column.name}
+                                                    </option>
+                                                ))
+                                        )}
+                                </optgroup>
                             </select>
                         </div>
 
-                        {field.linkedFieldId && (
+                        {/* Fix 3: Update condition to check for any linked field */}
+                        {(field.linkedFieldId || field.linkedFieldReference) && (
                             <div className="p-3 bg-blue-50 rounded border">
                                 <h4 className="text-sm font-semibold mb-2">Configuration</h4>
                                 <p className="text-xs text-gray-600">
                                     This field will pull data from "
-                                    {linkedFormFields.find(f => f.id === field.linkedFieldId)?.label ||
-                                        linkedFormFields
-                                            .filter(f => f.type === "grid")
-                                            .flatMap(gf => (gf.columns || []).map(col => ({
-                                                id: `${gf.id}.${col.id}`,
-                                                label: `${gf.label} → ${col.name}`
-                                            })))
-                                            .find(col => col.id === field.linkedFieldId)?.label
-                                    }"
-                                    in the linked form "{linkedForm?.name}" based on the key field mappings configured above.
+                                    {(() => {
+                                        // Handle both regular fields and grid columns
+                                        if (field.linkedFieldType === "gridColumn") {
+                                            const gridField = linkedFormFields.find(f => f.id === field.linkedGridFieldId);
+                                            const column = gridField?.columns?.find(c => c.id === field.linkedColumnId);
+                                            return `${gridField?.label || 'Unknown Grid'} → ${column?.name || 'Unknown Column'}`;
+                                        } else {
+                                            const regularField = linkedFormFields.find(f => f.id === field.linkedFieldId);
+                                            return regularField?.label || 'Unknown Field';
+                                        }
+                                    })()}
+                                    " in the linked form "{linkedForm?.name}" based on the key field mappings configured above.
                                 </p>
                             </div>
                         )}
                     </div>
                 </div>
             )}
+
             {field.type === "calculation" && (
                 <div className="mb-4">
                     <label className="block text-sm font-medium mb-1">Formula</label>

@@ -129,6 +129,15 @@ namespace productionLine.Server.Model
         [Column("LINKED_FIELD_ID")]
         public Guid? LinkedFieldId { get; set; }
 
+        [Column("LINKED_FIELD_TYPE")]
+        public string? LinkedFieldType { get; set; } // "field" or "gridColumn"
+
+        [Column("LINKED_GRID_FIELD_ID")]
+        public Guid? LinkedGridFieldId { get; set; } // Parent grid field ID
+
+        [Column("LINKED_COLUMN_ID")]
+        public string? LinkedColumnId { get; set; } // Column ID within grid
+
         [Column("KEY_FIELD_MAPPINGS", TypeName = "CLOB")]
         public string? KeyFieldMappingsJson { get; set; }
 
