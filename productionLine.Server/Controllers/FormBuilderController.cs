@@ -68,6 +68,7 @@ namespace productionLine.Server.Controllers
                 existingForm.LinkedFormId = form.LinkedFormId;
                 existingForm.KeyFieldMappings = form.KeyFieldMappings;
 
+                // In the update existing form section, replace this part:
                 foreach (FormField field in form.Fields)
                 {
                     if (field.Id == Guid.Empty)
@@ -89,11 +90,70 @@ namespace productionLine.Server.Controllers
                             trigger.FormField = field;
                         }
                     }
+
+                    // EXPAND this linkedTextbox section:
                     if (field.Type == "linkedTextbox")
                     {
+                        // Set all the linked textbox properties, not just a few
                         field.LinkedFormId = field.LinkedFormId;
                         field.LinkedFieldId = field.LinkedFieldId;
+                        field.LinkedFieldType = field.LinkedFieldType;
+                        field.LinkedGridFieldId = field.LinkedGridFieldId;
+                        field.LinkedColumnId = field.LinkedColumnId;
+                        field.DisplayMode = field.DisplayMode ?? "readonly";
+                        field.DisplayFormat = field.DisplayFormat ?? "{value}";
+                        field.AllowManualEntry = field.AllowManualEntry ?? false;
+                        field.ShowLookupButton = field.ShowLookupButton ?? true;
                         field.KeyFieldMappings = field.KeyFieldMappings;
+
+                        // Ensure FormId is set
+                        field.FormId = existingForm.Id;
+                    }
+
+                    // Also ensure FormId is set for all fields
+                    field.FormId = existingForm.Id;
+                }
+
+                // Also update the new form creation section:
+                foreach (FormField field2 in form.Fields)
+                {
+                    if (field2.Id == Guid.Empty)
+                        field2.Id = Guid.NewGuid();
+
+                    field2.Form = form;
+                    field2.FormId = form.Id; // Ensure FormId is set
+
+                    if (field2.Columns != null)
+                    {
+                        foreach (GridColumn col2 in field2.Columns)
+                        {
+                            if (string.IsNullOrWhiteSpace(col2.Id))
+                                col2.Id = Guid.NewGuid().ToString();
+                        }
+                    }
+
+                    if (field2.RemarkTriggers != null)
+                    {
+                        foreach (RemarkTrigger trigger2 in field2.RemarkTriggers)
+                        {
+                            trigger2.FormFieldId = field2.Id;
+                            trigger2.FormField = null;
+                        }
+                    }
+
+                    // ADD this section for new forms too:
+                    if (field2.Type == "linkedTextbox")
+                    {
+                        field2.LinkedFormId = field2.LinkedFormId;
+                        field2.LinkedFieldId = field2.LinkedFieldId;
+                        field2.LinkedFieldType = field2.LinkedFieldType;
+                        field2.LinkedGridFieldId = field2.LinkedGridFieldId;
+                        field2.LinkedColumnId = field2.LinkedColumnId;
+                        field2.DisplayMode = field2.DisplayMode ?? "readonly";
+                        field2.DisplayFormat = field2.DisplayFormat ?? "{value}";
+                        field2.AllowManualEntry = field2.AllowManualEntry ?? false;
+                        field2.ShowLookupButton = field2.ShowLookupButton ?? true;
+                        field2.KeyFieldMappings = field2.KeyFieldMappings;
                     }
                 }
 
@@ -190,10 +250,21 @@ namespace productionLine.Server.Controllers
                     RequireRemarks = f.RequiresRemarks,
                     IsDecimal = f.Decimal,
                     Max = f.Max,
-                    // Remove these from field level:
+                    Min = f.Min,
+
+                    // Add these missing linked textbox properties:
                     LinkedFormId = f.LinkedFormId,
                     LinkedFieldId = f.LinkedFieldId,
+                    LinkedFieldType = f.LinkedFieldType,           // Missing
+                    LinkedGridFieldId = f.LinkedGridFieldId,       // Missing
+                    LinkedColumnId = f.LinkedColumnId,             // Missing
+                    DisplayMode = f.DisplayMode,                   // Missing
+                    DisplayFormat = f.DisplayFormat,               // Missing
+                    AllowManualEntry = f.AllowManualEntry,         // Missing
+                    ShowLookupButton = f.ShowLookupButton,         // Missing
+                    KeyFieldMappingsJson = f.KeyFieldMappingsJson, // Missing - use JSON version
                     KeyFieldMappings = f.KeyFieldMappings,
+
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
@@ -201,6 +272,7 @@ namespace productionLine.Server.Controllers
                         Value = rt.Value,
                         FormFieldId = rt.FormFieldId
                     }).ToList() ?? new List<RemarkTriggerDto>()),
+
                     Column = (f.Columns?.Select((GridColumn ct) => new GridColumnDto
                     {
                         Formula = ct.Formula,
@@ -219,8 +291,22 @@ namespace productionLine.Server.Controllers
                         StartTime = ct.StartTime,
                         EndTime = ct.EndTime,
                         Required = ct.Required,
-                        RemarksOptions = ct.RemarksOptions
+                        RemarksOptions = ct.RemarksOptions,
+
+                        // Add linked textbox properties for grid columns too:
+                        LinkedFormId = ct.LinkedFormId,
+                        LinkedFieldId = ct.LinkedFieldId,
+                        LinkedFieldType = ct.LinkedFieldType,
+                        LinkedGridFieldId = ct.LinkedGridFieldId,
+                        LinkedColumnId = ct.LinkedColumnId,
+                        DisplayMode = ct.DisplayMode,
+                        DisplayFormat = ct.DisplayFormat,
+                        AllowManualEntry = ct.AllowManualEntry,
+                        ShowLookupButton = ct.ShowLookupButton,
+                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson
+
                     }).ToList() ?? new List<GridColumnDto>()),
+
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,
                     MaxRows = f.MaxRows,

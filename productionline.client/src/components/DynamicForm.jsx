@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useRef } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useParams } from "react-router-dom";
@@ -18,7 +18,6 @@ export default function DynamicForm() {
     const [fontSize, setFontSize] = useState(16); // default 16px
 
     const { formId } = useParams();
-
 
     useEffect(() => {
         // In a real application, this would be an actual API call
@@ -116,48 +115,231 @@ export default function DynamicForm() {
             setFormValues(updatedValues);
         }
     }, [formData]);
-    // Add this useEffect to handle automatic linked data loading
+
     useEffect(() => {
         const loadLinkedDataAutomatically = async () => {
-            if (!formData?.keyFieldMappings?.length) return;
+            console.log('🚀 loadLinkedDataAutomatically called');
 
-            // Check if all key fields have values
-            const keyValues = {};
-            let hasAllKeyValues = true;
+            if (!formData?.linkedFormId || !formData?.keyFieldMappings?.length) {
+                return;
+            }
 
-            formData.keyFieldMappings.forEach(mapping => {
-                const currentValue = formValues[mapping.currentFormField];
-                if (!currentValue) {
-                    hasAllKeyValues = false;
+            try {
+                // Extract key values
+                const keyValues = {};
+                let hasAllKeyValues = true;
+
+                formData.keyFieldMappings.forEach(mapping => {
+                    const value = formValues[mapping.currentFormField];
+                    if (!value || value === '') {
+                        hasAllKeyValues = false;
+                    }
+                    keyValues[mapping.currentFormField] = value;
+                });
+
+                if (!hasAllKeyValues) {
+                    console.log('🧹 Not all key fields filled, clearing linked fields');
+                    clearLinkedTextboxFields();
                     return;
                 }
-                keyValues[mapping.currentFormField] = currentValue;
-            });
 
-            if (hasAllKeyValues) {
+                // Fetch linked data
                 const linkedSubmissions = await fetchLinkedData(formData.keyFieldMappings);
-                if (linkedSubmissions) {
-                    const matchingSubmission = findMatchingSubmission(linkedSubmissions, keyValues, formData.keyFieldMappings);
 
-                    if (matchingSubmission) {
-                        // Auto-populate all linked fields
-                        const updatedValues = { ...formValues };
+                // ✅ FIX: Correct data structure validation
+                console.log('Complete API Response:', linkedSubmissions);
 
-                        formData.fields.forEach(field => {
-                            if (field.type === "linkedTextbox" && field.linkedFieldId) {
-                                const linkedValue = extractLinkedFieldValue(matchingSubmission, field.linkedFieldId);
-                                updatedValues[field.id] = linkedValue || "";
-                            }
-                        });
-
-                        setFormValues(updatedValues);
-                    }
+                // Check if we have the response object and it has data property
+                if (!linkedSubmissions || typeof linkedSubmissions !== 'object') {
+                    console.log('🧹 No response object, clearing fields');
+                    clearLinkedTextboxFields();
+                    return;
                 }
+
+                // Access the data array correctly
+                const dataArray = linkedSubmissions.data;
+                console.log('Data array:', dataArray);
+
+                if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) {
+                    console.log('🧹 No data array or empty array, clearing fields');
+                    console.log('Data validation details:', {
+                        hasDataProperty: !!dataArray,
+                        isArray: Array.isArray(dataArray),
+                        length: dataArray?.length
+                    });
+                    clearLinkedTextboxFields();
+                    return;
+                }
+
+                console.log(`✅ Found ${dataArray.length} linked records`);
+
+                // Find matching submission using the correct data array
+                const config = {
+                    gridColumnMappings: linkedSubmissions.gridColumnMappings,
+                    fallbackMappings: {},
+                    searchFormats: [],
+                    enableLogging: true
+                };
+
+                const matchingSubmission = findMatchingSubmission(
+                    dataArray, // ← Use dataArray, not linkedSubmissions.data
+                    keyValues,
+                    formData.keyFieldMappings,
+                    config
+                );
+
+                if (matchingSubmission) {
+                    console.log('✅ Found matching submission, populating fields');
+
+                    setFormValues(prevValues => {
+                        const updatedValues = { ...prevValues };
+                        let hasUpdates = false;
+
+                        formData.fields
+                            .filter(field => field.type === 'linkedTextbox')
+                            .forEach(field => {
+                                let linkedFieldRef;
+                                if (field.linkedFieldType === 'gridColumn' && field.linkedGridFieldId && field.linkedColumnId) {
+                                    linkedFieldRef = `${field.linkedGridFieldId}.${field.linkedColumnId}`;
+                                } else if (field.linkedFieldId) {
+                                    linkedFieldRef = field.linkedFieldId;
+                                }
+
+                                if (linkedFieldRef) {
+                                    const linkedValue = extractLinkedFieldValue(matchingSubmission, linkedFieldRef, {
+                                        gridColumnMappings: linkedSubmissions.gridColumnMappings,
+                                        fallbackMappings: {},
+                                        searchFormats: [],
+                                        enableLogging: true
+                                    });
+
+                                    console.log(`Setting field ${field.id} to: "${linkedValue}"`);
+
+                                    if (linkedValue && linkedValue !== updatedValues[field.id]) {
+                                        updatedValues[field.id] = linkedValue;
+                                        hasUpdates = true;
+                                    }
+                                }
+                            });
+
+                        console.log('Has updates to apply:', hasUpdates);
+                        return updatedValues;
+                    });
+                } else {
+                    console.log('🧹 No matching record found, clearing fields');
+                    clearLinkedTextboxFields();
+                }
+            } catch (error) {
+                console.error('❌ Error in loadLinkedDataAutomatically:', error);
+                clearLinkedTextboxFields();
             }
         };
 
         loadLinkedDataAutomatically();
-    }, [formValues, formData]); // Trigger when form values change
+    }, [formValues, formData]);
+
+    const clearLinkedTextboxFields = () => {
+        console.log('🧹 Attempting to clear linked textbox fields');
+
+        setFormValues(prevValues => {
+            const updatedValues = { ...prevValues };
+            let hasChanges = false;
+
+            formData?.fields
+                ?.filter(field => field.type === 'linkedTextbox')
+                ?.forEach(field => {
+                    const currentValue = updatedValues[field.id];
+                    if (currentValue && currentValue !== '') {
+                        console.log(`Clearing field ${field.id} (was: "${currentValue}")`);
+                        updatedValues[field.id] = '';
+                        hasChanges = true;
+                    }
+                });
+
+            if (hasChanges) {
+                console.log('✅ Cleared linked textbox fields');
+                return updatedValues;
+            } else {
+                console.log('ℹ️ No linked textbox fields to clear');
+                return prevValues; // Return original values to prevent unnecessary re-render
+            }
+        });
+    };
+
+    const isBridgeField = (fieldId) => {
+        return formData?.keyFieldMappings?.some(
+            mapping => mapping.currentFormField === fieldId
+        );
+    };
+
+    const handleBridgeFieldBlur = (fieldId) => {
+        // Only proceed if this is actually a bridge field
+        if (!isBridgeField(fieldId)) {
+            return;
+        }
+
+        console.log(`Bridge field ${fieldId} blurred, checking for auto-load`);
+
+        setTimeout(() => {
+            // Check if all key fields have values
+            const hasAllKeyValues = formData.keyFieldMappings.every(mapping => {
+                const value = formValues[mapping.currentFormField];
+                return value && value !== '';
+            });
+
+            if (hasAllKeyValues) {
+                loadLinkedDataAutomatically();
+            } else {
+                clearLinkedTextboxFields();
+            }
+        }, 100);
+    };
+
+
+
+    // Generic function to check if key fields have changed
+    const checkKeyFieldsChanged = (newFormValues, oldFormValues, keyFieldMappings) => {
+        if (!keyFieldMappings?.length) return false;
+
+        return keyFieldMappings.some(mapping => {
+            const oldValue = oldFormValues[mapping.currentFormField];
+            const newValue = newFormValues[mapping.currentFormField];
+            return oldValue !== newValue;
+        });
+    };
+
+    // Enhanced handleInputChange to trigger auto-load
+    const NewhandleInputChange = (fieldId, value, fieldType, field) => {
+        const updatedValues = { ...formValues, [fieldId]: value };
+        setFormValues(updatedValues);
+
+        // Check if this field is a key field and trigger auto-load
+        if (formData?.keyFieldMappings?.some(mapping => mapping.currentFormField === fieldId)) {
+            // Debounce the auto-load to avoid excessive API calls
+            if (autoLoadTimeoutRef.current) {
+                clearTimeout(autoLoadTimeoutRef.current);
+            }
+
+            autoLoadTimeoutRef.current = setTimeout(() => {
+                loadLinkedDataAutomatically();
+            }, 500); // 500ms delay
+        }
+
+        // Handle validation and other logic
+        handleValidation(fieldId, value, field);
+    };
+
+    // Add this to your component
+    const autoLoadTimeoutRef = useRef(null);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (autoLoadTimeoutRef.current) {
+                clearTimeout(autoLoadTimeoutRef.current);
+            }
+        };
+    }, []);
 
 
     // Update handleGridChange to clear dependent values
@@ -699,134 +881,348 @@ export default function DynamicForm() {
     };
 
     const fetchLinkedData = async (keyMappings) => {
-        if (!formData.linkedFormId || !keyMappings.length) return null;
+        console.log("=== FETCH LINKED DATA DEBUG ===");
+        console.log("LinkedFormId:", formData.linkedFormId);
+        console.log("KeyMappings being sent:", keyMappings);
+
+        if (!formData.linkedFormId || !keyMappings.length) {
+            console.log("Missing linkedFormId or keyMappings");
+            return null;
+        }
 
         try {
-            const response = await fetch(
-                `${APP_CONSTANTS.API_BASE_URL}/api/forms/linked-data/${formData.linkedFormId}?keyMappings=${encodeURIComponent(JSON.stringify(keyMappings))}`
-            );
+            const url = `${APP_CONSTANTS.API_BASE_URL}/api/forms/linked-data/${formData.linkedFormId}?keyMappings=${encodeURIComponent(JSON.stringify(keyMappings))}`;
+            console.log("API URL:", url);
 
-            if (!response.ok) throw new Error("Failed to fetch linked data");
+            const response = await fetch(url);
+            console.log("Response status:", response.status);
+            console.log("Response ok:", response.ok);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("API Error:", errorText);
+                throw new Error(`API returned ${response.status}: ${errorText}`);
+            }
 
             const result = await response.json();
-            return result.data;
+            console.log("API Response:", result);
+
+            return result.data || result; // Handle different response formats
         } catch (error) {
             console.error("Error fetching linked data:", error);
             return null;
         }
     };
 
+    // Replace the existing handleLookupLinkedData function:
+    // Usage in your component
     const handleLookupLinkedData = async (field) => {
-        if (!formData.keyFieldMappings || !formData.keyFieldMappings.length) {
-            alert("No key field mappings configured for this form");
-            return;
-        }
-
-        // Get current form values for key fields
-        const keyValues = {};
-        let hasAllKeyValues = true;
-
-        formData.keyFieldMappings.forEach(mapping => {
-            const currentValue = formValues[mapping.currentFormField];
-            if (!currentValue) {
-                hasAllKeyValues = false;
-                return;
-            }
-            keyValues[mapping.currentFormField] = currentValue;
+        const linkedValue = await handleLinkedData(field, formData, formValues, {
+            // No hardcoded values - all configurable
+            gridColumnMappings: null, // Will use API response
+            fallbackMappings: {}, // Can be passed from config
+            searchFormats: [], // Can be passed from config
+            enableLogging: true,
+            onSuccess: (value) => {
+                setFormValues(prev => ({ ...prev, [field.id]: value }));
+                alert('Linked data loaded successfully!');
+            },
+            onError: (message) => alert(message)
         });
+    };
 
-        if (!hasAllKeyValues) {
-            alert("Please fill in all key fields before looking up linked data");
-            return;
-        }
+    // Auto-load linked data
+    const loadLinkedDataAutomatically = async () => {
+        const fieldsWithLinkedData = formData.fields.filter(f => f.type === 'linkedTextbox');
 
-        // Fetch linked data
-        const linkedSubmissions = await fetchLinkedData(formData.keyFieldMappings);
-        if (!linkedSubmissions || !linkedSubmissions.length) {
-            alert("No matching linked data found");
-            return;
-        }
-
-        // Find matching submission based on key mappings
-        const matchingSubmission = findMatchingSubmission(linkedSubmissions, keyValues, formData.keyFieldMappings);
-
-        if (matchingSubmission) {
-            // Extract the specific field value
-            const linkedFieldValue = extractLinkedFieldValue(matchingSubmission, field.linkedFieldId);
-
-            setFormValues(prev => ({
-                ...prev,
-                [field.id]: linkedFieldValue || ""
-            }));
-
-            alert("Linked data loaded successfully!");
-        } else {
-            alert("No matching record found in linked form");
+        for (const field of fieldsWithLinkedData) {
+            await handleLinkedData(field, formData, formValues, {
+                enableLogging: false,
+                onSuccess: (value) => {
+                    setFormValues(prev => ({ ...prev, [field.id]: value }));
+                },
+                onError: (message) => console.warn('Auto-load failed:', message)
+            });
         }
     };
 
-    const findMatchingSubmission = (submissions, keyValues, keyMappings) => {
+
+    const findMatchingSubmission = (submissions, keyValues, keyMappings, config = {}) => {
+        const {
+            gridColumnMappings = null,
+            fallbackMappings = {},
+            searchFormats = [],
+            enableLogging = false,
+            strictMatch = false
+        } = config;
+
+        if (enableLogging) {
+            console.log('Finding matching submission with:', { keyValues, keyMappings });
+        }
+
         return submissions.find(submission => {
             return keyMappings.every(mapping => {
                 const currentValue = keyValues[mapping.currentFormField];
                 const linkedField = mapping.linkedFormField;
 
+                if (enableLogging) {
+                    console.log(`Checking mapping: ${mapping.currentFormField} -> ${linkedField}`);
+                    console.log(`Current value: "${currentValue}"`);
+                }
+
                 // Handle grid column references
                 if (linkedField.includes('.')) {
                     const [gridFieldId, columnId] = linkedField.split('.');
-                    const gridData = submission.submissionData.find(sd => sd.fieldLabel === gridFieldId);
-                    if (gridData) {
-                        try {
-                            const gridRows = JSON.parse(gridData.fieldValue);
-                            const columnName = getColumnNameById(columnId); // You'll need to implement this
-                            return gridRows.some(row => row[columnName] === currentValue);
-                        } catch (e) {
-                            return false;
+
+                    const gridData = findFieldInSubmission(submission, gridFieldId, searchFormats);
+                    if (!gridData) return false;
+
+                    try {
+                        const gridRows = JSON.parse(gridData.fieldValue);
+                        const columnName = getColumnNameById(columnId, gridFieldId, gridColumnMappings, fallbackMappings);
+
+                        const hasMatch = gridRows.some(row => {
+                            const rowValue = row[columnName];
+                            return strictMatch
+                                ? String(rowValue) === String(currentValue)
+                                : normalizeValue(rowValue) === normalizeValue(currentValue);
+                        });
+
+                        if (enableLogging) {
+                            console.log(`Grid column "${columnName}" match result: ${hasMatch}`);
                         }
+
+                        return hasMatch;
+                    } catch (e) {
+                        if (enableLogging) console.error('Grid parsing error:', e);
+                        return false;
                     }
-                    return false;
                 } else {
                     // Regular field
-                    const linkedData = submission.submissionData.find(sd => sd.fieldLabel === linkedField);
-                    return linkedData && linkedData.fieldValue === currentValue;
+                    const fieldData = findFieldInSubmission(submission, linkedField, searchFormats);
+                    const linkedValue = fieldData ? fieldData.fieldValue : null;
+
+                    const isMatch = strictMatch
+                        ? String(linkedValue) === String(currentValue)
+                        : normalizeValue(linkedValue) === normalizeValue(currentValue);
+
+                    if (enableLogging) {
+                        console.log(`Field "${linkedField}" value: "${linkedValue}", match: ${isMatch}`);
+                    }
+
+                    return isMatch;
                 }
             });
         });
     };
 
-    // Helper function to extract linked field value
-    const extractLinkedFieldValue = (submission, linkedFieldId) => {
-        if (!linkedFieldId) return "";
+
+    const extractLinkedFieldValue = (submission, linkedFieldReference, config = {}) => {
+        const {
+            gridColumnMappings = null,
+            fallbackMappings = {},
+            searchFormats = [],
+            extractionStrategy = 'first',
+            enableLogging = false
+        } = config;
+
+        if (!linkedFieldReference) return '';
 
         // Handle grid column references
-        if (linkedFieldId.includes('.')) {
-            const [gridFieldId, columnId] = linkedFieldId.split('.');
-            const gridData = submission.submissionData.find(sd => sd.fieldLabel === gridFieldId);
+        if (linkedFieldReference.includes('.')) {
+            const [gridFieldId, columnId] = linkedFieldReference.split('.');
+
+            if (!gridFieldId || !columnId) return '';
+
+            // Find grid field with flexible formats
+            const gridData = findFieldInSubmission(submission, gridFieldId, searchFormats);
+
             if (gridData) {
                 try {
                     const gridRows = JSON.parse(gridData.fieldValue);
-                    const columnName = getColumnNameById(columnId);
-                    // Return the first matching row's value or combine multiple rows
-                    const values = gridRows.map(row => row[columnName]).filter(Boolean);
-                    return values.join(', ');
+
+                    // Get column name generically
+                    const columnName = getColumnNameById(columnId, gridFieldId, gridColumnMappings, fallbackMappings);
+
+                    // Extract values
+                    const values = gridRows
+                        .map(row => row[columnName])
+                        .filter(value => value && String(value).trim() !== '');
+
+                    // Apply extraction strategy
+                    switch (extractionStrategy) {
+                        case 'all': return values;
+                        case 'last': return values.length > 0 ? values[values.length - 1] : '';
+                        default: return values.length > 0 ? values[0] : '';
+                    }
                 } catch (e) {
-                    return "";
+                    if (enableLogging) console.error('Failed to parse grid data:', e);
+                    return '';
                 }
             }
-            return "";
+            return '';
         } else {
             // Regular field
-            const linkedData = submission.submissionData.find(sd => sd.fieldLabel === linkedFieldId);
-            return linkedData ? linkedData.fieldValue : "";
+            const fieldData = findFieldInSubmission(submission, linkedFieldReference, searchFormats);
+            return fieldData ? fieldData.fieldValue : '';
         }
     };
 
-    // Helper function to get column name by ID (you'll need to implement this based on your form structure)
-    const getColumnNameById = (columnId) => {
-        // This should look up the column name from the linked form's field definition
-        // For now, return the columnId as fallback
+
+    const getColumnNameById = (columnId, gridFieldId, gridColumnMappings = null, fallbackMappings = {}) => {
+        if (gridColumnMappings && gridFieldId && gridColumnMappings[gridFieldId]) {
+            const columnName = gridColumnMappings[gridFieldId][columnId];
+            if (columnName) {
+                return columnName;
+            }
+        }
+
+        // Try fallback mappings
+        if (fallbackMappings && fallbackMappings[columnId]) {
+            return fallbackMappings[columnId];
+        }
+
+        // Return columnId as final fallback
         return columnId;
     };
+
+
+    const findFieldInSubmission = (submission, fieldId, searchFormats = []) => {
+        // Default search formats
+        const defaultFormats = [
+            fieldId,
+            fieldId.toLowerCase(),
+            fieldId.toUpperCase()
+        ];
+
+        const allFormats = [...defaultFormats, ...searchFormats];
+
+        for (const format of allFormats) {
+            const found = submission.submissionData.find(sd => sd.fieldLabel === format);
+            if (found) {
+                return { fieldLabel: format, fieldValue: found.fieldValue };
+            }
+        }
+
+        return null;
+    };
+
+    const normalizeValue = (value) => {
+        if (value === null || value === undefined) return '';
+        return String(value).trim().toLowerCase();
+    };
+
+    // Generic hex to GUID converter
+    const convertHexToGuid = (hexId, options = {}) => {
+        const { customConverter = null } = options;
+
+        if (!hexId) return null;
+        if (hexId.includes('-')) return hexId; // Already GUID format
+
+        // Use custom converter if provided
+        if (customConverter && typeof customConverter === 'function') {
+            return customConverter(hexId);
+        }
+
+        // Default behavior - return null (no conversion)
+        return null;
+    };
+
+    const handleLinkedData = async (field, formData, formValues, apiConfig = {}) => {
+        const {
+            apiBaseUrl = `{APP_CONSTANTS.API_BASE_URL}/api/forms`,
+            gridColumnMappings = null,
+            fallbackMappings = {},
+            searchFormats = [],
+            enableLogging = false,
+            onSuccess = null,
+            onError = null,
+            onNoMatch = null // New callback for no match scenario
+        } = apiConfig;
+
+        // Extract key values generically
+        const keyValues = {};
+        let hasAllKeyValues = true;
+
+        formData.keyFieldMappings?.forEach(mapping => {
+            const value = formValues[mapping.currentFormField];
+            if (!value || value === '') {
+                hasAllKeyValues = false;
+            }
+            keyValues[mapping.currentFormField] = value;
+        });
+
+        if (!hasAllKeyValues) {
+            if (onNoMatch) onNoMatch(''); // Clear field
+            return '';
+        }
+
+        try {
+            // Fetch and process linked data...
+            const url = `${APP_CONSTANTS.API_BASE_URL}/api/forms/linked-data/${formData.linkedFormId}?keyMappings=${encodeURIComponent(JSON.stringify(formData.keyFieldMappings))}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`API returned ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (!result?.data?.length) {
+                if (onNoMatch) onNoMatch(''); // Clear field
+                return '';
+            }
+
+            const config = {
+                gridColumnMappings: result.gridColumnMappings || gridColumnMappings,
+                fallbackMappings,
+                searchFormats,
+                enableLogging
+            };
+
+            const matchingSubmission = findMatchingSubmission(
+                result.data,
+                keyValues,
+                formData.keyFieldMappings,
+                config
+            );
+
+            if (!matchingSubmission) {
+                if (onNoMatch) onNoMatch(''); // Clear field
+                return '';
+            }
+
+            // Extract linked field value...
+            let linkedFieldRef;
+            if (field.linkedFieldType === 'gridColumn' && field.linkedGridFieldId && field.linkedColumnId) {
+                linkedFieldRef = `${field.linkedGridFieldId}.${field.linkedColumnId}`;
+            } else if (field.linkedFieldId) {
+                linkedFieldRef = field.linkedFieldId;
+            }
+
+            if (!linkedFieldRef) {
+                if (onNoMatch) onNoMatch(''); // Clear field
+                return '';
+            }
+
+            const linkedFieldValue = extractLinkedFieldValue(matchingSubmission, linkedFieldRef, {
+                gridColumnMappings: result.gridColumnMappings || gridColumnMappings,
+                fallbackMappings,
+                searchFormats,
+                enableLogging
+            });
+
+            const finalValue = linkedFieldValue || ''; // Ensure empty string if no value
+            if (onSuccess) onSuccess(finalValue);
+            return finalValue;
+
+        } catch (error) {
+            if (enableLogging) console.error('Error in linked data handler:', error);
+            if (onNoMatch) onNoMatch(''); // Clear field on error
+            return '';
+        }
+    };
+
 
     // Render different field types
     const renderField = (field) => {
@@ -955,81 +1351,50 @@ export default function DynamicForm() {
                 return (
                     <div className="mb-4 w-full">
                         <label className="block text-gray-700 text-sm font-bold mb-2">
-                            {field.label}{" "}
-                            {field.required && <span className="text-red-500">*</span>}
+                            {field.label}{field.required && <span className="text-red-500">*</span>}
                         </label>
                         <select
                             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-white"
                             value={formValues[field.id] || ""}
-                            onChange={(e) =>
-                                handleInputChange(field.id, e.target.value, field.type, field)
-                            }
+                            onChange={(e) => handleInputChange(field.id, e.target.value, field.type, field)}
                         >
                             <option value="">Select {field.label}</option>
-                            {field.options.map((option) => (
-                                <option key={option} value={option}>
-                                    {option}
-                                </option>
+                            {field.options?.map((option) => (
+                                <option key={option} value={option}>{option}</option>
                             ))}
                         </select>
-                        {formValues[field.id] && (
-                            <div className="text-sm text-gray-600 mt-1">
-                                You selected: <span className="font-semibold">{formValues[field.id]}</span>
-                            </div>
-                        )}
-
                         {formErrors[field.id] && (
-                            <p className="text-red-500 text-xs mt-1">
-                                {formErrors[field.id]}
-                            </p>
-                        )}
-
-                        {/* Render remark field if needed */}
-                        {needsRemark(field, formValues[field.id]) && (
-                            <div className="mt-2">
-                                <label className="block text-gray-700 text-sm font-bold mb-2">
-                                    Remarks <span className="text-red-500">*</span>
-                                </label>
-                                <textarea
-                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                                    value={remarks[field.id] || ""}
-                                    onChange={handleRemarkChange(field.id)}
-                                    placeholder="Enter remarks"
-                                    rows={1}
-                                />
-                                {formErrors[`${field.id}_remark`] && (
-                                    <p className="text-red-500 text-xs mt-1">
-                                        {formErrors[`${field.id}_remark`]}
-                                    </p>
-                                )}
-                            </div>
+                            <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
                         )}
                     </div>
                 );
 
+
+            // In your input rendering, only add onBlur to bridge fields
             case "textbox":
                 return (
                     <div className="mb-4 w-full">
                         <label className="block text-gray-700 text-sm font-bold mb-2">
-                            {field.label}{" "}
-                            {field.required && <span className="text-red-500">*</span>}
+                            {field.label}{field.required && <span className="text-red-500">*</span>}
                         </label>
                         <textarea
                             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                             value={formValues[field.id] || ""}
-                            onChange={(e) =>
-                                handleInputChange(field.id, e.target.value, field.type, field)
-                            }
+                            onChange={(e) => handleInputChange(field.id, e.target.value, field.type, field)}
+                            // Only add onBlur if this field is the bridge field
+                            {...(isBridgeField(field.id) && {
+                                onBlur: () => handleBridgeFieldBlur(field.id)
+                            })}
                             placeholder={`Enter ${field.label}`}
-                            rows={1}
+                            rows="1"
                         />
                         {formErrors[field.id] && (
-                            <p className="text-red-500 text-xs mt-1">
-                                {formErrors[field.id]}
-                            </p>
+                            <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
                         )}
                     </div>
                 );
+
+
 
             case "time":
                 return (
@@ -1418,32 +1783,18 @@ export default function DynamicForm() {
                             {field.label}{" "}
                             {field.required && <span className="text-red-500">*</span>}
                         </label>
-
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                className="shadow appearance-none border rounded flex-1 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-50"
-                                value={formValues[field.id] || ""}
-                                readOnly={!field.allowManualEntry}
-                                onChange={(e) => {
-                                    if (field.allowManualEntry) {
-                                        handleInputChange(field.id, e.target.value, field.type, field);
-                                    }
-                                }}
-                                placeholder={`Linked data from ${formData.linkedForm?.name || 'linked form'}`}
-                            />
-
-                            {field.showLookupButton && (
-                                <button
-                                    type="button"
-                                    onClick={() => handleLookupLinkedData(field)}
-                                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-                                >
-                                    Lookup
-                                </button>
-                            )}
-                        </div>
-
+                        <input
+                            type="text"
+                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-50"
+                            value={formValues[field.id] || ""}
+                            readOnly={!field.allowManualEntry}
+                            onChange={(e) => {
+                                if (field.allowManualEntry) {
+                                    NewhandleInputChange(field.id, e.target.value, field.type, field);
+                                }
+                            }}
+                            placeholder={`Auto-loaded from ${formData.linkedForm?.name || 'linked form'}`}
+                        />
                         {formErrors[field.id] && (
                             <p className="text-red-500 text-xs mt-1">
                                 {formErrors[field.id]}
@@ -1451,6 +1802,7 @@ export default function DynamicForm() {
                         )}
                     </div>
                 );
+
 
 
             default:

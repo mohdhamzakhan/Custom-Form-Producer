@@ -140,6 +140,17 @@ namespace productionLine.Server.Model
 
         [Column("KEY_FIELD_MAPPINGS", TypeName = "CLOB")]
         public string? KeyFieldMappingsJson { get; set; }
+        [Column("DISPLAY_MODE")]
+        public string? DisplayMode { get; set; }
+
+        [Column("DISPLAY_FORMAT")]
+        public string? DisplayFormat { get; set; }
+
+        [Column("ALLOW_MANUAL_ENTRY", TypeName = "NUMBER(1)")]
+        public bool? AllowManualEntry { get; set; }
+
+        [Column("SHOW_LOOKUP_BUTTON", TypeName = "NUMBER(1)")]
+        public bool? ShowLookupButton { get; set; }
 
         [NotMapped]
         public List<KeyFieldMapping>? KeyFieldMappings
@@ -207,5 +218,43 @@ namespace productionLine.Server.Model
         public List<string>? RemarksOptions { get; set; }
 
         public ICollection<RemarkTrigger> RemarkTriggers { get; set; } = new List<RemarkTrigger>();
+        [JsonPropertyName("linkedFormId")]
+        public int? LinkedFormId { get; set; }
+
+        [JsonPropertyName("linkedFieldId")]
+        public Guid? LinkedFieldId { get; set; }
+
+        [JsonPropertyName("linkedFieldType")]
+        public string? LinkedFieldType { get; set; }
+
+        [JsonPropertyName("linkedGridFieldId")]
+        public Guid? LinkedGridFieldId { get; set; }
+
+        [JsonPropertyName("linkedColumnId")]
+        public string? LinkedColumnId { get; set; }
+
+        [JsonPropertyName("displayMode")]
+        public string? DisplayMode { get; set; }
+
+        [JsonPropertyName("displayFormat")]
+        public string? DisplayFormat { get; set; }
+
+        [JsonPropertyName("allowManualEntry")]
+        public bool? AllowManualEntry { get; set; }
+
+        [JsonPropertyName("showLookupButton")]
+        public bool? ShowLookupButton { get; set; }
+
+        [JsonPropertyName("keyFieldMappingsJson")]
+        public string? KeyFieldMappingsJson { get; set; }
+
+        [NotMapped]
+        [JsonPropertyName("keyFieldMappings")]
+        public List<KeyFieldMapping>? KeyFieldMappings
+        {
+            get => string.IsNullOrEmpty(KeyFieldMappingsJson) ? null : JsonSerializer.Deserialize<List<KeyFieldMapping>>(KeyFieldMappingsJson);
+            set => KeyFieldMappingsJson = JsonSerializer.Serialize(value);
+        }
+
     }
 }

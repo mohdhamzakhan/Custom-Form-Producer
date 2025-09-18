@@ -36,5 +36,15 @@ namespace productionLine.Server.DTO
         public string? EndTime { get; set; }
         public bool? Required { get; set; }
         public List<string>? RemarksOptions { get; set; }
+        public int? LinkedFormId { get; set; }
+        public Guid? LinkedFieldId { get; set; }
+        public string? LinkedFieldType { get; set; }
+        public Guid? LinkedGridFieldId { get; set; }
+        public string? LinkedColumnId { get; set; }
+        public string? DisplayMode { get; set; }
+        public string? DisplayFormat { get; set; }
+        public bool? AllowManualEntry { get; set; }
+        public bool? ShowLookupButton { get; set; }
+        public string? KeyFieldMappingsJson { get; set; }
     }
 }

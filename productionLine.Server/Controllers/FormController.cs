@@ -190,11 +190,17 @@ namespace productionLine.Server.Controllers
                     existingField.RequireRemarksOutOfRange = field.RequireRemarksOutOfRange;
                     existingField.RequiresRemarksJson = field.RequiresRemarksJson;
                     existingField.ImageValue = field.ImageValue;
-
-                    // Fix: Use field-level properties, not form-level
-                    existingField.LinkedFormId = field.LinkedFormId; // Changed from form.LinkedFormId
+                    existingField.LinkedFormId = field.LinkedFormId;
                     existingField.LinkedFieldId = field.LinkedFieldId;
+                    existingField.LinkedFieldType = field.LinkedFieldType;
+                    existingField.LinkedGridFieldId = field.LinkedGridFieldId;
+                    existingField.LinkedColumnId = field.LinkedColumnId;
+                    existingField.DisplayMode = field.DisplayMode;
+                    existingField.DisplayFormat = field.DisplayFormat;
+                    existingField.AllowManualEntry = field.AllowManualEntry;
+                    existingField.ShowLookupButton = field.ShowLookupButton;
                     existingField.KeyFieldMappings = field.KeyFieldMappings;
+                    existingField.KeyFieldMappingsJson = field.KeyFieldMappingsJson;
 
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -230,11 +236,18 @@ namespace productionLine.Server.Controllers
                     RemarkTriggersJson = field.RemarkTriggersJson,
                     RequireRemarksOutOfRange = field.RequireRemarksOutOfRange,
                     RequiresRemarksJson = field.RequiresRemarksJson,
-
-                    // Fix: Use field-level properties, not form-level
-                    LinkedFormId = field.LinkedFormId, // Changed from form.LinkedFormId
+                    // Fix: Add ALL linked textbox properties
+                    LinkedFormId = field.LinkedFormId,
                     LinkedFieldId = field.LinkedFieldId,
+                    LinkedFieldType = field.LinkedFieldType,
+                    LinkedGridFieldId = field.LinkedGridFieldId,
+                    LinkedColumnId = field.LinkedColumnId,
+                    DisplayMode = field.DisplayMode,
+                    DisplayFormat = field.DisplayFormat,
+                    AllowManualEntry = field.AllowManualEntry,
+                    ShowLookupButton = field.ShowLookupButton,
                     KeyFieldMappings = field.KeyFieldMappings,
+                    KeyFieldMappingsJson = field.KeyFieldMappingsJson,
 
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -296,25 +309,21 @@ namespace productionLine.Server.Controllers
         [HttpGet("link/{formLink}")]
         public async Task<IActionResult> GetFormByLink(string formLink)
         {
-            Form form = await _context.Forms
-                .Include(f => f.Fields.OrderBy(field => field.Order))
-                .ThenInclude(field => field.RemarkTriggers)
-                .Include(f => f.Approvers.OrderBy(a => a.Level))
-                .FirstOrDefaultAsync(f => f.FormLink.ToLower() == formLink.ToLower());
-
+            Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
+                .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+                .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
             if (form == null)
             {
                 return NotFound("Form not found.");
             }
-
             FormDto formDto = new FormDto
             {
                 Id = form.Id,
                 FormLink = form.FormLink,
                 Name = form.Name,
-                LinkedFormId = form.LinkedFormId, // Add this line
-                KeyFieldMappings = form.KeyFieldMappings, // Add this line
-                Approvers = (form.Approvers?.Select(a => new ApproverDto
+                LinkedFormId = form.LinkedFormId, // Move this to Form level
+                KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
+                Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
                 {
                     Id = a.Id,
                     AdObjectId = a.AdObjectId,
@@ -323,7 +332,7 @@ namespace productionLine.Server.Controllers
                     Type = a.Type,
                     Level = a.Level
                 }).ToList() ?? new List<ApproverDto>()),
-                Fields = form.Fields.Select(f => new FieldDto
+                Fields = form.Fields.Select((FormField f) => new FieldDto
                 {
                     Id = f.Id,
                     Name = f.Label,
@@ -336,15 +345,29 @@ namespace productionLine.Server.Controllers
                     IsDecimal = f.Decimal,
                     Max = f.Max,
                     Min = f.Min,
-                    LinkedFieldId = f.LinkedFieldId, // Add this line
-                    RemarkTriggers = (f.RemarkTriggers?.Select(rt => new RemarkTriggerDto
+
+                    // Add these missing linked textbox properties:
+                    LinkedFormId = f.LinkedFormId,
+                    LinkedFieldId = f.LinkedFieldId,
+                    LinkedFieldType = f.LinkedFieldType,
+                    LinkedGridFieldId = f.LinkedGridFieldId,
+                    LinkedColumnId = f.LinkedColumnId,  // This is the key - map from database
+                    DisplayMode = f.DisplayMode,
+                    DisplayFormat = f.DisplayFormat,
+                    AllowManualEntry = f.AllowManualEntry,
+                    ShowLookupButton = f.ShowLookupButton,
+                    KeyFieldMappingsJson = f.KeyFieldMappingsJson,
+                    KeyFieldMappings = f.KeyFieldMappings,
+
+                    RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
                         Operator = rt.Operator,
                         Value = rt.Value,
                         FormFieldId = rt.FormFieldId
                     }).ToList() ?? new List<RemarkTriggerDto>()),
-                    Column = (f.Columns?.Select(ct => new GridColumnDto
+
+                    Column = (f.Columns?.Select((GridColumn ct) => new GridColumnDto
                     {
                         Formula = ct.Formula,
                         Name = ct.Name,
@@ -362,8 +385,22 @@ namespace productionLine.Server.Controllers
                         StartTime = ct.StartTime,
                         EndTime = ct.EndTime,
                         Required = ct.Required,
-                        RemarksOptions = ct.RemarksOptions
+                        RemarksOptions = ct.RemarksOptions,
+
+                        // Add linked textbox properties for grid columns too:
+                        LinkedFormId = ct.LinkedFormId,
+                        LinkedFieldId = ct.LinkedFieldId,
+                        LinkedFieldType = ct.LinkedFieldType,
+                        LinkedGridFieldId = ct.LinkedGridFieldId,
+                        LinkedColumnId = ct.LinkedColumnId,
+                        DisplayMode = ct.DisplayMode,
+                        DisplayFormat = ct.DisplayFormat,
+                        AllowManualEntry = ct.AllowManualEntry,
+                        ShowLookupButton = ct.ShowLookupButton,
+                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson
+
                     }).ToList() ?? new List<GridColumnDto>()),
+
                     Formula = f.Formula,
                     InitialRows = f.InitialRows,
                     MaxRows = f.MaxRows,
@@ -718,7 +755,6 @@ namespace productionLine.Server.Controllers
                              where s.Approvals.Any((FormApproval a) => userNames.Contains(a.ApproverName) && a.Status == "Pending")
                              select s).ToListAsync());
         }
-
         [HttpGet("linked-data/{formId}")]
         public async Task<IActionResult> GetLinkedData(int formId, [FromQuery] string keyMappings)
         {
@@ -735,19 +771,75 @@ namespace productionLine.Server.Controllers
                     return Ok(new { data = (object)null });
                 }
 
-                // Get all submissions for the linked form
+                // Get submissions with form field definitions for grid column resolution
                 var submissions = await _context.FormSubmissions
                     .Where(s => s.FormId == formId)
                     .Include(s => s.SubmissionData)
+                    .Include(s => s.Form)
+                    .ThenInclude(f => f.Fields)
                     .ToListAsync();
 
-                return Ok(new { data = submissions });
+                // Build comprehensive grid column mappings
+                var formFields = await _context.FormFields
+                    .Where(f => f.FormId == formId && f.Type == "grid" && !string.IsNullOrEmpty(f.ColumnsJson))
+                    .ToListAsync();
+
+                var gridColumnMappings = new Dictionary<string, Dictionary<string, string>>();
+                foreach (var field in formFields)
+                {
+                    try
+                    {
+                        var columns = JsonSerializer.Deserialize<List<GridColumn>>(field.ColumnsJson);
+                        if (columns != null)
+                        {
+                            gridColumnMappings[field.Id.ToString()] = columns.ToDictionary(c => c.Id, c => c.Name);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log the error but continue processing
+                        Console.WriteLine($"Error parsing columns for field {field.Id}: {ex.Message}");
+                    }
+                }
+
+                return Ok(new
+                {
+                    data = submissions,
+                    gridColumnMappings = gridColumnMappings
+                });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = ex.Message });
             }
         }
+
+
+        [HttpGet("grid-columns/{fieldId}")]
+        public async Task<IActionResult> GetGridColumns(Guid fieldId)
+        {
+            try
+            {
+                var field = await _context.FormFields
+                    .FirstOrDefaultAsync(f => f.Id == fieldId && f.Type == "grid");
+
+                if (field == null || string.IsNullOrEmpty(field.ColumnsJson))
+                {
+                    return NotFound("Grid field not found or has no columns");
+                }
+
+                var columns = JsonSerializer.Deserialize<List<GridColumn>>(field.ColumnsJson);
+                var columnMapping = columns?.ToDictionary(c => c.Id, c => new { c.Name, c.Type });
+
+                return Ok(columnMapping);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
 
     }
 }

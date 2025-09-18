@@ -393,6 +393,7 @@ const FormBuilder = () => {
             setFormName(data.name || "");
 
             // Restore linked form data
+            // Around line 350-380, update the key fields restoration:
             if (data.linkedFormId) {
                 await fetchLinkedFormDetails(data.linkedFormId);
 
@@ -402,11 +403,10 @@ const FormBuilder = () => {
                     linkedFormField: keyField.linkedFormField,
                     // Parse grid column references
                     currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
+                    linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
                     linkedFieldId: keyField.linkedFieldId || null,
-                    linkedFieldType: keyField.linkedFieldType || "field",
                     linkedGridFieldId: keyField.linkedGridFieldId || null,
-                    linkedColumnId: keyField.linkedColumnId || null,
-                    linkedFieldReference: keyField.linkedFieldType === "gridColumn" && keyField.linkedGridFieldId && keyField.linkedColumnId
+                    linkedFieldReference: keyField.linkedFormField?.includes('.') && keyField.linkedGridFieldId && keyField.linkedColumnId
                         ? `${keyField.linkedGridFieldId}.${keyField.linkedColumnId}`
                         : keyField.linkedFieldId || "",
                     // Extract parent field ID and column ID for grid columns
@@ -428,10 +428,12 @@ const FormBuilder = () => {
             }
 
             // Transform the fields similar to before
+            // Around line 400-450, in the fetchFormLayout function, update the field transformation:
             const transformedFields = (data.fields || []).map((field, index) => {
                 const isGrid = field.type === "grid";
+                const isLinkedField = field.type === "linkedTextbox";
 
-                return {
+                const transformedField = {
                     ...field,
                     id: field.id || generateGuid(),
                     order: field.order !== undefined ? field.order : index,
@@ -452,7 +454,27 @@ const FormBuilder = () => {
                             parentColumn: col.parentColumn || "",
                             dependentOptions: col.dependentOptions || {},
                             startTime: col.startTime || "",
-                            endTime: col.endTime || ""
+                            endTime: col.endTime || "",
+                            // Handle linked textbox columns in grids
+                            ...(col.type === "linkedTextbox" && {
+                                linkedFormId: col.linkedFormId || (linkedForm?.id || null),
+                                linkedFieldId: col.linkedFieldId,
+                                linkedFieldType: col.linkedFieldType || "field",
+                                linkedGridFieldId: col.linkedGridFieldId,
+                                linkedColumnId: col.linkedColumnId,
+                                linkedFieldReference: col.linkedFieldType === "gridColumn" && col.linkedGridFieldId && col.linkedColumnId
+                                    ? `${col.linkedGridFieldId}.${col.linkedColumnId}`
+                                    : col.linkedFieldId || "",
+                                displayMode: col.displayMode || "readonly",
+                                displayFormat: col.displayFormat || "{value}",
+                                allowManualEntry: col.allowManualEntry || false,
+                                showLookupButton: col.showLookupButton !== false,
+                                keyFieldMappings: col.keyFieldMappingsJson ?
+                                    JSON.parse(col.keyFieldMappingsJson).map(mapping => ({
+                                        currentField: mapping.currentFormField,
+                                        linkedField: mapping.linkedFormField
+                                    })) : []
+                            })
                         }))
                         : undefined,
                     column: undefined,
@@ -461,8 +483,51 @@ const FormBuilder = () => {
                     fieldReferences: field.fieldReferencesJson || [],
                     remarkTriggers: field.remarkTriggers || [],
                     // Preserve linked field properties
-                    linkedFieldId: field.linkedFieldId || null,
+                    linkedFormId: field.linkedFormId || null,
                 };
+
+                // Handle linked field specific properties
+                if (isLinkedField) {
+                    transformedField.linkedFormId = field.linkedFormId || (linkedForm?.id || null);
+                    transformedField.linkedFieldId = field.linkedFieldId;
+                    transformedField.linkedFieldType = field.linkedFieldType || "field";
+                    transformedField.linkedGridFieldId = field.linkedGridFieldId;
+                    transformedField.linkedColumnId = field.linkedColumnId;
+
+                    // Set linkedFieldReference based on field type
+                    transformedField.linkedFieldReference = field.linkedFieldType === "gridColumn" && field.linkedGridFieldId && field.linkedColumnId
+                        ? `${field.linkedGridFieldId}.${field.linkedColumnId}`
+                        : field.linkedFieldId || "";
+
+                    transformedField.displayMode = field.displayMode || "readonly";
+                    transformedField.displayFormat = field.displayFormat || "{value}";
+                    transformedField.allowManualEntry = field.allowManualEntry || false;
+                    transformedField.showLookupButton = field.showLookupButton !== false;
+
+                    // Parse key field mappings and convert property names
+                    if (field.keyFieldMappingsJson) {
+                        try {
+                            const mappings = JSON.parse(field.keyFieldMappingsJson);
+                            transformedField.keyFieldMappings = mappings.map(mapping => ({
+                                currentField: mapping.currentFormField,  // Convert from backend property name
+                                linkedField: mapping.linkedFormField    // Convert from backend property name
+                            }));
+                        } catch (e) {
+                            console.warn('Failed to parse keyFieldMappingsJson:', e);
+                            transformedField.keyFieldMappings = [];
+                        }
+                    } else if (field.keyFieldMappings) {
+                        // Handle if keyFieldMappings is already parsed
+                        transformedField.keyFieldMappings = field.keyFieldMappings.map(mapping => ({
+                            currentField: mapping.currentFormField || mapping.currentField,
+                            linkedField: mapping.linkedFormField || mapping.linkedField
+                        }));
+                    } else {
+                        transformedField.keyFieldMappings = [];
+                    }
+                }
+
+                return transformedField;
             });
 
             const sortedFields = transformedFields.sort((a, b) => a.order - b.order);
@@ -519,6 +584,7 @@ const FormBuilder = () => {
                 ...baseForm,
                 form: baseForm,
                 linkedFormId: linkedForm?.id || null,
+                // Around line 600-650, replace the keyFields mapping:
                 keyFields: keyFields.map(keyField => ({
                     currentFormField: keyField.currentFormField,
                     linkedFormField: keyField.linkedFormField,
@@ -598,6 +664,7 @@ const FormBuilder = () => {
                             const processedColumn = { ...column };
 
                             // Handle linkedTextbox columns within grids
+                            // In the grid processing section, around line 750-800:
                             if (column.type === "linkedTextbox") {
                                 processedColumn.linkedFormId = column.linkedFormId || (linkedForm?.id || null);
                                 processedColumn.linkedFieldId = column.linkedFieldId;
@@ -606,10 +673,11 @@ const FormBuilder = () => {
                                 processedColumn.allowManualEntry = column.allowManualEntry || false;
                                 processedColumn.showLookupButton = column.showLookupButton !== false;
 
-                                // Process key field mappings for grid column
+                                // Process key field mappings for grid column - FIX PROPERTY NAMES
                                 processedColumn.keyFieldMappings = (column.keyFieldMappings || []).map(mapping => ({
-                                    currentField: mapping.currentField,
-                                    linkedField: mapping.linkedField,
+                                    currentFormField: mapping.currentField,  // Changed from mapping.currentField
+                                    linkedFormField: mapping.linkedField,   // Changed from mapping.linkedField
+
                                     currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
                                     linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
                                     currentParentFieldId: mapping.currentField?.includes('.')
@@ -644,9 +712,60 @@ const FormBuilder = () => {
                             return referencedField ? referencedField.id : match;
                         });
                     }
+                    // Around line 700-750, in the linkedTextbox field processing:
                     if (field.type === "linkedTextbox") {
+                        console.log("=== DEBUGGING LINKEDTEXTBOX SAVE ===");
+                        console.log("Field object:", field);
+                        console.log("linkedFieldReference:", field.linkedFieldReference);
+                        console.log("linkedFieldId:", field.linkedFieldId);
+                        console.log("linkedFieldType:", field.linkedFieldType);
+                        console.log("keyFieldMappings:", field.keyFieldMappings);
+
                         fieldObj.linkedFormId = field.linkedFormId;
-                        fieldObj.linkedFieldId = field.linkedFieldId;
+
+                        // The issue might be here - let's fix the logic
+                        if (field.linkedFieldReference) {
+                            console.log("Using linkedFieldReference:", field.linkedFieldReference);
+                            if (field.linkedFieldReference.includes('.')) {
+                                // Grid column reference
+                                const [gridFieldId, columnId] = field.linkedFieldReference.split('.');
+                                fieldObj.linkedFieldId = null;
+                                fieldObj.linkedFieldType = "gridColumn";
+                                fieldObj.linkedGridFieldId = gridFieldId;
+                                fieldObj.linkedColumnId = columnId;
+                                console.log("Set as grid column - gridFieldId:", gridFieldId, "columnId:", columnId);
+                            } else {
+                                // Regular field reference
+                                fieldObj.linkedFieldId = field.linkedFieldReference;
+                                fieldObj.linkedFieldType = "field";
+                                fieldObj.linkedGridFieldId = null;
+                                fieldObj.linkedColumnId = null;
+                                console.log("Set as regular field - fieldId:", field.linkedFieldReference);
+                            }
+                        } else if (field.linkedFieldId || field.linkedGridFieldId) {
+                            // Fallback to existing individual properties
+                            console.log("Using individual properties as fallback");
+                            fieldObj.linkedFieldId = field.linkedFieldId;
+                            fieldObj.linkedFieldType = field.linkedFieldType || "field";
+                            fieldObj.linkedGridFieldId = field.linkedGridFieldId;
+                            fieldObj.linkedColumnId = field.linkedColumnId;
+                        } else {
+                            console.log("No linked field data found!");
+                            // Set defaults
+                            fieldObj.linkedFieldId = null;
+                            fieldObj.linkedFieldType = null;
+                            fieldObj.linkedGridFieldId = null;
+                            fieldObj.linkedColumnId = null;
+                        }
+
+                        console.log("Final fieldObj linked properties:", {
+                            linkedFieldId: fieldObj.linkedFieldId,
+                            linkedFieldType: fieldObj.linkedFieldType,
+                            linkedGridFieldId: fieldObj.linkedGridFieldId,
+                            linkedColumnId: fieldObj.linkedColumnId
+                        });
+
+                        // Rest of the processing...
                         fieldObj.displayMode = field.displayMode || "readonly";
                         fieldObj.displayFormat = field.displayFormat || "{value}";
                         fieldObj.allowManualEntry = field.allowManualEntry || false;
@@ -654,29 +773,18 @@ const FormBuilder = () => {
 
                         // Process key field mappings
                         fieldObj.keyFieldMappings = (field.keyFieldMappings || []).map(mapping => ({
-                            currentField: mapping.currentField,
-                            linkedField: mapping.linkedField,
-                            // Parse grid column references if needed
+                            currentFormField: mapping.currentField,
+                            linkedFormField: mapping.linkedField,
                             currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
                             linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
-                            currentParentFieldId: mapping.currentField?.includes('.')
-                                ? mapping.currentField.split('.')[0]
-                                : null,
-                            currentColumnId: mapping.currentField?.includes('.')
-                                ? mapping.currentField.split('.')[1]
-                                : null,
-                            linkedParentFieldId: mapping.linkedField?.includes('.')
-                                ? mapping.linkedField.split('.')[0]
-                                : null,
-                            linkedColumnId: mapping.linkedField?.includes('.')
-                                ? mapping.linkedField.split('.')[1]
-                                : null,
+                            currentParentFieldId: mapping.currentField?.includes('.') ? mapping.currentField.split('.')[0] : null,
+                            currentColumnId: mapping.currentField?.includes('.') ? mapping.currentField.split('.')[1] : null,
+                            linkedParentFieldId: mapping.linkedField?.includes('.') ? mapping.linkedField.split('.')[0] : null,
+                            linkedColumnId: mapping.linkedField?.includes('.') ? mapping.linkedField.split('.')[1] : null,
                         }));
 
-                        // Store as JSON for database
                         fieldObj.keyFieldMappingsJson = JSON.stringify(fieldObj.keyFieldMappings);
                     }
-
                     return fieldObj;
                 })
             };
@@ -743,6 +851,7 @@ const FormBuilder = () => {
             options: [],
             requiresRemarks: [],
             ...(type === "linkedTextbox" && {
+                linkedFormId: linkedForm?.id || null,
                 linkedFieldId: null,
                 linkedFieldType: "field",
                 linkedGridFieldId: null,
@@ -752,6 +861,7 @@ const FormBuilder = () => {
                 displayFormat: "{value}",
                 allowManualEntry: false,
                 showLookupButton: true,
+                keyFieldMappings: [],
             }),
             ...(type === "numeric" && {
                 min: 0,
@@ -1020,6 +1130,7 @@ const FormBuilder = () => {
         console.log("Raw API response:", data);
 
         // When processing fields, add debugging
+        // Around line 400-450, in the fetchFormLayout function, update the field transformation:
         const transformedFields = (data.fields || []).map((field, index) => {
             const isGrid = field.type === "grid";
             const isLinkedField = field.type === "linkedTextbox";
@@ -1045,43 +1156,74 @@ const FormBuilder = () => {
                         parentColumn: col.parentColumn || "",
                         dependentOptions: col.dependentOptions || {},
                         startTime: col.startTime || "",
-                        endTime: col.endTime || ""
+                        endTime: col.endTime || "",
+                        // Handle linked textbox columns in grids
+                        ...(col.type === "linkedTextbox" && {
+                            linkedFormId: col.linkedFormId || (linkedForm?.id || null),
+                            linkedFieldId: col.linkedFieldId,
+                            linkedFieldType: col.linkedFieldType || "field",
+                            linkedGridFieldId: col.linkedGridFieldId,
+                            linkedColumnId: col.linkedColumnId,
+                            linkedFieldReference: col.linkedFieldType === "gridColumn" && col.linkedGridFieldId && col.linkedColumnId
+                                ? `${col.linkedGridFieldId}.${col.linkedColumnId}`
+                                : col.linkedFieldId || "",
+                            displayMode: col.displayMode || "readonly",
+                            displayFormat: col.displayFormat || "{value}",
+                            allowManualEntry: col.allowManualEntry || false,
+                            showLookupButton: col.showLookupButton !== false,
+                            keyFieldMappings: col.keyFieldMappingsJson ?
+                                JSON.parse(col.keyFieldMappingsJson).map(mapping => ({
+                                    currentField: mapping.currentFormField,
+                                    linkedField: mapping.linkedFormField
+                                })) : []
+                        })
                     }))
                     : undefined,
-                column: undefined, // Remove old key
+                column: undefined,
                 formula: field.formula || "",
                 resultDecimal: field.resultDecimal || false,
                 fieldReferences: field.fieldReferencesJson || [],
-                remarkTriggers: field.remarkTriggers || []
+                remarkTriggers: field.remarkTriggers || [],
+                // Preserve linked field properties
+                linkedFormId: field.linkedFormId || null,
             };
 
             // Handle linked field specific properties
             if (isLinkedField) {
-                transformedField.linkedFormId = field.linkedFormId;
+                transformedField.linkedFormId = field.linkedFormId || (linkedForm?.id || null);
                 transformedField.linkedFieldId = field.linkedFieldId;
+                transformedField.linkedFieldType = field.linkedFieldType || "field";
+                transformedField.linkedGridFieldId = field.linkedGridFieldId;
+                transformedField.linkedColumnId = field.linkedColumnId;
+
+                // Set linkedFieldReference based on field type
+                transformedField.linkedFieldReference = field.linkedFieldType === "gridColumn" && field.linkedGridFieldId && field.linkedColumnId
+                    ? `${field.linkedGridFieldId}.${field.linkedColumnId}`
+                    : field.linkedFieldId || "";
+
                 transformedField.displayMode = field.displayMode || "readonly";
                 transformedField.displayFormat = field.displayFormat || "{value}";
                 transformedField.allowManualEntry = field.allowManualEntry || false;
                 transformedField.showLookupButton = field.showLookupButton !== false;
 
-                // Parse key field mappings
+                // Parse key field mappings and convert property names
                 if (field.keyFieldMappingsJson) {
                     try {
                         const mappings = JSON.parse(field.keyFieldMappingsJson);
                         transformedField.keyFieldMappings = mappings.map(mapping => ({
-                            currentField: mapping.currentFieldType === 'gridColumn'
-                                ? `${mapping.currentParentFieldId}.${mapping.currentColumnId}`
-                                : mapping.currentField,
-                            linkedField: mapping.linkedFieldType === 'gridColumn'
-                                ? `${mapping.linkedParentFieldId}.${mapping.linkedColumnId}`
-                                : mapping.linkedField
+                            currentField: mapping.currentFormField,  // Convert from backend property name
+                            linkedField: mapping.linkedFormField    // Convert from backend property name
                         }));
                     } catch (e) {
                         console.warn('Failed to parse keyFieldMappingsJson:', e);
                         transformedField.keyFieldMappings = [];
                     }
                 } else if (field.keyFieldMappings) {
-                    transformedField.keyFieldMappings = field.keyFieldMappings;
+                    // Handle if keyFieldMappings is already parsed
+                    transformedField.keyFieldMappings = field.keyFieldMappings.map(mapping => ({
+                        currentField: mapping.currentFormField || mapping.currentField,
+                        linkedField: mapping.linkedFormField || mapping.linkedField
+                    }));
                 } else {
                     transformedField.keyFieldMappings = [];
                 }
@@ -1220,7 +1362,7 @@ const FormBuilder = () => {
 
             <DndProvider backend={HTML5Backend}>
                 <div className="max-w-8xl mx-auto p-2">
-                <GridDebugComponent />
+{/*                <GridDebugComponent />*/}
                     <div className="mb-6">
                         <h1 className="text-2xl font-bold mb-4">Form Builder</h1>
 
@@ -1864,28 +2006,32 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         <div>
                             <label className="block text-sm font-medium mb-1">Select Field from {linkedForm?.name || 'Linked Form'}</label>
                             <select
-                                // Fix 1: Use linkedFieldReference instead of linkedFieldId for binding
-                                value={field.linkedFieldReference || field.linkedFieldId || ""}
+                                value={field.linkedFieldReference || ""}
                                 onChange={(e) => {
                                     const selectedValue = e.target.value;
+                                    console.log("=== LINKEDTEXTBOX FIELD SELECTED ===");
+                                    console.log("selectedValue:", selectedValue);
+
                                     if (selectedValue.includes('.')) {
-                                        // Grid column reference
                                         const [gridFieldId, columnId] = selectedValue.split('.');
+                                        console.log("Processing as grid column - gridFieldId:", gridFieldId, "columnId:", columnId);
                                         updateField({
                                             linkedFieldId: null,
                                             linkedFieldType: "gridColumn",
                                             linkedGridFieldId: gridFieldId,
                                             linkedColumnId: columnId,
-                                            linkedFieldReference: selectedValue
+                                            linkedFieldReference: selectedValue,
+                                            linkedFormId: linkedForm?.id || null
                                         });
                                     } else {
-                                        // Regular field
+                                        console.log("Processing as regular field");
                                         updateField({
                                             linkedFieldId: selectedValue,
                                             linkedFieldType: "field",
                                             linkedGridFieldId: null,
                                             linkedColumnId: null,
-                                            linkedFieldReference: selectedValue
+                                            linkedFieldReference: selectedValue,
+                                            linkedFormId: linkedForm?.id || null
                                         });
                                     }
                                 }}
@@ -1904,16 +2050,16 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         ))}
                                 </optgroup>
 
-                                {/* Grid column fields - Fix 2: Flatten the nested mapping */}
+                                {/* Grid column fields */}
                                 <optgroup label="Grid Columns">
                                     {linkedFormFields
-                                        .filter(f => f.type === "grid")
+                                        .filter(f => f.type === "grid" && f.columns && Array.isArray(f.columns))
                                         .flatMap(gridField =>
-                                            (gridField.columns || [])
+                                            gridField.columns
                                                 .filter(col => ["textbox", "numeric", "dropdown"].includes(col.type))
                                                 .map(column => (
                                                     <option key={`${gridField.id}.${column.id}`} value={`${gridField.id}.${column.id}`}>
-                                                        {gridField.label} → {column.name}
+                                                        {gridField.label} → {column.name} ({column.type})
                                                     </option>
                                                 ))
                                         )}
@@ -1921,25 +2067,99 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             </select>
                         </div>
 
-                        {/* Fix 3: Update condition to check for any linked field */}
+                        {/* Configuration display */}
                         {(field.linkedFieldId || field.linkedFieldReference) && (
                             <div className="p-3 bg-blue-50 rounded border">
-                                <h4 className="text-sm font-semibold mb-2">Configuration</h4>
-                                <p className="text-xs text-gray-600">
-                                    This field will pull data from "
-                                    {(() => {
-                                        // Handle both regular fields and grid columns
-                                        if (field.linkedFieldType === "gridColumn") {
-                                            const gridField = linkedFormFields.find(f => f.id === field.linkedGridFieldId);
-                                            const column = gridField?.columns?.find(c => c.id === field.linkedColumnId);
-                                            return `${gridField?.label || 'Unknown Grid'} → ${column?.name || 'Unknown Column'}`;
-                                        } else {
-                                            const regularField = linkedFormFields.find(f => f.id === field.linkedFieldId);
-                                            return regularField?.label || 'Unknown Field';
+                                <h4 className="text-sm font-semibold mb-2">Linked Field Configuration</h4>
+                                <div className="text-xs text-gray-600 space-y-1">
+                                    <div>
+                                        <span className="font-medium">Linked to:</span> {
+                                            field.linkedFieldType === "gridColumn" ? (
+                                                (() => {
+                                                    const gridField = linkedFormFields.find(f => f.id === field.linkedGridFieldId);
+                                                    const column = gridField?.columns?.find(c => c.id === field.linkedColumnId);
+                                                    return `${gridField?.label || 'Unknown Grid'} → ${column?.name || 'Unknown Column'}`;
+                                                })()
+                                            ) : (
+                                                (() => {
+                                                    const regularField = linkedFormFields.find(f => f.id === field.linkedFieldId);
+                                                    return regularField?.label || 'Unknown Field';
+                                                })()
+                                            )
                                         }
-                                    })()}
-                                    " in the linked form "{linkedForm?.name}" based on the key field mappings configured above.
-                                </p>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Type:</span> {field.linkedFieldType === "gridColumn" ? "Grid Column" : "Regular Field"}
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Form:</span> {linkedForm?.name}
+                                    </div>
+                                </div>
+
+                                {/* Key Field Mappings for this specific field */}
+                                <div className="mt-3">
+                                    <h5 className="text-xs font-semibold mb-2">Field-Specific Key Mappings (Optional)</h5>
+                                    <p className="text-xs text-gray-500 mb-2">
+                                        Configure additional key field mappings specific to this linked field.
+                                    </p>
+
+                                    {(field.keyFieldMappings || []).map((mapping, idx) => (
+                                        <div key={idx} className="flex gap-2 mb-2 items-center">
+                                            <select
+                                                value={mapping.currentField || ""}
+                                                onChange={(e) => {
+                                                    const updated = [...(field.keyFieldMappings || [])];
+                                                    updated[idx].currentField = e.target.value;
+                                                    updateField({ keyFieldMappings: updated });
+                                                }}
+                                                className="flex-1 text-xs px-1 py-1 border rounded"
+                                            >
+                                                <option value="">Select current form field...</option>
+                                                {getAllFormFieldsWithGridColumns(allFields).map(f => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <span className="text-xs">=</span>
+                                            <select
+                                                value={mapping.linkedField || ""}
+                                                onChange={(e) => {
+                                                    const updated = [...(field.keyFieldMappings || [])];
+                                                    updated[idx].linkedField = e.target.value;
+                                                    updateField({ keyFieldMappings: updated });
+                                                }}
+                                                className="flex-1 text-xs px-1 py-1 border rounded"
+                                            >
+                                                <option value="">Select linked form field...</option>
+                                                {getAllFormFieldsWithGridColumns(linkedFormFields).map(f => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                onClick={() => {
+                                                    const updated = (field.keyFieldMappings || []).filter((_, i) => i !== idx);
+                                                    updateField({ keyFieldMappings: updated });
+                                                }}
+                                                className="text-red-500 hover:text-red-600"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+
+                                    <button
+                                        onClick={() => {
+                                            const updated = [...(field.keyFieldMappings || []), { currentField: "", linkedField: "" }];
+                                            updateField({ keyFieldMappings: updated });
+                                        }}
+                                        className="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1"
+                                    >
+                                        <Plus size={12} /> Add Mapping
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2089,7 +2309,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <option value="calculation">Calculation</option>
                                         <option value="time">Time</option>
                                         <option value="timecalculation">Time Calculation</option>
-                                        <option value="dependentDropdown">Dependent Dropdown</option> {/* 👈 New */}
+                                        <option value="dependentDropdown">Dependent Dropdown</option>
+                                        {linkedForm && <option value="linkedTextbox">Linked Field</option>}
                                     </select>
                                 </div>
 
@@ -2347,9 +2568,88 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     </div>
                                 )}
 
+                                {column.type === "linkedTextbox" && (
+                                    <div className="w-full space-y-2 mt-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Linked Field</label>
+                                            <select
+                                                value={column.linkedFieldReference || ""}
+                                                onChange={(e) => {
+                                                    const selectedValue = e.target.value;
+                                                    console.log("=== LINKEDTEXTBOX FIELD SELECTED ===");
+                                                    console.log("selectedValue:", selectedValue);
 
+                                                    if (selectedValue.includes('.')) {
+                                                        const [gridFieldId, columnId] = selectedValue.split('.');
+                                                        console.log("Processing as grid column - gridFieldId:", gridFieldId, "columnId:", columnId);
+                                                        updateField({
+                                                            linkedFieldId: null,
+                                                            linkedFieldType: "gridColumn",
+                                                            linkedGridFieldId: gridFieldId,
+                                                            linkedColumnId: columnId,
+                                                            linkedFieldReference: selectedValue,
+                                                            linkedFormId: linkedForm?.id || null
+                                                        });
+                                                    } else {
+                                                        console.log("Processing as regular field");
+                                                        updateField({
+                                                            linkedFieldId: selectedValue,
+                                                            linkedFieldType: "field",
+                                                            linkedGridFieldId: null,
+                                                            linkedColumnId: null,
+                                                            linkedFieldReference: selectedValue,
+                                                            linkedFormId: linkedForm?.id || null
+                                                        });
+                                                    }
+                                                }}
+                                                className="w-full px-2 py-1 border rounded text-xs"
+                                            >
+                                                <option value="">Select field from {linkedForm?.name}...</option>
 
+                                                <optgroup label="Regular Fields">
+                                                    {linkedFormFields
+                                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
+                                                        .map(linkedField => (
+                                                            <option key={linkedField.id} value={linkedField.id}>
+                                                                {linkedField.label} ({linkedField.type})
+                                                            </option>
+                                                        ))}
+                                                </optgroup>
 
+                                                <optgroup label="Grid Columns">
+                                                    {linkedFormFields
+                                                        .filter(f => f.type === "grid" && f.columns && Array.isArray(f.columns))
+                                                        .flatMap(gridField =>
+                                                            gridField.columns
+                                                                .filter(col => ["textbox", "numeric", "dropdown"].includes(col.type))
+                                                                .map(gridColumn => (
+                                                                    <option key={`${gridField.id}.${gridColumn.id}`} value={`${gridField.id}.${gridColumn.id}`}>
+                                                                        {gridField.label} → {gridColumn.name}
+                                                                    </option>
+                                                                ))
+                                                        )}
+                                                </optgroup>
+                                            </select>
+                                        </div>
+
+                                        {/* Display selected linked field info */}
+                                        {column.linkedFieldReference && (
+                                            <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                                Linked to: {
+                                                    column.linkedFieldType === "gridColumn" ? (
+                                                        (() => {
+                                                            const gridField = linkedFormFields.find(f => f.id === column.linkedGridFieldId);
+                                                            const gridCol = gridField?.columns?.find(c => c.id === column.linkedColumnId);
+                                                            return `${gridField?.label} → ${gridCol?.name}`;
+                                                        })()
+                                                    ) : (
+                                                        linkedFormFields.find(f => f.id === column.linkedFieldId)?.label
+                                                    )
+                                                }
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="w-full flex justify-end">
                                     <button

@@ -26,9 +26,14 @@ namespace productionLine.Server.DTO
         public int? InitialRows { get; set; }
         public int? LinkedFormId { get; set; }
         public Guid? LinkedFieldId { get; set; }
-        public string LinkedFieldType { get; set; }
-        public Guid? LinkedGridFieldId { get; set; }
-        public string LinkedColumnId { get; set; }
         public List<KeyFieldMapping>? KeyFieldMappings { get; set; }
+        public string? LinkedFieldType { get; set; }
+        public Guid? LinkedGridFieldId { get; set; }
+        public string? LinkedColumnId { get; set; }
+        public string? DisplayMode { get; set; }
+        public string? DisplayFormat { get; set; }
+        public bool? AllowManualEntry { get; set; }
+        public bool? ShowLookupButton { get; set; }
+        public string? KeyFieldMappingsJson { get; set; }
     }
 }
