@@ -83,7 +83,6 @@ export default function EnhancedReportViewer() {
         try {
             setLoading(true);
             const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
-
             const { processedData, summaryRows } = processCalculatedFields(res.data, calculatedFields, fields);
 
             setReportData(processedData);
@@ -97,13 +96,41 @@ export default function EnhancedReportViewer() {
 
     const chartData = useMemo(() => {
         if (!reportData || reportData.length === 0) return [];
+        const isDateLikeValue = (value) => {
+            if (typeof value !== 'string') return false;
 
+            // Check for common date patterns
+            const datePatterns = [
+                /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, // ISO datetime: 2025-06-12T18:30:00
+                /^\d{4}-\d{2}-\d{2}/, // Date: 2025-06-12
+                /^\d{2}\/\d{2}\/\d{4}/, // Date: 12/06/2025
+                /^\d{2}-\d{2}-\d{4}/, // Date: 12-06-2025
+            ];
+
+            // Test if value matches any date pattern
+            const matchesPattern = datePatterns.some(pattern => pattern.test(value));
+
+            // Also check if it's a valid date when parsed
+            const isValidDate = !isNaN(Date.parse(value));
+
+            return matchesPattern && isValidDate;
+        };
         const transformedData = reportData.map((row, index) => {
             const chartPoint = { submissionId: row.submissionId || index };
 
             (row.data || []).forEach(cell => {
                 const fieldLabel = cell.fieldLabel;
                 let value = cell.value;
+
+                if (fieldLabel === 'Date') {
+                    console.log('Date processing:', {
+                        original: value,
+                        type: typeof value,
+                        isString: typeof value === 'string',
+                        parseFloat: parseFloat(value),
+                        isNaN: isNaN(parseFloat(value))
+                    });
+                }
 
                 if (value === null || value === undefined || value === '') {
                     chartPoint[fieldLabel] = 0;
@@ -126,12 +153,19 @@ export default function EnhancedReportViewer() {
                         chartPoint[fieldLabel] = parsed;
                     }
                 } catch (e) {
-                    const numValue = parseFloat(value);
-                    if (!isNaN(numValue) && isFinite(numValue)) {
-                        chartPoint[fieldLabel] = numValue;
+                    if (typeof value === 'string' && isDateLikeValue(value)) {
+                        chartPoint[fieldLabel] = value; // Keep as date string
                     } else {
-                        chartPoint[fieldLabel] = value;
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue) && isFinite(numValue)) {
+                            chartPoint[fieldLabel] = numValue;
+                        } else {
+                            chartPoint[fieldLabel] = value;
+                        }
                     }
+                }
+                if (fieldLabel === 'Date') {
+                    console.log('Final chart point value:', chartPoint[fieldLabel]);
                 }
             });
 
@@ -140,6 +174,8 @@ export default function EnhancedReportViewer() {
 
         return transformedData;
     }, [reportData]);
+
+    
 
     const resolveFieldReference = (fieldRef, fields) => {
         let field = fields.find(f => f.id === fieldRef);

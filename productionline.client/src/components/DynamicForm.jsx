@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef } from "react";
+﻿import { useEffect, useState, useRef, useMemo } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useParams } from "react-router-dom";
@@ -16,7 +16,8 @@ export default function DynamicForm() {
     const [recentSubmissions, setRecentSubmissions] = useState([]);
     const [editingSubmissionId, setEditingSubmissionId] = useState(null);
     const [fontSize, setFontSize] = useState(16); // default 16px
-
+    const updatingLinkedFields = useRef(false);
+    const [linkedDataLoading, setLinkedDataLoading] = useState(false);
     const { formId } = useParams();
 
     useEffect(() => {
@@ -116,8 +117,26 @@ export default function DynamicForm() {
         }
     }, [formData]);
 
+    // Add this before the useEffect
+    const keyFieldValues = useMemo(() => {
+        if (!formData?.keyFieldMappings?.length) return {};
+
+        const values = {};
+        formData.keyFieldMappings.forEach(mapping => {
+            values[mapping.currentFormField] = formValues[mapping.currentFormField];
+        });
+        return values;
+    }, [formData?.keyFieldMappings, formValues]);
+
+    const keyFieldValuesString = useMemo(() => {
+        return JSON.stringify(keyFieldValues);
+    }, [keyFieldValues]);
+
     useEffect(() => {
         const loadLinkedDataAutomatically = async () => {
+            // Prevent infinite loops
+            if (updatingLinkedFields.current) return;
+
             console.log('🚀 loadLinkedDataAutomatically called');
 
             if (!formData?.linkedFormId || !formData?.keyFieldMappings?.length) {
@@ -129,12 +148,10 @@ export default function DynamicForm() {
                 const keyValues = {};
                 let hasAllKeyValues = true;
 
-                formData.keyFieldMappings.forEach(mapping => {
-                    const value = formValues[mapping.currentFormField];
+                Object.values(keyValues).forEach(value => {
                     if (!value || value === '') {
                         hasAllKeyValues = false;
                     }
-                    keyValues[mapping.currentFormField] = value;
                 });
 
                 if (!hasAllKeyValues) {
@@ -146,34 +163,15 @@ export default function DynamicForm() {
                 // Fetch linked data
                 const linkedSubmissions = await fetchLinkedData(formData.keyFieldMappings);
 
-                // ✅ FIX: Correct data structure validation
-                console.log('Complete API Response:', linkedSubmissions);
-
-                // Check if we have the response object and it has data property
-                if (!linkedSubmissions || typeof linkedSubmissions !== 'object') {
-                    console.log('🧹 No response object, clearing fields');
-                    clearLinkedTextboxFields();
-                    return;
-                }
-
-                // Access the data array correctly
+                // Your existing logic for processing submissions...
                 const dataArray = linkedSubmissions.data;
-                console.log('Data array:', dataArray);
 
                 if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) {
                     console.log('🧹 No data array or empty array, clearing fields');
-                    console.log('Data validation details:', {
-                        hasDataProperty: !!dataArray,
-                        isArray: Array.isArray(dataArray),
-                        length: dataArray?.length
-                    });
                     clearLinkedTextboxFields();
                     return;
                 }
 
-                console.log(`✅ Found ${dataArray.length} linked records`);
-
-                // Find matching submission using the correct data array
                 const config = {
                     gridColumnMappings: linkedSubmissions.gridColumnMappings,
                     fallbackMappings: {},
@@ -182,7 +180,7 @@ export default function DynamicForm() {
                 };
 
                 const matchingSubmission = findMatchingSubmission(
-                    dataArray, // ← Use dataArray, not linkedSubmissions.data
+                    dataArray,
                     keyValues,
                     formData.keyFieldMappings,
                     config
@@ -190,6 +188,9 @@ export default function DynamicForm() {
 
                 if (matchingSubmission) {
                     console.log('✅ Found matching submission, populating fields');
+
+                    // Set flag to prevent triggering the effect
+                    updatingLinkedFields.current = true;
 
                     setFormValues(prevValues => {
                         const updatedValues = { ...prevValues };
@@ -222,6 +223,11 @@ export default function DynamicForm() {
                                 }
                             });
 
+                        // Reset the flag after a short delay
+                        setTimeout(() => {
+                            updatingLinkedFields.current = false;
+                        }, 100);
+
                         console.log('Has updates to apply:', hasUpdates);
                         return updatedValues;
                     });
@@ -236,10 +242,18 @@ export default function DynamicForm() {
         };
 
         loadLinkedDataAutomatically();
-    }, [formValues, formData]);
+    }, [
+        // Only depend on key field values, not all formValues
+        keyFieldValuesString, // Stable string representation
+        formData?.linkedFormId,
+        formData?.keyFieldMappings?.length
+    ]);
 
     const clearLinkedTextboxFields = () => {
         console.log('🧹 Attempting to clear linked textbox fields');
+
+        // Set flag to prevent triggering the effect
+        updatingLinkedFields.current = true;
 
         setFormValues(prevValues => {
             const updatedValues = { ...prevValues };
@@ -256,16 +270,21 @@ export default function DynamicForm() {
                     }
                 });
 
+            // Reset the flag after a short delay
+            setTimeout(() => {
+                updatingLinkedFields.current = false;
+            }, 100);
+
             if (hasChanges) {
                 console.log('✅ Cleared linked textbox fields');
                 return updatedValues;
             } else {
                 console.log('ℹ️ No linked textbox fields to clear');
-                return prevValues; // Return original values to prevent unnecessary re-render
+                updatingLinkedFields.current = false; // Reset immediately if no changes
+                return prevValues;
             }
         });
     };
-
     const isBridgeField = (fieldId) => {
         return formData?.keyFieldMappings?.some(
             mapping => mapping.currentFormField === fieldId
@@ -891,6 +910,8 @@ export default function DynamicForm() {
         }
 
         try {
+            setLinkedDataLoading(true); // Start loading
+
             const url = `${APP_CONSTANTS.API_BASE_URL}/api/forms/linked-data/${formData.linkedFormId}?keyMappings=${encodeURIComponent(JSON.stringify(keyMappings))}`;
             console.log("API URL:", url);
 
@@ -907,13 +928,14 @@ export default function DynamicForm() {
             const result = await response.json();
             console.log("API Response:", result);
 
-            return result.data || result; // Handle different response formats
+            return result.data || result;
         } catch (error) {
             console.error("Error fetching linked data:", error);
             return null;
+        } finally {
+            setLinkedDataLoading(false); // End loading
         }
     };
-
     // Replace the existing handleLookupLinkedData function:
     // Usage in your component
     const handleLookupLinkedData = async (field) => {
@@ -1782,19 +1804,37 @@ export default function DynamicForm() {
                         <label className="block text-gray-700 text-sm font-bold mb-2">
                             {field.label}{" "}
                             {field.required && <span className="text-red-500">*</span>}
+                            {linkedDataLoading && (
+                                <span className="text-blue-500 text-xs ml-2">
+                                    Loading linked data...
+                                </span>
+                            )}
                         </label>
-                        <input
-                            type="text"
-                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-50"
-                            value={formValues[field.id] || ""}
-                            readOnly={!field.allowManualEntry}
-                            onChange={(e) => {
-                                if (field.allowManualEntry) {
-                                    NewhandleInputChange(field.id, e.target.value, field.type, field);
+                        <div className="relative">
+                            <input
+                                type="text"
+                                className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-50 ${linkedDataLoading ? 'opacity-60' : ''
+                                    }`}
+                                value={formValues[field.id] || ""}
+                                readOnly={!field.allowManualEntry}
+                                onChange={(e) => {
+                                    if (field.allowManualEntry) {
+                                        NewhandleInputChange(field.id, e.target.value, field.type, field);
+                                    }
+                                }}
+                                placeholder={linkedDataLoading
+                                    ? "Loading..."
+                                    : `Auto-loaded from ${formData.linkedForm?.name || 'linked form'}`
                                 }
-                            }}
-                            placeholder={`Auto-loaded from ${formData.linkedForm?.name || 'linked form'}`}
-                        />
+                            />
+
+                            {linkedDataLoading && (
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                    <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                                </div>
+                            )}
+                        </div>
+
                         {formErrors[field.id] && (
                             <p className="text-red-500 text-xs mt-1">
                                 {formErrors[field.id]}
@@ -1802,7 +1842,6 @@ export default function DynamicForm() {
                         )}
                     </div>
                 );
-
 
 
             default:
@@ -1900,6 +1939,14 @@ export default function DynamicForm() {
                 </div>
             )}
             <form onSubmit={handleSubmit}>
+                {linkedDataLoading && (
+                    <div className="mb-4 bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-3 rounded">
+                        <div className="flex items-center">
+                            <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full mr-2"></div>
+                            <span className="text-sm">Loading linked data...</span>
+                        </div>
+                    </div>
+                )}
                 <div style={{ fontSize: `${fontSize}px` }}>
                     <div className="flex flex-wrap -mx-2">
                         {formData.fields.map((field) => (

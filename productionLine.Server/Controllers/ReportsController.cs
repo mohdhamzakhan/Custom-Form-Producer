@@ -5,6 +5,7 @@ using productionLine.Server.DTO;
 using productionLine.Server.Model;
 using productionLine.Server.Service;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace productionLine.Server.Controllers
 {
@@ -378,6 +379,33 @@ namespace productionLine.Server.Controllers
 
             return result;
         }
+        [HttpDelete("delete/{id}")]
+        public async Task<IActionResult> DeleteTemplate(int id)
+        {
+            try
+            {
+                var template = await _context.ReportTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
+
+                if (template == null)
+                {
+                    return NotFound(new { message = "Report template not found." });
+                }
+
+                // Soft delete
+                template.IsDeleted = true;
+                template.DeletedAt = DateTime.Now;
+                template.DeletedBy = "current-username"; // Get from authentication context
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Report template deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
+            }
+        }
 
 
         private object CreateSingleRow(FormSubmission sub, ICollection<ReportField> reportFields, List<FormField> formFields)
@@ -408,6 +436,20 @@ namespace productionLine.Server.Controllers
             };
         }
 
+        public class SharedUser
+        {
+            [JsonPropertyName("id")]
+            public string Id { get; set; }
+
+            [JsonPropertyName("name")]
+            public string Name { get; set; }
+
+            [JsonPropertyName("type")]
+            public string Type { get; set; }
+
+            [JsonPropertyName("email")]
+            public string Email { get; set; }
+        }
 
 
         private List<FormSubmission> ApplyFilters(
@@ -491,8 +533,8 @@ namespace productionLine.Server.Controllers
                 }).ToList(),
                 filters = template.Filters,
                 sharedWithRole = !string.IsNullOrEmpty(template.SharedWithRole)
-                    ? JsonSerializer.Deserialize<List<string>>(template.SharedWithRole)
-                    : new List<string>(),
+                    ? JsonSerializer.Deserialize<List<SharedUser>>(template.SharedWithRole)
+                    : new List<SharedUser>(),
                 calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
                     ? JsonSerializer.Deserialize<List<CalculatedField>>(template.CalculatedFields)
                     : new List<CalculatedField>(),
@@ -503,27 +545,30 @@ namespace productionLine.Server.Controllers
         }
 
 
+
         // Add these new endpoints to your existing ReportsController.cs
 
-        [HttpGet("list")]  // Changed back to HttpGet
+        [HttpGet("list")]
         public async Task<IActionResult> GetReportsList(string username, bool includeShared = true)
         {
             try
             {
                 var query = _context.ReportTemplates
-                    .AsQueryable();
+    .AsQueryable();
 
-                // Only get reports created by the user
-                //query = query.Where(r => r.CreatedBy == username);
-
+                // Filter reports based on user access
                 var reports = await query
+                    .Where(r => r.CreatedBy == username ||
+                               (r.SharedWithRole != null &&
+                                r.SharedWithRole.Contains($"\"name\":\"{username}\"")))
                     .Select(r => new
                     {
                         r.Id,
                         r.Name,
                         r.SharedWithRole,
                         r.IncludeRemarks,
-                        //CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                        r.CreatedBy,
+                        CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
                         //UpdatedAt = r.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
                         r.FormId
                     })
@@ -536,6 +581,7 @@ namespace productionLine.Server.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
+
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteReport(int id)

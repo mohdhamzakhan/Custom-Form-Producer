@@ -45,7 +45,8 @@ export default function Layout({ children }) {
     // Default navigation links
     const defaultLinks = [
         { name: "Dashboard", path: "/Mainpage" },
-        { name: "Approval", path: "/reports" }
+        { name: "Approval", path: "/reports" },
+        { name: "Report", path: "/report" }
     ];
 
     // Add IT-specific links if user is in Sanand-IT group

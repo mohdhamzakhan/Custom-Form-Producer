@@ -231,6 +231,33 @@ export default function EnhancedReportDesigner() {
                 isShared: !!data.sharedWithRole,
                 sharedWithRoles: data.sharedWithRole || [],
             }));
+            console.log(data.sharedWithRole)
+            if (data.sharedWithRole) {
+                try {
+                    let parsedUsers;
+
+                    // Check if it's already an object/array
+                    if (typeof data.sharedWithRole === 'string') {
+                        parsedUsers = JSON.parse(data.sharedWithRole);
+                    } else {
+                        // It's already parsed (object/array)
+                        parsedUsers = data.sharedWithRole;
+                    }
+
+                    if (Array.isArray(parsedUsers)) {
+                        setSelectedUsers(parsedUsers);
+                        console.log('Loaded selected users:', parsedUsers);
+                    } else {
+                        console.warn('SharedWithRole is not an array:', parsedUsers);
+                        setSelectedUsers([]);
+                    }
+                } catch (error) {
+                    console.error('Error parsing SharedWithRole:', error);
+                    setSelectedUsers([]);
+                }
+            } else {
+                setSelectedUsers([]);
+            }
 
             // Map fields first and set local state
             const mappedFields = (data.fields || []).map(f => ({
@@ -560,9 +587,7 @@ export default function EnhancedReportDesigner() {
             includeApprovals: options.includeApprovals,
             includeRemarks: options.includeRemarks,
             isShared: options.isShared,
-            sharedWithRole: options.isShared && options.sharedWithRoles?.length
-                ? JSON.stringify(options.sharedWithRoles)
-                : null,
+            sharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
             fields: selectedFields.map((fieldId, index) => {
                 const field = fields.find(f => f.id === fieldId);
                 return {

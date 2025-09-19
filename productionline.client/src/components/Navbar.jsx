@@ -33,7 +33,9 @@ const Navbar = ({ user, links, onLogout }) => {
                 {/* Desktop Navigation */}
                 <div className="hidden md:flex items-center space-x-1">
                     {links && links.map(link => {
-                        const isActive = location.pathname.startsWith(link.path); // 🔥 Check active tab
+                        const isActive = location.pathname === link.path; // 🔥 Check active tab
+                        console.log(link.path)
+                        console.log(link.name)
                         return (
                             <Link
                                 key={link.name}

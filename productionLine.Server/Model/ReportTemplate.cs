@@ -30,6 +30,12 @@ namespace productionLine.Server.Model
 
         [Column("CHARTCONFIG")]
         public string? ChartConfig { get; set; }       // store as JSON
+        [Column("ISDELETE")]
+        public bool IsDeleted { get; set; }
+        [Column("DELETEDAT")]
+        public DateTime? DeletedAt { get; set; }
+        [Column("DELETEDBY")]
+        public string? DeletedBy { get; set; }
 
     }
     [Table("FF_REPORTFIELD")]
@@ -57,6 +63,7 @@ namespace productionLine.Server.Model
         public string? Value { get; set; }
         [Column("TYPE")]
         public string? Type { get; set; }
+
     }
 
 }

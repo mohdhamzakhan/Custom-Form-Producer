@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import {APP_CONSTANTS} from "./store";
+import { APP_CONSTANTS } from "./store";
+import Layout from "./Layout"
 
 export default function ReportsList() {
     const [reports, setReports] = useState([]);
@@ -9,28 +10,35 @@ export default function ReportsList() {
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const navigate = useNavigate();
+    const [currentUser, setCurrentUser] = useState(null);
 
     useEffect(() => {
-        fetchReports();
-    }, []);
+        const storedUserData = localStorage.getItem("user");
+        if (storedUserData && storedUserData !== "undefined") {
+            const storedUser = JSON.parse(storedUserData);
+            // Check if session has expired
+            if (storedUser.expiry && Date.now() > storedUser.expiry) {
+                // Session expired
+                localStorage.removeItem("user");
+                localStorage.removeItem("meaiFormToken");
+                navigate(`/login?expired=true`);
+            } else {
+                setCurrentUser(storedUser.username);
+            }
+        } else {
+            navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        }
+    }, [navigate]);
 
-    //const updateCurrentDateTime = () => {
-    //    const now = new Date();
-    //    const formatted = now.getFullYear() + '-' +
-    //        String(now.getMonth() + 1).padStart(2, '0') + '-' +
-    //        String(now.getDate()).padStart(2, '0') + ' ' +
-    //        String(now.getHours()).padStart(2, '0') + ':' +
-    //        String(now.getMinutes()).padStart(2, '0') + ':' +
-    //        String(now.getSeconds()).padStart(2, '0');
-    //    setCurrentDateTime(formatted);
-    //};
-
+    // Update your fetchReports function
     const fetchReports = async () => {
+        if (!currentUser) return; // Don't fetch if no user is set yet
+
         try {
             setLoading(true);
             const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/list`, {
                 params: {
-                    username: 'mohdhamzakhan',
+                    username: currentUser, // Use dynamic user
                     includeShared: true
                 }
             });
@@ -41,6 +49,37 @@ export default function ReportsList() {
             setLoading(false);
         }
     };
+
+    // Update your existing useEffect to depend on currentUser
+    useEffect(() => {
+        if (currentUser) {
+            fetchReports();
+        }
+    }, [currentUser]); // Add currentUser as dependency
+
+    const handleDelete = async (reportId) => {
+        // Show confirmation dialog
+        if (!window.confirm('Are you sure you want to delete this report? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const response = await axios.delete(`${APP_CONSTANTS.API_BASE_URL}/api/reports/delete/${reportId}`);
+
+            if (response.status === 200) {
+                // Remove the deleted report from state
+                setReports(prevReports => prevReports.filter(report => report.id !== reportId));
+
+                // Optional: Show success message
+                alert('Report deleted successfully!');
+            }
+        } catch (error) {
+            console.error('Error deleting report:', error);
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to delete report';
+            alert('Error deleting report: ' + errorMessage);
+        }
+    };
+
 
     const filteredReports = reports.filter(report =>
         report.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -57,6 +96,7 @@ export default function ReportsList() {
     }
 
     return (
+        <Layout>
         <div className="max-w-7xl mx-auto p-6">
             <div className="mb-6">
                 <div className="flex justify-between items-center mb-4">
@@ -115,7 +155,7 @@ export default function ReportsList() {
                                     >
                                         View
                                     </button>
-                                    {report.createdBy === 'mohdhamzakhan' && (
+                                    {report.createdBy === currentUser && (
                                         <>
                                             <button
                                                 onClick={() => navigate(`/reports/edit/${report.id}`)}
@@ -137,6 +177,7 @@ export default function ReportsList() {
                     ))}
                 </div>
             )}
-        </div>
+            </div>
+            </Layout>
     );
 }
