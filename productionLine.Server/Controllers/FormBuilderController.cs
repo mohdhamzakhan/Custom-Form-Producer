@@ -106,6 +106,7 @@ namespace productionLine.Server.Controllers
                         field.ShowLookupButton = field.ShowLookupButton ?? true;
                         field.KeyFieldMappings = field.KeyFieldMappings;
 
+
                         // Ensure FormId is set
                         field.FormId = existingForm.Id;
                     }

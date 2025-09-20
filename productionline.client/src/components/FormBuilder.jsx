@@ -3,7 +3,7 @@ import { Plus, GripVertical, X, Save, User, Users, ChevronUp, ChevronDown, Copy,
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import Layout from "./Layout"
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from "react-router-dom";
 import useAdSearch from "./hooks/useAdSearch";
 import { APP_CONSTANTS } from "./store";
 import DateFieldDesigner from './DateFieldDesigner';
@@ -34,6 +34,7 @@ const FormBuilder = () => {
     const { formLink } = useParams();
     const [originalFormLink, setOriginalFormLink] = useState("");
     const { searchResults, isSearching, error, searchAdDirectory } = useAdSearch();
+    const [user, setUser] = useState(null);
 
 
     // New state for copy format feature
@@ -188,13 +189,29 @@ const FormBuilder = () => {
             setLinkedFormFields([]);
         }
     };
-
-
-
+    const navigate = useNavigate();
     useEffect(() => {
-        fetchFormLayout();
-        fetchAvailableForms();
-    }, []);
+        const storedUserData = localStorage.getItem("user");
+
+        if (storedUserData && storedUserData !== "undefined") {
+            const storedUser = JSON.parse(storedUserData);
+
+            // Check if session has expired
+            if (storedUser.expiry && Date.now() > storedUser.expiry) {
+                // Session expired
+                localStorage.removeItem("user");
+                localStorage.removeItem("meaiFormToken");
+                navigate(`/login?expired=true`);
+            } else {
+                const names = [storedUser.username, ...storedUser.groups];
+                setUser(names);
+                fetchFormLayout();
+                fetchAvailableForms();
+            }
+        } else {
+            navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        }
+    }, [navigate]);
 
     useEffect(() => {
         const savedForm = localStorage.getItem("formBuilderFields");
@@ -548,8 +565,9 @@ const FormBuilder = () => {
             return;
         }
 
-        const currentUtc = "2025-04-24 07:55:02";
-        const currentUser = "mohdhamzakhan";
+        const currentUtc = new Date();
+
+        const currentUser = user[0].toLowerCase();
 
         try {
             // If updating, first fetch the current form to get the RowVersion
@@ -583,6 +601,7 @@ const FormBuilder = () => {
             const formData = {
                 ...baseForm,
                 form: baseForm,
+                createdBy: currentUser,
                 linkedFormId: linkedForm?.id || null,
                 // Around line 600-650, replace the keyFields mapping:
                 keyFields: keyFields.map(keyField => ({

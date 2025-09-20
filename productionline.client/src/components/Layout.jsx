@@ -53,7 +53,7 @@ export default function Layout({ children }) {
     let navLinks = user?.groups?.includes("SANAND-IT")
         ? [
             ...defaultLinks,
-            { name: "Create Form", path: "/formbuilder" },
+            { name: "Create Form", path: "/MyForm" },
             { name: "System Config", path: "/system-config" }
         ]
         : defaultLinks;
@@ -61,7 +61,7 @@ export default function Layout({ children }) {
     navLinks = (user?.groups?.includes("Custom-Form_Creators") || user?.groups?.includes("SANAND-IT"))
         ? [
             ...defaultLinks,
-            { name: "Create Form", path: "/formbuilder" }
+            { name: "Create Form", path: "/MyForm" }
         ]
         : defaultLinks;
     // Don't render anything until user is loaded

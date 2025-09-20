@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250920074904_userAddToForm")]
+    partial class userAddToForm
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,7 +72,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FF_FORM", (string)null);
+                    b.ToTable("FF_FORM");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
@@ -115,7 +118,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormSubmissionId");
 
-                    b.ToTable("FF_FORMAPPROVAL", (string)null);
+                    b.ToTable("FF_FORMAPPROVAL");
 
                     b.HasAnnotation("Relational:JsonPropertyName", "approvals");
                 });
@@ -161,7 +164,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_FORMAPPROVER", (string)null);
+                    b.ToTable("FF_FORMAPPROVER");
 
                     b.HasAnnotation("Relational:JsonPropertyName", "approvers");
                 });
@@ -313,7 +316,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_FORMFIELD", (string)null);
+                    b.ToTable("FF_FORMFIELD");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormSubmission", b =>
@@ -341,7 +344,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_FORMSUBMISSION", (string)null);
+                    b.ToTable("FF_FORMSUBMISSION");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormSubmissionData", b =>
@@ -371,7 +374,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormSubmissionId");
 
-                    b.ToTable("FF_FORMSUBMISSIONDATA", (string)null);
+                    b.ToTable("FF_FORMSUBMISSIONDATA");
 
                     b.HasAnnotation("Relational:JsonPropertyName", "submissionData");
                 });
@@ -513,7 +516,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormFieldId");
 
-                    b.ToTable("FF_REMARK_TRIGGER", (string)null);
+                    b.ToTable("FF_REMARK_TRIGGER");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.Report", b =>
@@ -571,7 +574,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
-                    b.ToTable("FF_REPORT", (string)null);
+                    b.ToTable("FF_REPORT");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.ReportAccess", b =>
@@ -601,7 +604,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("ReportId");
 
-                    b.ToTable("FF_REPORT_ACCESS", (string)null);
+                    b.ToTable("FF_REPORT_ACCESS");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.ReportField", b =>
@@ -633,7 +636,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("ReportTemplateId");
 
-                    b.ToTable("FF_REPORTFIELD", (string)null);
+                    b.ToTable("FF_REPORTFIELD");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.ReportFilter", b =>
@@ -668,7 +671,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("ReportTemplateId");
 
-                    b.ToTable("FF_REPORTFILTER", (string)null);
+                    b.ToTable("FF_REPORTFILTER");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.ReportTemplate", b =>
@@ -732,7 +735,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FF_REPORTTEMPLATE", (string)null);
+                    b.ToTable("FF_REPORTTEMPLATE");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>

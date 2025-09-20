@@ -27,6 +27,12 @@ namespace productionLine.Server.Model
         [Column("ROWVERSION")]
         public byte[] RowVersion { get; set; }
 
+        [Column("CREATEDBY")]
+        public string? CreatedBy { get; set; }
+
+        [Column("CREATEDAT")]
+        public DateTime CreatedAt { get; set; }
+
         [NotMapped]
         [Required]
         public List<FormField> Fields { get; set; } = new List<FormField>();

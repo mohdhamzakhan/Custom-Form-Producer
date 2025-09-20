@@ -839,6 +839,78 @@ namespace productionLine.Server.Controllers
             }
         }
 
+        [HttpGet("my-forms/{createdBy}")]
+        public async Task<IActionResult> GetFormsByCreator(string createdBy)
+        {
+            try
+            {
+                // Check if user is admin
+                bool isAdmin = createdBy.Contains("Sanand-IT");
+
+                IQueryable<Form> formsQuery;
+
+                if (isAdmin)
+                {
+                    // Admin sees all forms
+                    formsQuery = _context.Forms;
+                }
+                else
+                {
+                    // Regular user sees only their forms
+                    formsQuery = _context.Forms.Where(f => f.CreatedBy == createdBy.ToLower());
+                }
+
+                var forms = await formsQuery
+                    .Select(f => new
+                    {
+                        f.Id,
+                        f.Name,
+                        f.FormLink,
+                        f.CreatedBy,
+                        f.CreatedAt,
+                        f.LinkedFormId,
+                        FieldCount = _context.FormFields.Count(ff => ff.FormId == f.Id),
+                        ApproverCount = _context.FormApprovers.Count(fa => fa.FormId == f.Id)
+                    })
+                    .OrderByDescending(f => f.Id)
+                    .ToListAsync();
+
+                return Ok(forms);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        // Add a separate endpoint for all forms (optional, for cleaner separation)
+        [HttpGet("all-forms")]
+        public async Task<IActionResult> GetAllForms()
+        {
+            try
+            {
+                var forms = await _context.Forms
+                    .Select(f => new
+                    {
+                        f.Id,
+                        f.Name,
+                        f.FormLink,
+                        f.CreatedBy,
+                        f.CreatedAt,
+                        f.LinkedFormId,
+                        FieldCount = _context.FormFields.Count(ff => ff.FormId == f.Id),
+                        ApproverCount = _context.FormApprovers.Count(fa => fa.FormId == f.Id)
+                    })
+                    .OrderByDescending(f => f.Id)
+                    .ToListAsync();
+
+                return Ok(forms);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Internal server error");
+            }
+        }
 
 
     }

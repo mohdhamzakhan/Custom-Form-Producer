@@ -10,6 +10,7 @@ import ReportPage from "./components/ReportPage"; // Assuming you have this comp
 import ReportsList from "./components/ReportList";
 import ReportViewer from "./components/ReportViewer";
 import ReportDesigner from "./components/ReportDesigner";
+import MyForms from "./components/MyForms";
 
 
 // Protected route component
@@ -90,6 +91,8 @@ function App() {
                 <Route path="/reports/edit/:reportId" element={<ReportDesigner />} />
                 <Route path="/reports/view/:templateId" element={<ReportViewer />} />
                 <Route path="/reports/new" element={<ReportDesigner />} />
+                <Route path="/MyForm" element={<MyForms />} />
+                <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
         </Router>
     );

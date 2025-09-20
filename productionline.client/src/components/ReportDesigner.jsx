@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
-import { ChevronRight, ChevronDown, Users, Download, BarChart3, FileText, Plus, X, Search, User, UserCheck } from "lucide-react";
+import { ChevronRight, ChevronDown, Users, Download, BarChart3, FileText, Plus, X, Search, User, UserCheck, Copy } from "lucide-react";
 import { APP_CONSTANTS } from "./store";
 import useAdSearch from "./hooks/useAdSearch"
 import ReportCharts from "./ReportCharts"
@@ -1562,6 +1562,155 @@ export default function EnhancedReportDesigner() {
         return "Group Total";
     };
 
+    const copyReportDesign = async () => {
+        // Validation - ensure there's something to copy
+        if (!templateName.trim()) {
+            setError("Please enter a template name before copying");
+            return;
+        }
+
+        if (!selectedFormId) {
+            setError("Please select a form before copying");
+            return;
+        }
+
+        if (selectedFields.length === 0) {
+            setError("Please select at least one field before copying");
+            return;
+        }
+
+        // Clear previous messages
+        setError(null);
+        setSuccess(null);
+
+        // Prepare payload similar to saveTemplate but for copying
+        const filtersToSave = filters.map(f => {
+            const matchedField = fields.find(field => field.id === f.field);
+            return {
+                fieldLabel: matchedField?.id || f.field,
+                operator: f.condition,
+                value: f.value,
+                type: matchedField?.type || f.type || "text"
+            };
+        });
+
+        const payload = {
+            Id: 0, // Always 0 for new copy
+            FormId: parseInt(selectedFormId),
+            Name: templateName + " (Copy)", // Append (Copy) to distinguish
+            CreatedBy: localStorage.getItem("user")
+                ? JSON.parse(localStorage.getItem("user")).username
+                : "system",
+            IncludeApprovals: options.includeApprovals,
+            IncludeRemarks: options.includeRemarks,
+            SharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
+            Fields: selectedFields.map((fieldId, index) => {
+                const field = fields.find(f => f.id === fieldId);
+                return {
+                    fieldId: fieldId,
+                    fieldLabel: field?.label || fieldId,
+                    order: index
+                };
+            }),
+            Filters: filtersToSave,
+            CalculatedFields: calculatedFields.map(c => ({
+                calculationType: c.calculationType || "aggregate",
+                description: c.description || "",
+                format: c.format || "decimal",
+                formula: c.formula,
+                functionType: c.functionType || "",
+                id: c.id,
+                label: c.label,
+                precision: c.precision || 2,
+                showOneRowPerGroup: c.showOneRowPerGroup || false,
+                sortOrder: c.sortOrder,
+                sourceFields: c.sourceFields || [],
+                windowSize: c.windowSize || 3
+            })),
+            ChartConfigs: chartConfigs.map(chart => ({
+                id: chart.id,
+                title: chart.title,
+                type: chart.type,
+                metrics: chart.metrics.map(metricId => {
+                    const field = fields.find(f => f.id === metricId);
+                    return field ? field.label : metricId;
+                }),
+                xField: (() => {
+                    if (!chart.xField) return null;
+                    const field = fields.find(f => f.id === chart.xField);
+                    return field ? field.label : chart.xField;
+                })(),
+                position: chart.position,
+                comboConfig: {
+                    barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
+                        const field = fields.find(f => f.id === metricId);
+                        return field ? field.label : metricId;
+                    }),
+                    lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
+                        const field = fields.find(f => f.id === metricId);
+                        return field ? field.label : metricId;
+                    })
+                }
+            }))
+        };
+
+        try {
+            const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json-patch+json"
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setSuccess("Report template copied successfully! A new copy has been created.");
+
+                // Optionally: redirect to the new copy for editing
+                if (data && data.id) {
+                    setTimeout(() => {
+                        navigate(`/reports/designer/${data.id}`);
+                    }, 1500);
+                }
+            } else {
+                setError("Failed to copy template: " + (data.message || "Unknown error"));
+            }
+        } catch (err) {
+            setError("Failed to copy template: " + (err.message || "Unknown error"));
+        }
+    };
+
+    const pasteReportDesign = async () => {
+        try {
+            const clipboardText = await navigator.clipboard.readText();
+            const reportConfig = JSON.parse(clipboardText);
+
+            // Validate that it's a valid report configuration
+            if (!reportConfig.templateName || !reportConfig.selectedFormId) {
+                throw new Error("Invalid report configuration in clipboard");
+            }
+
+            // Apply the configuration
+            setTemplateName(reportConfig.templateName);
+            setSelectedFormId(reportConfig.selectedFormId);
+            setSelectedFields(reportConfig.selectedFields || []);
+            setFilters(reportConfig.filters || []);
+            setCalculatedFields(reportConfig.calculatedFields || []);
+            setChartConfigs(reportConfig.chartConfigs || []);
+            setOptions(reportConfig.options || options);
+            setSelectedUsers(reportConfig.selectedUsers || []);
+
+            setSuccess("Report design pasted successfully!");
+            setTimeout(() => setSuccess(null), 3000);
+
+        } catch (err) {
+            setError("Failed to paste report design: " + err.message);
+            setTimeout(() => setError(null), 3000);
+        }
+    };
+
     return (
         <div className="flex h-screen bg-gray-100">
             {/* Left Panel */}
@@ -1811,6 +1960,13 @@ export default function EnhancedReportDesigner() {
                             <p className="text-gray-600">Create and customize your reports</p>
                         </div>
                         <div className="flex space-x-3">
+                            <button
+                                onClick={copyReportDesign}
+                                className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded flex items-center"
+                            >
+                                <Copy className="w-4 h-4 mr-2" />
+                                Duplicate Report
+                            </button>
                             <button
                                 onClick={previewReport}
                                 className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
