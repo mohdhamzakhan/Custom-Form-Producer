@@ -143,7 +143,6 @@ const AdSearchComponent = ({ selectedUsers, setSelectedUsers }) => {
 };
 
 export default function EnhancedReportDesigner() {
-    // Your original state variables
     const [forms, setForms] = useState([]);
     const [selectedFormId, setSelectedFormId] = useState("");
     const [fields, setFields] = useState([]);
@@ -326,8 +325,6 @@ export default function EnhancedReportDesigner() {
         });
     }, [reportId]);
 
-
-    // Your original user authentication logic
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
 
@@ -350,7 +347,6 @@ export default function EnhancedReportDesigner() {
         }
     }, [navigate]);
 
-    // Your original fetchAvailableRoles function
     const fetchAvailableRoles = async (user) => {
         try {
             // Mock data for now - replace with actual API call
@@ -360,7 +356,6 @@ export default function EnhancedReportDesigner() {
         }
     };
 
-    // Your original forms fetching logic
     useEffect(() => {
         const fetchForms = async () => {
             if (!user) return;
@@ -381,7 +376,6 @@ export default function EnhancedReportDesigner() {
         fetchForms();
     }, [user]);
 
-    // When selectedFormId changes, load fields for that form
     useEffect(() => {
         if (!selectedFormId) return;
 
@@ -427,7 +421,6 @@ export default function EnhancedReportDesigner() {
         loadFormFields();
     }, [selectedFormId]);
 
-    //Your original handleFormChange function
     const handleFormChange = async (e) => {
         const formId = e.target.value;
         setSelectedFormId(formId);
@@ -477,7 +470,6 @@ export default function EnhancedReportDesigner() {
         }
     };
 
-    //Your original filter functions
     const addFilter = () => {
         setFilters([...filters, {
             id: Date.now(),  // <-- Unique ID
@@ -489,20 +481,16 @@ export default function EnhancedReportDesigner() {
         }]);
     };
 
-
     const updateFilter = (id, updates) => {
         setFilters((prev) =>
             prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
         );
     };;
 
-
     const removeFilter = (idToRemove) => {
         setFilters(filters.filter(f => f.id !== idToRemove));
     };
 
-
-    // UI helper functions
     const toggleField = (fieldId) => {
         setSelectedFields(prev =>
             prev.includes(fieldId) ? prev.filter(f => f !== fieldId) : [...prev, fieldId]

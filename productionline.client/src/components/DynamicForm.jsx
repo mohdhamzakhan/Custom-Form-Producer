@@ -19,6 +19,7 @@ export default function DynamicForm() {
     const updatingLinkedFields = useRef(false);
     const [linkedDataLoading, setLinkedDataLoading] = useState(false);
     const { formId } = useParams();
+    const [tableColors, setTableColors] = useState({});
 
     useEffect(() => {
         // In a real application, this would be an actual API call
@@ -62,23 +63,26 @@ export default function DynamicForm() {
                     } else if (field.type === "dropdown") {
                         initialValues[field.id] = "";
                     } else if (field.type === "grid") {
-                        // Ensure columns is properly set
-                        field.columns = field.columns || [];
-
-                        // Initialize grid with empty rows
-                        const rowCount = field.initialRows || 3;
+                        const rowCount = field.initialRows || field.minRows || 1;
                         const rows = [];
-
                         for (let i = 0; i < rowCount; i++) {
                             const row = {};
                             field.columns.forEach(col => {
-                                row[col.name] = "";
+                                if (col.type === "checkbox") {
+                                    row[col.name] = col.options ? [] : false;
+                                } else if (col.type === "numeric") {
+                                    row[col.name] = "";
+                                } else if (col.type === "date") {
+                                    row[col.name] = null;
+                                } else {
+                                    row[col.name] = "";
+                                }
                             });
                             rows.push(row);
                         }
-
                         initialValues[field.id] = rows;
                     }
+
                 });
 
                 setFormValues(initialValues);
@@ -314,7 +318,27 @@ export default function DynamicForm() {
         }, 100);
     };
 
+    const getTableColor = (fieldId) => {
+        if (!tableColors[fieldId]) {
+            const colors = [
+                { bg: 'bg-blue-50', border: 'border-blue-200', hover: 'hover:bg-blue-100', titleBg: 'bg-blue-300' },
+                { bg: 'bg-green-50', border: 'border-green-200', hover: 'hover:bg-green-100', titleBg: 'bg-green-300' },
+                { bg: 'bg-purple-50', border: 'border-purple-200', hover: 'hover:bg-purple-100', titleBg: 'bg-purple-300' },
+                { bg: 'bg-pink-50', border: 'border-pink-200', hover: 'hover:bg-pink-100', titleBg: 'bg-pink-300' },
+                { bg: 'bg-yellow-50', border: 'border-yellow-200', hover: 'hover:bg-yellow-100', titleBg: 'bg-yellow-300' },
+                { bg: 'bg-indigo-50', border: 'border-indigo-200', hover: 'hover:bg-indigo-100', titleBg: 'bg-indigo-300' },
+                { bg: 'bg-red-50', border: 'border-red-200', hover: 'hover:bg-red-100', titleBg: 'bg-red-300' },
+                { bg: 'bg-orange-50', border: 'border-orange-200', hover: 'hover:bg-orange-100', titleBg: 'bg-orange-300' },
+                { bg: 'bg-teal-50', border: 'border-teal-200', hover: 'hover:bg-teal-100', titleBg: 'bg-teal-300' },
+                { bg: 'bg-cyan-50', border: 'border-cyan-200', hover: 'hover:bg-cyan-100', titleBg: 'bg-cyan-300' }
+            ];
 
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            setTableColors(prev => ({ ...prev, [fieldId]: randomColor }));
+            return randomColor;
+        }
+        return tableColors[fieldId];
+    };
 
     // Generic function to check if key fields have changed
     const checkKeyFieldsChanged = (newFormValues, oldFormValues, keyFieldMappings) => {
@@ -725,36 +749,109 @@ export default function DynamicForm() {
                 }
             }
 
-            // Grid column-level required validation
+
             if (field.type === "grid" && field.columns?.length > 0) {
                 const rows = formValues[field.id] || [];
                 rows.forEach((row, rowIndex) => {
-                    field.columns.forEach((col) => {
-                        if (col.required && (!row[col.name] || row[col.name].toString().trim() === "")) {
+                    field.columns.forEach(col => {
+                        const value = row[col.name];
+
+                        if (col.required && (value === "" || value === null || value === undefined)) {
                             const errorKey = `${field.id}_${rowIndex}_${col.name}`;
                             errors[errorKey] = `${col.label || col.name} is required in row ${rowIndex + 1}`;
+                        }
+
+                        // Date validation for date columns
+                        if (col.type === "date" && value !== null && value !== "") {
+                            const errorKey = `${field.id}_${rowIndex}_${col.name}`;
+
+                            if (!(value instanceof Date) || isNaN(value.getTime())) {
+                                errors[errorKey] = `Please enter a valid date in row ${rowIndex + 1}`;
+                            }
+                        }
+
+                        // Numeric validation for numeric columns
+                        if (col.type === "numeric" && value !== "" && value !== null) {
+                            const numValue = parseFloat(value);
+                            const errorKey = `${field.id}_${rowIndex}_${col.name}`;
+
+                            if (!isNaN(numValue)) {
+                                // Check if value is out of range
+                                const isOutOfRange = (
+                                    (col.min !== null && col.min !== undefined && numValue < col.min) ||
+                                    (col.max !== null && col.max !== undefined && numValue > col.max)
+                                );
+
+                                // If out of range, remarks are required
+                                if (isOutOfRange) {
+                                    const remarksKey = `${field.id}_${rowIndex}_${col.name}_remarks`;
+                                    const remarks = row[`${col.name}_remarks`];
+
+                                    if (!remarks || remarks.trim() === "") {
+                                        errors[remarksKey] = `Remarks required for out-of-range value in row ${rowIndex + 1}`;
+                                    }
+                                }
+                            }
                         }
                     });
                 });
             }
 
-            // Numeric constraints
             if (field.type === "numeric" && value !== "") {
                 const numValue = parseFloat(value);
                 if (isNaN(numValue)) {
                     errors[field.id] = "Please enter a valid number";
                 } else {
-                    if (field.isDecimal === false && !Number.isInteger(numValue)) {
+                    // Check decimal constraint
+                    if (field.decimal === false && !Number.isInteger(numValue)) {
                         errors[field.id] = "Please enter a whole number";
                     }
-                    if (field.min !== null && numValue < field.min) {
+
+                    // Check min/max constraints
+                    if (field.min !== null && field.min !== undefined && numValue < field.min) {
                         errors[field.id] = `Value must be at least ${field.min}`;
                     }
-                    if (field.max !== null && numValue > field.max) {
+                    if (field.max !== null && field.max !== undefined && numValue > field.max) {
                         errors[field.id] = `Value must be at most ${field.max}`;
+                    }
+
+                    // Check if remarks are required for out-of-range values
+                    const isOutOfRange = (
+                        (field.min !== null && field.min !== undefined && numValue < field.min) ||
+                        (field.max !== null && field.max !== undefined && numValue > field.max)
+                    );
+
+                    if (field.requireRemarksOutOfRange && isOutOfRange) {
+                        const remarks = remarks[field.id];
+                        if (!remarks || remarks.trim() === "") {
+                            errors[`${field.id}_remarks`] = "Remarks required for out-of-range value";
+                        }
+                    }
+
+                    // Check specific remark triggers
+                    if (field.remarkTriggers && field.remarkTriggers.length > 0) {
+                        const needsRemarks = field.remarkTriggers.some(trigger => {
+                            const triggerValue = parseFloat(trigger.value);
+                            switch (trigger.operator) {
+                                case "=": return numValue === triggerValue;
+                                case ">": return numValue > triggerValue;
+                                case "<": return numValue < triggerValue;
+                                case ">=": return numValue >= triggerValue;
+                                case "<=": return numValue <= triggerValue;
+                                default: return false;
+                            }
+                        });
+
+                        if (needsRemarks) {
+                            const fieldRemarks = remarks[field.id];
+                            if (!fieldRemarks || fieldRemarks.trim() === "") {
+                                errors[`${field.id}_remarks`] = "Remarks required for this value";
+                            }
+                        }
                     }
                 }
             }
+
 
             // Remarks validation (as already handled)
             if (checkRemarkTriggers(field, value) && (!remarks[field.id] || remarks[field.id].trim() === "")) {
@@ -767,7 +864,20 @@ export default function DynamicForm() {
 
         return errors;
     };
+    const cleanGridData = (gridData) => {
+        if (!Array.isArray(gridData)) return gridData;
 
+        return gridData.map(row => {
+            const cleanedRow = {};
+            Object.keys(row).forEach(key => {
+                // Only include non-empty values or non-remark fields
+                if (!key.endsWith('_remarks') || (key.endsWith('_remarks') && row[key] && row[key].trim() !== '')) {
+                    cleanedRow[key] = row[key];
+                }
+            });
+            return cleanedRow;
+        });
+    };
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -788,16 +898,16 @@ export default function DynamicForm() {
                 fieldTypes[field.id] = field.type;
             });
 
-            Object.keys(formValues).forEach((fieldId) => {
+            Object.keys(formValues).forEach(fieldId => {
                 let fieldValue = formValues[fieldId];
                 const fieldType = fieldTypes[fieldId];
 
-                if (fieldType === 'grid' && Array.isArray(fieldValue)) {
-                    // For grid fields, convert the array of row objects to JSON string
-                    fieldValue = JSON.stringify(fieldValue);
+                if (fieldType === "grid" && Array.isArray(fieldValue)) {
+                    // Clean grid data before saving
+                    fieldValue = JSON.stringify(cleanGridData(fieldValue));
                 } else if (Array.isArray(fieldValue)) {
                     // For checkbox groups, join the selected values
-                    fieldValue = fieldValue.join(', ');
+                    fieldValue = fieldValue.join(",");
                 }
 
                 // Handle different field types
@@ -896,8 +1006,16 @@ export default function DynamicForm() {
 
     const getDayName = (date) => {
         if (!date) return "";
-        return date.toLocaleDateString(undefined, { weekday: "long" });
+
+        // Ensure date is a Date object
+        const dateObj = date instanceof Date ? date : new Date(date);
+
+        // Check if the date is valid
+        if (isNaN(dateObj.getTime())) return "";
+
+        return dateObj.toLocaleDateString(undefined, { weekday: "long" });
     };
+
 
     const fetchLinkedData = async (keyMappings) => {
         console.log("=== FETCH LINKED DATA DEBUG ===");
@@ -1448,22 +1566,17 @@ export default function DynamicForm() {
                 return (
                     <div className="mb-4 w-full">
                         <label className="block text-gray-700 text-sm font-bold mb-2">
-                            {field.label}{" "}
+                            {field.label}
                             {field.required && <span className="text-red-500">*</span>}
                         </label>
-
-                        {/* Wrap datepicker and day textbox in a vertical flex container */}
                         <div className="flex flex-col gap-1">
                             <DatePicker
                                 className="border p-2 w-full"
                                 selected={formValues[field.id] || null}
-                                onChange={(date) =>
-                                    handleInputChange(field.id, date, field.type, field)
-                                }
+                                onChange={(date) => handleInputChange(field.id, date, field.type, field)}
                                 dateFormat="dd/MM/yyyy"
                                 placeholderText="DD/MM/YYYY"
                             />
-
                             <input
                                 type="text"
                                 className="border p-1 w-24 text-center bg-gray-100 cursor-not-allowed text-sm"
@@ -1472,12 +1585,12 @@ export default function DynamicForm() {
                                 aria-label="Day of the week"
                             />
                         </div>
-
                         {formErrors[field.id] && (
                             <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
                         )}
                     </div>
                 );
+
 
             case "radio":
                 return (
@@ -1552,33 +1665,48 @@ export default function DynamicForm() {
                 );
 
             case "grid":
+                const colorScheme = getTableColor(field.id);
+
                 return (
                     <div className="mb-4 w-full">
-                        <label className="block text-gray-700 text-sm font-bold mb-2">{field.label}</label>
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full bg-white border border-gray-300">
+                        <div className={`overflow-x-auto border-2 ${colorScheme.border} rounded-lg`}>
+                            <table className="min-w-full bg-white">
                                 <thead>
+                                    <tr>
+                                        <td
+                                            colSpan={(field.columns || []).length + 1}
+                                            className={`${colorScheme.titleBg} py-2 px-4 border-b ${colorScheme.border}`}
+                                        >
+                                            <label className="block text-gray-700 text-sm font-bold">
+                                                {field.label}
+                                            </label>
+                                        </td>
+                                    </tr>
+                                </thead>
+                                <thead className={colorScheme.bg}>
                                     <tr>
                                         {(field.columns || []).map((col, idx) => (
                                             <th
                                                 key={idx}
-                                                className="py-2 px-4 border-b"
-                                                style={{ width: col.width || "auto" }} 
+                                                className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`}
+                                                style={{ width: col.width || "auto" }}
                                             >
                                                 {col.name}
                                             </th>
                                         ))}
-                                        <th className="py-2 px-4 border-b" style={{ width: "100px" }}>Actions</th>
+                                        <th className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`} style={{ width: "100px" }}>
+                                            Actions
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {(formValues[field.id] || []).map((row, rowIndex) => (
-                                        <tr key={rowIndex}>
+                                        <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
                                             {(field.columns || []).map((col, colIdx) => (
                                                 <td
                                                     key={colIdx}
-                                                    className="py-2 px-4 border-b"
-                                                    style={{ width: col.width || "auto" }} 
+                                                    className="py-2 px-4 border-b border-gray-200"
+                                                    style={{ width: col.width || "auto" }}
                                                 >
                                                     {(() => {
                                                         const style = {
@@ -1752,6 +1880,215 @@ export default function DynamicForm() {
                                                             );
                                                         }
 
+                                                        if (col.type === "checkbox") {
+                                                            // Handle boolean checkbox (single true/false value)
+                                                            if (!col.options || col.options.length === 0) {
+                                                                return (
+                                                                    <div>
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                            checked={row[col.name] === true || row[col.name] === "true"}
+                                                                            onChange={(e) => {
+                                                                                const updatedRow = { ...row, [col.name]: e.target.checked };
+                                                                                handleGridChange(field.id, rowIndex, col.name, e.target.checked, updatedRow);
+                                                                            }}
+                                                                            style={{
+                                                                                color: col.textColor || "inherit",
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            // Handle multi-option checkbox (existing code for checkbox with options)
+                                                            return (
+                                                                <div>
+                                                                    {(col.options || []).map((option) => (
+                                                                        <div key={option} className="flex items-center mb-1">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                id={`${field.id}_${rowIndex}_${col.name}_${option}`}
+                                                                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                                                                checked={
+                                                                                    Array.isArray(row[col.name])
+                                                                                        ? row[col.name].includes(option)
+                                                                                        : false
+                                                                                }
+                                                                                onChange={(e) => {
+                                                                                    let updatedValues = Array.isArray(row[col.name])
+                                                                                        ? [...row[col.name]]
+                                                                                        : [];
+
+                                                                                    if (e.target.checked) {
+                                                                                        if (!updatedValues.includes(option)) {
+                                                                                            updatedValues.push(option);
+                                                                                        }
+                                                                                    } else {
+                                                                                        updatedValues = updatedValues.filter(val => val !== option);
+                                                                                    }
+
+                                                                                    const updatedRow = { ...row, [col.name]: updatedValues };
+                                                                                    handleGridChange(field.id, rowIndex, col.name, updatedValues, updatedRow);
+                                                                                }}
+                                                                                style={{
+                                                                                    color: col.textColor || "inherit",
+                                                                                }}
+                                                                            />
+                                                                            <label
+                                                                                htmlFor={`${field.id}_${rowIndex}_${col.name}_${option}`}
+                                                                                className="text-sm text-gray-700 cursor-pointer"
+                                                                            >
+                                                                                {option}
+                                                                            </label>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        if (col.type === "numeric") {
+                                                            const currentValue = parseFloat(row[col.name]);
+                                                            const isOutOfRange = !isNaN(currentValue) && (
+                                                                (col.min !== null && col.min !== undefined && currentValue < col.min) ||
+                                                                (col.max !== null && col.max !== undefined && currentValue > col.max)
+                                                            );
+
+                                                            return (
+                                                                <div>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={row[col.name] || ""}
+                                                                        onChange={(e) => {
+                                                                            const value = e.target.value;
+                                                                            const updatedRow = { ...row, [col.name]: value };
+
+                                                                            // Clear remarks if value is back in range
+                                                                            const numValue = parseFloat(value);
+                                                                            if (value === "" || isNaN(numValue) ||
+                                                                                (col.min === null || col.min === undefined || numValue >= col.min) &&
+                                                                                (col.max === null || col.max === undefined || numValue <= col.max)) {
+                                                                                updatedRow[`${col.name}_remarks`] = "";
+                                                                            }
+
+                                                                            handleGridChange(field.id, rowIndex, col.name, value, updatedRow);
+                                                                        }}
+                                                                        className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
+                                                                            } ${isOutOfRange ? "border-orange-500" : ""}`}
+                                                                        style={{
+                                                                            color: col.textColor || "inherit",
+                                                                            backgroundColor: col.backgroundColor || "inherit",
+                                                                        }}
+                                                                        step={col.decimal ? "any" : "1"}
+                                                                        placeholder={`${col.min !== null ? `Min: ${col.min}` : ""}${col.min !== null && col.max !== null ? ", " : ""
+                                                                            }${col.max !== null ? `Max: ${col.max}` : ""}`}
+                                                                    />
+
+                                                                    {/* Show out of range warning */}
+                                                                    {isOutOfRange && (
+                                                                        <div className="text-orange-600 text-xs mt-1">
+                                                                            ⚠️ Value outside range ({col.min !== null ? `${col.min}` : ""}
+                                                                            {col.min !== null && col.max !== null ? " - " : ""}
+                                                                            {col.max !== null ? `${col.max}` : ""}). Remarks required.
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Remarks field for out of range values */}
+                                                                    {isOutOfRange && (
+                                                                        <textarea
+                                                                            placeholder="Please provide remarks for out-of-range value"
+                                                                            value={row[`${col.name}_remarks`] || ""}
+                                                                            onChange={(e) => {
+                                                                                const updatedRow = {
+                                                                                    ...row,
+                                                                                    [`${col.name}_remarks`]: e.target.value,
+                                                                                };
+                                                                                handleGridChange(
+                                                                                    field.id,
+                                                                                    rowIndex,
+                                                                                    `${col.name}_remarks`,
+                                                                                    e.target.value,
+                                                                                    updatedRow
+                                                                                );
+                                                                            }}
+                                                                            className={`border rounded px-2 py-1 w-full mt-2 text-sm ${formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`] ? "border-red-500" : ""
+                                                                                }`}
+                                                                            rows="2"
+                                                                            required
+                                                                        />
+                                                                    )}
+
+                                                                    {/* Show constraint info */}
+                                                                    {(col.min !== null || col.max !== null || !col.decimal) && !isOutOfRange && (
+                                                                        <div className="text-xs text-gray-500 mt-1">
+                                                                            {!col.decimal && "Whole number"}
+                                                                            {!col.decimal && (col.min !== null || col.max !== null) && ", "}
+                                                                            {col.min !== null && col.max !== null
+                                                                                ? `Range: ${col.min} - ${col.max}`
+                                                                                : col.min !== null
+                                                                                    ? `Min: ${col.min}`
+                                                                                    : col.max !== null
+                                                                                        ? `Max: ${col.max}`
+                                                                                        : ""
+                                                                            }
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Show validation errors */}
+                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                        <p className="text-red-500 text-xs mt-1">
+                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                        </p>
+                                                                    )}
+
+                                                                    {/* Show remarks validation error */}
+                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`] && (
+                                                                        <p className="text-red-500 text-xs mt-1">
+                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`]}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        if (col.type === "date") {
+                                                            return (
+                                                                <div>
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <DatePicker
+                                                                            className="border rounded px-2 py-1 w-full"
+                                                                            selected={row[col.name] ? new Date(row[col.name]) : null}
+                                                                            onChange={(date) => {
+                                                                                const updatedRow = { ...row, [col.name]: date };
+                                                                                handleGridChange(field.id, rowIndex, col.name, date, updatedRow);
+                                                                            }}
+                                                                            dateFormat="dd/MM/yyyy"
+                                                                            placeholderText="DD/MM/YYYY"
+                                                                            style={{
+                                                                                color: col.textColor || "inherit",
+                                                                                backgroundColor: col.backgroundColor || "inherit",
+                                                                            }}
+                                                                        />
+
+                                                                        {/* Show day name below date picker */}
+                                                                        <input
+                                                                            type="text"
+                                                                            className="border rounded px-2 py-1 w-full text-center bg-gray-100 cursor-not-allowed text-xs"
+                                                                            value={getDayName(row[col.name])}
+                                                                            disabled
+                                                                            aria-label="Day of the week"
+                                                                        />
+                                                                    </div>
+
+                                                                    {/* Show validation error if any */}
+                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                        <p className="text-red-500 text-xs mt-1">
+                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
 
                                                         return (
                                                             <div>
@@ -1773,28 +2110,41 @@ export default function DynamicForm() {
                                                     })()}
                                                 </td>
                                             ))}
-                                            <td className="py-2 px-4 border-b" style={{ width: "auto" }}>
+                                            <td className="py-2 px-4 border-b border-gray-200" style={{ width: "auto" }}>
                                                 <button
                                                     type="button"
                                                     onClick={() => removeGridRow(field.id, rowIndex)}
-                                                    className="text-red-500 hover:text-red-700"
+                                                    disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
+                                                    className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                        ? 'text-gray-400 cursor-not-allowed'
+                                                        : 'text-red-500 hover:text-red-700'
+                                                        }`}
+                                                    title={
+                                                        (formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                            ? `Minimum ${field.min_rows} rows required`
+                                                            : 'Remove this row'
+                                                    }
                                                 >
                                                     Remove
                                                 </button>
                                             </td>
+
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
+                        {(formValues[field.id] || []).length < (field.maxRows || Infinity) && (
+                            <button
+                                type="button"
+                                onClick={() => addGridRow(field.id, field.columns)}
+                                className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
+                                title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || '∞'})`}
+                            >
+                                Add Row {field.maxRows ? `(${(formValues[field.id] || []).length}/${field.maxRows})` : ''}
+                            </button>
+                        )}
 
-                        <button
-                            type="button"
-                            onClick={() => addGridRow(field.id, field.columns)}
-                            className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
-                        >
-                            Add Row
-                        </button>
                     </div>
                 );
 
@@ -1867,20 +2217,55 @@ export default function DynamicForm() {
     };
 
     const addGridRow = (fieldId, columns) => {
+        const field = formData.fields.find(f => f.id === fieldId);
+        const currentRows = formValues[fieldId] || [];
+
+        if (field.maxRows && currentRows.length >= field.maxRows) {
+            alert(`Maximum ${field.maxRows} rows allowed`);
+            return;
+        }
+
         const newRow = {};
-        (columns || []).forEach((col) => {
-            newRow[col.name] = "";
+        columns.forEach(col => {
+            if (col.type === "checkbox") {
+                if (!col.options || col.options.length === 0) {
+                    newRow[col.name] = false;
+                } else {
+                    newRow[col.name] = [];
+                }
+            } else if (col.type === "numeric") {
+                newRow[col.name] = "";
+                newRow[`${col.name}_remarks`] = "";
+            } else if (col.type === "date") {
+                newRow[col.name] = null; // Initialize as null for date fields
+            } else {
+                newRow[col.name] = "";
+            }
         });
-        setFormValues((prev) => ({
+
+        setFormValues(prev => ({
             ...prev,
-            [fieldId]: [...(prev[fieldId] || []), newRow],
+            [fieldId]: [...currentRows, newRow]
         }));
     };
 
     const removeGridRow = (fieldId, rowIndex) => {
-        const updatedRows = (formValues[fieldId] || []).filter((_, idx) => idx !== rowIndex);
-        setFormValues((prev) => ({ ...prev, [fieldId]: updatedRows }));
+        const field = formData.fields.find(f => f.id === fieldId);
+        const currentRows = formValues[fieldId] || [];
+
+        // Check if min_rows limit would be violated
+        if (field.min_rows && currentRows.length <= field.min_rows) {
+            alert(`Minimum ${field.min_rows} rows required`);
+            return;
+        }
+
+        const updatedRows = currentRows.filter((_, idx) => idx !== rowIndex);
+        setFormValues(prev => ({
+            ...prev,
+            [fieldId]: updatedRows
+        }));
     };
+
 
 
     if (loading) {

@@ -6,7 +6,8 @@ import Layout from "./Layout"
 import { useNavigate, useParams } from "react-router-dom";
 import useAdSearch from "./hooks/useAdSearch";
 import { APP_CONSTANTS } from "./store";
-import DateFieldDesigner from './DateFieldDesigner';
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -717,6 +718,9 @@ const FormBuilder = () => {
                                 processedColumn.keyFieldMappingsJson = JSON.stringify(processedColumn.keyFieldMappings);
                             }
 
+                            if (column.type === "date") {
+                                processedColumn.showDayName = column.showDayName || false;
+                            }
                             return processedColumn;
                         });
 
@@ -1426,7 +1430,6 @@ const FormBuilder = () => {
                             </div>
 
                             {/* Key Fields Configuration */}
-                            // Replace the Key Fields Configuration section with this fixed version
                             {linkedForm && (
                                 <div className="mt-4 p-3 bg-white rounded border">
                                     <h3 className="text-sm font-semibold mb-2">Configure Bridge/Key Fields</h3>
@@ -2327,6 +2330,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <option value="checkbox">Checkbox</option>
                                         <option value="calculation">Calculation</option>
                                         <option value="time">Time</option>
+                                        <option value="date">Date</option>
                                         <option value="timecalculation">Time Calculation</option>
                                         <option value="dependentDropdown">Dependent Dropdown</option>
                                         {linkedForm && <option value="linkedTextbox">Linked Field</option>}
@@ -2434,7 +2438,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
                                     </div>
                                 )}
-                                // Inside the FormField component, in the grid configuration section
 
                                 {column.type === "dependentDropdown" && (
                                     <div className="w-full space-y-4">
@@ -2670,6 +2673,25 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     </div>
                                 )}
 
+                                {column.type === "date" && (
+                                    <div className="w-full mt-2">
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={column.showDayName || false}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].showDayName = e.target.checked;
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                                className="h-4 w-4"
+                                            />
+                                            <label className="text-xs text-gray-500">Show day name</label>
+                                        </div>
+                                    </div>
+                                )}
+
+
                                 <div className="w-full flex justify-end">
                                     <button
                                         onClick={() => {
@@ -2693,7 +2715,10 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     id: generateGuid(),
                                     name: `Column ${(field.columns || []).length + 1}`,
                                     type: "textbox",
-                                    width: "1fr"
+                                    width: "1fr",
+                                    ...(type === "date" && {
+                                        showDayName: false
+                                    })
                                 };
                                 updateField({ columns: [...(field.columns || []), newColumn] });
                             }}
@@ -2750,6 +2775,23 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                         <input type="text" disabled placeholder="Calculated duration" className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
                                                     )}
 
+                                                    {col.type === "date" && (
+                                                        <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2">
+                                                            <input
+                                                                type="date"
+                                                                disabled
+                                                                className="w-full bg-gray-50 border px-2 py-1 opacity-50"
+                                                            />
+                                                            {col.showDayName && (
+                                                                <input
+                                                                    type="text"
+                                                                    disabled
+                                                                    placeholder="Day name"
+                                                                    className="w-full bg-gray-50 border px-2 py-1 opacity-50 text-xs mt-1"
+                                                                />
+                                                            )}
+                                                        </td>
+                                                    )}
                                                 </td>
                                             ))}
                                         </tr>
