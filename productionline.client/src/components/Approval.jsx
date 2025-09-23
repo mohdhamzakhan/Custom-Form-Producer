@@ -63,19 +63,23 @@ export default function ApprovalPage() {
             // Find the user's approval level
             let approvalLevel = 1; // Default to level 1
             if (submission?.form?.approvers) {
-                const userApprover = submission.form.approvers.find(a => a.name === user.username);
+                const userApprover = submission.form.approvers.find(a => a.name === user[0]);
                 if (userApprover) {
                     approvalLevel = userApprover.level;
                 }
             }
 
+            console.log(approvalLevel)
+
             const approvalData = {
+
                 approverId: 123, // (you can replace with real user id if available)
-                approverName: user.username, // 🔥 from logged-in user
+                approverName: user[0], // 🔥 from logged-in user
                 level: approvalLevel, // Use the correct level for this user
                 comments: comments,
                 status: status,
             };
+
 
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}/approve`, {
                 method: "POST",
