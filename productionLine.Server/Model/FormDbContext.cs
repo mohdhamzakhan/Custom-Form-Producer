@@ -37,6 +37,52 @@ namespace productionLine.Server.Model
               .Property(f => f.Columns)
               .HasColumnType("CLOB");  // Oracle will store JSON inside a CLOB field
 
+            modelBuilder.Entity<ReportTemplate>(entity =>
+            {
+                // JSON fields must map to CLOB
+                entity.Property(e => e.CalculatedFields)
+                      .HasColumnType("CLOB");
+
+                entity.Property(e => e.ChartConfig)
+                      .HasColumnType("CLOB");
+
+                // Relationships
+                entity.HasMany(e => e.Fields)
+                      .WithOne(f => f.ReportTemplate)
+                      .HasForeignKey(f => f.ReportTemplateId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(e => e.Filters)
+                      .WithOne(f => f.ReportTemplate)
+                      .HasForeignKey(f => f.ReportTemplateId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ReportTemplate>(entity =>
+            {
+                // Configure boolean to number conversion for Oracle
+                entity.Property(e => e.IncludeApprovals)
+                    .HasConversion<int>();
+
+                entity.Property(e => e.IncludeRemarks)
+                    .HasConversion<int>();
+
+                entity.Property(e => e.IsDeleted)
+                    .HasConversion<int>();
+            });
+
+            // ReportField
+            modelBuilder.Entity<ReportField>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+            });
+
+            // ReportFilter
+            modelBuilder.Entity<ReportFilter>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+            });
+
             // ✅ Create options outside
             var jsonOptions = new JsonSerializerOptions
             {
@@ -107,6 +153,13 @@ namespace productionLine.Server.Model
             modelBuilder.Entity<ReportTemplate>()
                 .Property(e => e.IncludeRemarks)
                 .HasConversion<int>();
+        }
+
+        // Add this temporarily to see what SQL is being generated
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.EnableSensitiveDataLogging()
+                          .LogTo(Console.WriteLine, LogLevel.Information);
         }
     }
 

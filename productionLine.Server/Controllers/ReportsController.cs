@@ -140,94 +140,117 @@ namespace productionLine.Server.Controllers
         {
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
                 return BadRequest(new { message = "Invalid model", errors });
             }
-
-            if (string.IsNullOrWhiteSpace(dto.Name) || dto.Fields.Count == 0)
-                return BadRequest("Template name and at least one field are required.");
-
-            ReportTemplate template;
-
-            if (dto.Id > 0)
+            try
             {
-                template = await _context.ReportTemplates
-                    .Include(t => t.Fields)
-                    .Include(t => t.Filters)
-                    .FirstOrDefaultAsync(t => t.Id == dto.Id);
+                if (string.IsNullOrWhiteSpace(dto.Name) || dto.Fields.Count == 0)
+                    return BadRequest("Template name and at least one field are required.");
 
-                if (template == null)
-                    return NotFound("Report template not found.");
-
-                template.Name = dto.Name;
-                template.FormId = dto.FormId;
-                template.IncludeApprovals = dto.IncludeApprovals;
-                template.IncludeRemarks = dto.IncludeRemarks;
-                template.SharedWithRole = dto.SharedWithRole;
-
-
-                _context.ReportFields.RemoveRange(template.Fields);
-                _context.ReportFilters.RemoveRange(template.Filters);
-
-                template.Fields = dto.Fields.Select((f, index) => new ReportField
+                // ✅ common serializer options for compact JSON
+                var jsonOptions = new JsonSerializerOptions
                 {
-                    FieldId = f.FieldId,
-                    FieldLabel = f.FieldLabel,
-                    Order = index
-                }).ToList();
+                    WriteIndented = false,
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                };
 
-                template.Filters = dto.Filters.Select(f => new ReportFilter
+                ReportTemplate template;
+
+                if (dto.Id > 0)
                 {
-                    FieldLabel = f.FieldLabel,
-                    Operator = f.Operator,
-                    Value = f.Value,
-                    Type = f.Type
-                }).ToList();
-                template.CalculatedFields = dto.CalculatedFields?.Any() == true
-    ? JsonSerializer.Serialize(dto.CalculatedFields)
-    : null;
+                    // --- UPDATE ---
+                    template = await _context.ReportTemplates
+                        .Include(t => t.Fields)
+                        .Include(t => t.Filters)
+                        .FirstOrDefaultAsync(t => t.Id == dto.Id);
 
-                template.ChartConfig = dto.ChartConfigs != null
-                    ? JsonSerializer.Serialize(dto.ChartConfigs)
-                    : null;
+                    if (template == null)
+                        return NotFound("Report template not found.");
 
-            }
-            else
-            {
-                template = new ReportTemplate
-                {
-                    Name = dto.Name,
-                    FormId = dto.FormId,
-                    CreatedBy = dto.CreatedBy ?? "system",
-                    CreatedAt = DateTime.UtcNow,
-                    IncludeApprovals = dto.IncludeApprovals,
-                    IncludeRemarks = dto.IncludeRemarks,
-                    SharedWithRole = dto.SharedWithRole,
-                    Fields = dto.Fields.Select((f, index) => new ReportField
+                    template.Name = dto.Name;
+                    template.FormId = dto.FormId;
+                    template.IncludeApprovals = dto.IncludeApprovals;
+                    template.IncludeRemarks = dto.IncludeRemarks;
+                    template.SharedWithRole = dto.SharedWithRole;
+
+                    // reset children
+                    _context.ReportFields.RemoveRange(template.Fields);
+                    _context.ReportFilters.RemoveRange(template.Filters);
+
+                    template.Fields = dto.Fields.Select((f, index) => new ReportField
                     {
                         FieldId = f.FieldId,
                         FieldLabel = f.FieldLabel,
                         Order = index
-                    }).ToList(),
-                    Filters = dto.Filters.Select(f => new ReportFilter
+                    }).ToList();
+
+                    template.Filters = dto.Filters.Select(f => new ReportFilter
                     {
                         FieldLabel = f.FieldLabel,
                         Operator = f.Operator,
                         Value = f.Value,
                         Type = f.Type
-                    }).ToList(),
-                    CalculatedFields = JsonSerializer.Serialize(dto.CalculatedFields ?? new List<CalculatedField>()),
-                    ChartConfig = dto.ChartConfigs?.Any() == true
-                                    ? JsonSerializer.Serialize(dto.ChartConfigs)
-                                    : null
-                };
+                    }).ToList();
 
-                _context.ReportTemplates.Add(template);
+                    template.CalculatedFields = dto.CalculatedFields?.Any() == true
+                        ? JsonSerializer.Serialize(dto.CalculatedFields, jsonOptions)
+                        : null;
+
+                    template.ChartConfig = dto.ChartConfigs?.Any() == true
+                        ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions)
+                        : null;
+                }
+                else
+                {
+                    // Test with minimal properties first
+                    template = new ReportTemplate
+                    {
+                        Name = dto.Name,
+                        FormId = dto.FormId,
+                        CreatedBy = dto.CreatedBy ?? "system",
+                        CreatedAt = DateTime.Now
+                        // Don't set any other properties initially
+                    };
+
+                    _context.ReportTemplates.Add(template);
+
+                    try
+                    {
+                        await _context.SaveChangesAsync(); 
+
+                        // If successful, update with remaining properties
+                        template.IncludeApprovals = dto.IncludeApprovals;
+                        template.IncludeRemarks = dto.IncludeRemarks;
+                        template.SharedWithRole = dto.SharedWithRole;
+
+                        if (dto.CalculatedFields?.Any() == true)
+                            template.CalculatedFields = JsonSerializer.Serialize(dto.CalculatedFields, jsonOptions);
+
+                        if (dto.ChartConfigs?.Any() == true)
+                            template.ChartConfig = JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions);
+
+                        await _context.SaveChangesAsync(); // Update with remaining fields
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log the exact error to identify which property is causing issues
+                        throw new Exception($"Error saving template: {ex.Message}", ex);
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                return Ok(new { message = ex.Message });
             }
 
-            await _context.SaveChangesAsync();
             return Ok(new { message = "Template saved successfully." });
         }
+
 
         [HttpPost("run/{templateId}")]
         public async Task<IActionResult> RunReport(int templateId, [FromBody] Dictionary<string, string> runtimeValues)

@@ -1,5 +1,6 @@
 ﻿using productionLine.Server.Model;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace productionLine.Server.DTO
 {
@@ -10,6 +11,10 @@ namespace productionLine.Server.DTO
         public string Type { get; set; }
         public string Label { get; set; }
         public List<string>? Options { get; set; }
+        [JsonPropertyName("IMAGEOPTIONS")]
+        public string? IMAGEOPTIONS { get; set; }
+        [JsonPropertyName("imageData")]
+        public string? ImageData { get; set; }
         public bool Required { get; set; }
         public string Width { get; set; }
         public List<string>? RequireRemarks { get; set; }

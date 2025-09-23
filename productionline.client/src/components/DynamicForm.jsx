@@ -20,6 +20,9 @@ export default function DynamicForm() {
     const [linkedDataLoading, setLinkedDataLoading] = useState(false);
     const { formId } = useParams();
     const [tableColors, setTableColors] = useState({});
+    const [imageModalOpen, setImageModalOpen] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [selectedImageName, setSelectedImageName] = useState('');
 
     useEffect(() => {
         // In a real application, this would be an actual API call
@@ -340,6 +343,55 @@ export default function DynamicForm() {
         return tableColors[fieldId];
     };
 
+    // Add this function in your component
+    const renderImageGallery = () => {
+        if (!formData?.fields) return null;
+
+        const imageFields = formData.fields.filter(field =>
+            field.type === 'image' && field.imageoptions
+        );
+
+        if (imageFields.length === 0) return null;
+
+        return (
+            <div className="mb-6 bg-gray-50 p-4 rounded-lg border">
+                <h3 className="text-lg font-semibold text-gray-700 mb-3">Attached Images</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {imageFields.map((field) => {
+                        try {
+                            const imageOptions = JSON.parse(field.imageoptions);
+                            if (!imageOptions.imageUrl) return null;
+
+                            return (
+                                <div key={field.id} className="relative group">
+                                    <div
+                                        className="cursor-pointer border-2 border-gray-200 rounded-lg overflow-hidden hover:border-blue-500 transition-all duration-200 hover:shadow-lg"
+                                        onClick={() => openImageModal(imageOptions, field.label)}
+                                    >
+                                        <img
+                                            src={imageOptions.imageUrl}
+                                            alt={field.label}
+                                            className="w-full h-24 object-cover"
+                                        />
+                                        <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white p-2">
+                                            <p className="text-xs font-medium truncate">{field.label}</p>
+                                            <p className="text-xs text-gray-300">
+                                                {(imageOptions.fileSize / 1024).toFixed(1)} KB
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        } catch (e) {
+                            console.error('Error parsing image options for field:', field.id, e);
+                            return null;
+                        }
+                    })}
+                </div>
+            </div>
+        );
+    };
+
     // Generic function to check if key fields have changed
     const checkKeyFieldsChanged = (newFormValues, oldFormValues, keyFieldMappings) => {
         if (!keyFieldMappings?.length) return false;
@@ -349,6 +401,87 @@ export default function DynamicForm() {
             const newValue = newFormValues[mapping.currentFormField];
             return oldValue !== newValue;
         });
+    };
+
+    const openImageModal = (imageOptions, imageName) => {
+        setSelectedImage(imageOptions);
+        setSelectedImageName(imageName);
+        setImageModalOpen(true);
+    };
+
+    const closeImageModal = () => {
+        setImageModalOpen(false);
+        setSelectedImage(null);
+        setSelectedImageName('');
+    };
+
+    // Add this function to render the image modal
+    const renderImageModal = () => {
+        if (!imageModalOpen || !selectedImage) return null;
+
+        return (
+            <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-75">
+                <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-screen overflow-hidden relative">
+                    {/* Modal Header */}
+                    <div className="flex justify-between items-center p-4 border-b">
+                        <h2 className="text-xl font-bold text-gray-800">{selectedImageName}</h2>
+                        <button
+                            onClick={closeImageModal}
+                            className="text-gray-600 hover:text-gray-900 text-2xl font-bold"
+                        >
+                            ×
+                        </button>
+                    </div>
+
+                    {/* Modal Body */}
+                    <div className="p-4">
+                        <img
+                            src={selectedImage.imageUrl}
+                            alt={selectedImageName}
+                            className="max-w-full max-h-96 object-contain mx-auto"
+                        />
+
+                        {/* Image Details */}
+                        <div className="mt-4 bg-gray-50 p-3 rounded">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <span className="font-semibold text-gray-600">File Name:</span>
+                                    <p className="text-gray-800">{selectedImage.fileName}</p>
+                                </div>
+                                <div>
+                                    <span className="font-semibold text-gray-600">File Size:</span>
+                                    <p className="text-gray-800">{(selectedImage.fileSize / 1024).toFixed(1)} KB</p>
+                                </div>
+                                {selectedImage.uploadedAt && (
+                                    <div>
+                                        <span className="font-semibold text-gray-600">Uploaded:</span>
+                                        <p className="text-gray-800">
+                                            {new Date(selectedImage.uploadedAt).toLocaleString()}
+                                        </p>
+                                    </div>
+                                )}
+                                <div>
+                                    <span className="font-semibold text-gray-600">Type:</span>
+                                    <p className="text-gray-800">
+                                        {selectedImage.allowedTypes?.join(', ') || 'Image'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="flex justify-end p-4 border-t">
+                        <button
+                            onClick={closeImageModal}
+                            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     // Enhanced handleInputChange to trigger auto-load
@@ -2300,6 +2433,7 @@ export default function DynamicForm() {
 
     return (
         <div className="max-w-1xl mx-auto p-6 bg-white rounded-lg shadow-lg">
+            {renderImageGallery()}
             <h1 className="text-2xl font-bold mb-6">{formData.name}</h1>
 
             <div className="flex items-center gap-2 mb-4">
@@ -2360,6 +2494,8 @@ export default function DynamicForm() {
                     </div>
                 </div>
             </form>
+
+            {renderImageModal()}
 
             {isModalOpen && (
                 <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">

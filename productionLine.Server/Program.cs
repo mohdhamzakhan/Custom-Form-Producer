@@ -69,21 +69,11 @@ builder.Services.AddControllers()
 
 var app = builder.Build();
 
-// Apply pending migrations
-//using (var scope = app.Services.CreateScope())
-//{
-//    var dbContext = scope.ServiceProvider.GetRequiredService<FormDbContext>();
-//    dbContext.Database.Migrate();
-//}
-
-// Enable middleware pipeline
-
-// Enable CORS (before authentication and controllers)
-app.UseCors("AllowAll");
-
-// Serve static files
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseCors("AllowAll");
+
+
 
 // Authentication & Authorization
 app.UseAuthentication();

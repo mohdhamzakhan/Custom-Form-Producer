@@ -201,6 +201,7 @@ namespace productionLine.Server.Controllers
                     existingField.ShowLookupButton = field.ShowLookupButton;
                     existingField.KeyFieldMappings = field.KeyFieldMappings;
                     existingField.KeyFieldMappingsJson = field.KeyFieldMappingsJson;
+                    existingField.IMAGEOPTIONS = field.IMAGEOPTIONS;
 
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -248,6 +249,7 @@ namespace productionLine.Server.Controllers
                     ShowLookupButton = field.ShowLookupButton,
                     KeyFieldMappings = field.KeyFieldMappings,
                     KeyFieldMappingsJson = field.KeyFieldMappingsJson,
+                    IMAGEOPTIONS = field.IMAGEOPTIONS,
 
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -358,6 +360,7 @@ namespace productionLine.Server.Controllers
                     ShowLookupButton = f.ShowLookupButton,
                     KeyFieldMappingsJson = f.KeyFieldMappingsJson,
                     KeyFieldMappings = f.KeyFieldMappings,
+                    IMAGEOPTIONS = f.IMAGEOPTIONS,
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {

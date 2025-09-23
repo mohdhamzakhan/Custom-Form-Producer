@@ -68,6 +68,7 @@ namespace productionLine.Server.Controllers
                 existingForm.LinkedFormId = form.LinkedFormId;
                 existingForm.KeyFieldMappings = form.KeyFieldMappings;
 
+
                 // In the update existing form section, replace this part:
                 foreach (FormField field in form.Fields)
                 {
@@ -89,6 +90,11 @@ namespace productionLine.Server.Controllers
                         {
                             trigger.FormField = field;
                         }
+                    }
+
+                    if(field.Type == "image")
+                    {
+                        field.IMAGEOPTIONS = field.IMAGEOPTIONS;
                     }
 
                     // EXPAND this linkedTextbox section:
@@ -155,6 +161,10 @@ namespace productionLine.Server.Controllers
                         field2.AllowManualEntry = field2.AllowManualEntry ?? false;
                         field2.ShowLookupButton = field2.ShowLookupButton ?? true;
                         field2.KeyFieldMappings = field2.KeyFieldMappings;
+                    }
+                    if (field2.Type == "image")
+                    {
+                        field2.IMAGEOPTIONS = field2.IMAGEOPTIONS;
                     }
                 }
 
@@ -265,6 +275,8 @@ namespace productionLine.Server.Controllers
                     ShowLookupButton = f.ShowLookupButton,         // Missing
                     KeyFieldMappingsJson = f.KeyFieldMappingsJson, // Missing - use JSON version
                     KeyFieldMappings = f.KeyFieldMappings,
+                    IMAGEOPTIONS = f.IMAGEOPTIONS,
+                    ImageData = f.IMAGEOPTIONS,
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
@@ -316,6 +328,12 @@ namespace productionLine.Server.Controllers
                     FieldReferencesJson = f.FieldReferencesJson
                 }).ToList()
             };
+
+            foreach (var field in form.Fields.Where(f => f.Type == "image"))
+            {
+                Console.WriteLine($"Field {field.Id} IMAGEOPTIONS: {field.IMAGEOPTIONS}");
+            }
+
             return Ok(formDto);
         }
         [HttpPost("upload-image")]

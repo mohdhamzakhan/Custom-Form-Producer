@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250923044727_imageOptions")]
+    partial class imageOptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -629,9 +632,8 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("ORDER");
 
-                    b.Property<int>("ReportTemplateId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("TEMPLATEID");
+                    b.Property<int?>("ReportTemplateId")
+                        .HasColumnType("NUMBER(10)");
 
                     b.HasKey("Id");
 
@@ -657,9 +659,8 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("OPERATOR");
 
-                    b.Property<int>("ReportTemplateId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("TEMPLATEID");
+                    b.Property<int?>("ReportTemplateId")
+                        .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("Type")
                         .HasColumnType("NVARCHAR2(2000)")
@@ -686,11 +687,11 @@ namespace productionLine.Server.Migrations
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("CalculatedFields")
-                        .HasColumnType("CLOB")
+                        .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("CALCULATEDFIELDS");
 
                     b.Property<string>("ChartConfig")
-                        .HasColumnType("CLOB")
+                        .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("CHARTCONFIG");
 
                     b.Property<DateTime>("CreatedAt")
@@ -830,24 +831,16 @@ namespace productionLine.Server.Migrations
 
             modelBuilder.Entity("productionLine.Server.Model.ReportField", b =>
                 {
-                    b.HasOne("productionLine.Server.Model.ReportTemplate", "ReportTemplate")
+                    b.HasOne("productionLine.Server.Model.ReportTemplate", null)
                         .WithMany("Fields")
-                        .HasForeignKey("ReportTemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ReportTemplate");
+                        .HasForeignKey("ReportTemplateId");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.ReportFilter", b =>
                 {
-                    b.HasOne("productionLine.Server.Model.ReportTemplate", "ReportTemplate")
+                    b.HasOne("productionLine.Server.Model.ReportTemplate", null)
                         .WithMany("Filters")
-                        .HasForeignKey("ReportTemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ReportTemplate");
+                        .HasForeignKey("ReportTemplateId");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.Form", b =>

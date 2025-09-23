@@ -8,6 +8,7 @@ import useAdSearch from "./hooks/useAdSearch";
 import { APP_CONSTANTS } from "./store";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import { toast } from 'react-toastify';
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -317,7 +318,8 @@ const FormBuilder = () => {
                     formula: field.formula || "",
                     resultDecimal: field.resultDecimal || false,
                     fieldReferences: field.fieldReferencesJson || [],
-                    remarkTriggers: field.remarkTriggers || []
+                    remarkTriggers: field.remarkTriggers || [],
+                    IMAGEOPTIONS: field.IMAGEOPTIONS || [],
                 };
             });
 
@@ -393,10 +395,19 @@ const FormBuilder = () => {
 
         try {
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/form-builder/link/${encodeURIComponent(formLink)}`);
+
+
             let data;
 
             try {
                 data = await response.json();
+
+                console.log('API Response:', data);
+                data.fields?.forEach(field => {
+                    if (field.type === 'image') {
+                        console.log(`Image field ${field.id} IMAGEOPTIONS:`, field.IMAGEOPTIONS);
+                    }
+                });
                 console.log(data)
             } catch (jsonErr) {
                 const text = await response.text();
@@ -502,6 +513,7 @@ const FormBuilder = () => {
                     remarkTriggers: field.remarkTriggers || [],
                     // Preserve linked field properties
                     linkedFormId: field.linkedFormId || null,
+                    IMAGEOPTIONS: field.IMAGEOPTIONS,
                 };
 
                 // Handle linked field specific properties
@@ -572,6 +584,51 @@ const FormBuilder = () => {
 
         try {
             // If updating, first fetch the current form to get the RowVersion
+            console.log('=== DEBUGGING IMAGE UPLOAD ===');
+            console.log('Total formFields:', formFields.length);
+            for (let i = 0; i < formFields.length; i++) {
+                const field = formFields[i];
+
+                if (field.type === 'image' && field.imageFile) {
+                    console.log('Uploading image:', field.imageFile.name);
+
+                    // CREATE the imageFormData object first
+                    const imageFormData = new FormData();
+                    imageFormData.append('image', field.imageFile);
+
+                    // Upload image
+                    const uploadResponse = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Image/upload-image`, {
+                        method: 'POST',
+                        body: imageFormData
+                    });
+                    if (uploadResponse.ok) {
+                        const result = await uploadResponse.json();
+
+                        // Store image data in the new IMAGEOPTIONS field
+                        const imageOptionsData = {
+                            imageUrl: result.url,
+                            fileName: result.filename,
+                            fileSize: result.size,
+                            maxFileSize: 5242880,
+                            allowedTypes: ["image/jpeg", "image/png", "image/gif", "image/webp"],
+                            uploadedAt: new Date().toISOString()
+                        };
+
+                        formFields[i] = {
+                            ...formFields[i],
+                            IMAGEOPTIONS: JSON.stringify(imageOptionsData) // Store as JSON string
+                        };
+
+                        delete formFields[i].imageFile;
+                        console.log('Image uploaded successfully:', result.url);
+                    } else {
+                        throw new Error('Image upload failed');
+                    }
+                }
+
+            }
+
+
             let existingRowVersion = null;
             if (formId) {
                 const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}`);
@@ -651,6 +708,7 @@ const FormBuilder = () => {
                         // Handle arrays properly
                         fieldReferences: null,
                         options: Array.isArray(field.options) ? field.options : [],
+                        iIMAGEOPTIONS: field.IMAGEOPTIONS || null,
                         requireRemarks: Array.isArray(field.requireRemarks) ? field.requireRemarks : [],
                         remarkTriggers: Array.isArray(field.remarkTriggers)
                             ? field.remarkTriggers.map(trigger => ({
@@ -808,6 +866,9 @@ const FormBuilder = () => {
 
                         fieldObj.keyFieldMappingsJson = JSON.stringify(fieldObj.keyFieldMappings);
                     }
+
+                    // In your field processing, use imageValue instead of imageUrl
+                    delete fieldObj.imageFile;
                     return fieldObj;
                 })
             };
@@ -855,7 +916,9 @@ const FormBuilder = () => {
 
             const responseBody = await response.json();
             console.log("Form saved successfully:", responseBody);
-            alert(`Form saved successfully! Link: ${window.location.origin}/form/${responseBody.formLink}`);
+            toast.success("Form template saved successfully!");
+            navigate(`/formbuilder/${responseBody.formLink}`);
+            //alert(`Form saved successfully! Link: ${window.location.origin}/form/${responseBody.formLink}`);
 
         } catch (error) {
             console.error("Error saving form:", error);
@@ -919,6 +982,11 @@ const FormBuilder = () => {
                 displayFormat: "{value}", // How to format the displayed value
                 allowManualEntry: false, // Whether user can type directly
                 showLookupButton: true, // Whether to show a lookup/search button
+            }),
+            ...(type === "image" && {
+                IMAGEOPTIONS: null,
+                imageFile: null,
+                maxFileSize: 5242880
             }),
         };
         setFormFields([...formFields, newField]);
@@ -994,7 +1062,7 @@ const FormBuilder = () => {
             <div className="mt-4 p-3 bg-white rounded border">
                 <h3 className="text-sm font-semibold mb-2">Configure Bridge/Key Fields</h3>
                 <p className="text-xs text-gray-600 mb-3">
-                Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name Column Name"
+                    Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name Column Name"
                 </p>
 
                 {/* Debug info */}
@@ -1256,6 +1324,30 @@ const FormBuilder = () => {
         });
     };
 
+    const handleImageUpload = (event, fieldId) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Validate file size (e.g., max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('File size must be less than 5MB');
+            return;
+        }
+
+        // Create preview URL
+        const imageUrl = URL.createObjectURL(file);
+
+        // Find and update the field
+        const fieldIndex = formFields.findIndex(f => f.id === fieldId);
+        if (fieldIndex !== -1) {
+            updateField(fieldIndex, {
+                imageUrl: imageUrl,
+                imageFile: file,
+                fileName: file.name
+            });
+        }
+    };
+
 
     // Temporary debug component - add this to your FormBuilder component
     const GridDebugComponent = () => {
@@ -1385,7 +1477,7 @@ const FormBuilder = () => {
 
             <DndProvider backend={HTML5Backend}>
                 <div className="max-w-8xl mx-auto p-2">
-{/*                <GridDebugComponent />*/}
+                    {/*                <GridDebugComponent />*/}
                     <div className="mb-6">
                         <h1 className="text-2xl font-bold mb-4">Form Builder</h1>
 
@@ -1434,7 +1526,7 @@ const FormBuilder = () => {
                                 <div className="mt-4 p-3 bg-white rounded border">
                                     <h3 className="text-sm font-semibold mb-2">Configure Bridge/Key Fields</h3>
                                     <p className="text-xs text-gray-600 mb-3">
-            Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name  Column Name"
+                                        Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name  Column Name"
                                     </p>
 
                                     <div className="space-y-2">
@@ -1714,7 +1806,7 @@ const FormBuilder = () => {
                         )}
                     </div>
 
-                    <div className="mb-6 flex gap-2 flex-wrap">
+                    <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
                         {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image"].map(
                             (type) => (
                                 <button
@@ -1735,6 +1827,7 @@ const FormBuilder = () => {
                             </button>
                         )}
                     </div>
+
 
                     <div className="flex flex-wrap -mx-2">
                         {formFields.map((field, index) => (
@@ -2226,6 +2319,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </p>
                 </div>
             )}
+
             {field.type === "grid" && (
                 <div className="mt-4">
                     <h4 className="text-sm font-semibold mb-2">Grid Configuration</h4>
@@ -2706,7 +2800,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             </div>
                         ))}
 
-                        
+
 
 
                         <button
@@ -2802,6 +2896,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
+
             {field.type === "numeric" && (
                 <div className="mb-4">
                     <div className="grid grid-cols-2 gap-4 mb-4">
@@ -2933,6 +3028,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
+
             {field.type === "date" && (
                 <div className="mb-4">
                     <div className="flex items-center gap-2 mb-3">
@@ -2948,6 +3044,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
+
             {field.type === "time" && (
                 <div className="mb-4">
                     <div className="flex items-center gap-2 mb-3">
@@ -2963,58 +3060,63 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     </div>
                 </div>
             )}
+
             {field.type === "image" && (
                 <div className="mb-4">
-                    <div className="flex items-center gap-2 mb-3">
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                    const formData = new FormData();
-                                    formData.append("file", file);
-
-                                    // Pass the old image path so backend can delete it
-                                    if (field.imageValue) {
-                                        formData.append("oldPath", field.imageValue);
-                                    }
-
-                                    try {
-                                        const res = await fetch(
-                                            `${APP_CONSTANTS.API_BASE_URL}/api/form-builder/upload-image`,
-                                            {
-                                                method: "POST",
-                                                body: formData,
-                                            }
-                                        );
-                                        const data = await res.json();
-                                        console.log(res)
-                                        if (data.url) {
-                                            updateField({ imageValue: data.url }); // Save only path
-                                        }
-                                    } catch (err) {
-                                        console.error("Upload failed:", err);
-                                    }
-                                }
-                            }}
-                            className="text-sm"
-                        />
-                        <label className="text-sm text-gray-600">Upload Image</label>
-                    </div>
-
-                    {/* Show preview if uploaded */}
-                    {field.imageValue && (
-                        <div className="mt-2">
-                            <img
-                                src={field.imageValue}
-                                alt="Uploaded Preview"
-                                className="w-20 h-20 object-contain border rounded"
-                            />
-                        </div>
-                    )}
+                    <label className="block text-sm font-medium mb-2">Image Upload</label>
+                    <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                                updateField({
+                                    imageFile: file,
+                                    imageoptions: JSON.stringify({
+                                        fileName: file.name,
+                                        fileSize: file.size,
+                                        imageUrl: URL.createObjectURL(file)
+                                    })
+                                });
+                            }
+                        }}
+                        className="w-full px-3 py-2 border rounded"
+                    />
+                    {field.imageoptions && (() => {
+                        try {
+                            const imageData = JSON.parse(field.imageoptions);
+                            if (imageData.imageUrl) {
+                                return (
+                                    <div className="mt-2 p-2 border rounded bg-gray-50">
+                                        <img
+                                            src={imageData.imageUrl}
+                                            alt={imageData.fileName || "Uploaded image"}
+                                            className="max-w-xs h-32 object-cover border rounded mb-2"
+                                            onError={(e) => {
+                                                console.error('Image failed to load:', imageData.imageUrl);
+                                                e.target.style.display = 'none';
+                                            }}
+                                        />
+                                        <div className="text-sm text-gray-600">
+                                            <p><strong>File:</strong> {imageData.fileName}</p>
+                                            <p><strong>Size:</strong> {(imageData.fileSize / 1024).toFixed(1)} KB</p>
+                                            <p><strong>Uploaded:</strong> {new Date(imageData.uploadedAt).toLocaleString()}</p>
+                                        </div>
+                                    </div>
+                                );
+                            }
+                        } catch (e) {
+                            console.error('Error parsing image data:', e);
+                            return <p className="text-red-500 text-sm">Error loading image data</p>;
+                        }
+                        return null;
+                    })()}
                 </div>
             )}
+
+
+
+
             {(field.type === "dropdown" ||
                 field.type === "checkbox" ||
                 field.type === "radio") && (

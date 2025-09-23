@@ -33,6 +33,9 @@ namespace productionLine.Server.Model
         [Column("OPTIONS", TypeName = "CLOB")]
         public string? OptionsJson { get; set; }
 
+        [Column("IMAGEOPTIONS", TypeName = "CLOB")]
+        public string? IMAGEOPTIONS { get; set; }
+
         [NotMapped]
         public List<string>? Options
         {

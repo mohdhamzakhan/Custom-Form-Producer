@@ -8,6 +8,7 @@ import ReportCharts from "./ReportCharts"
 import CollapsibleGridTable from './CollapsibleGridTable';
 import MultiChartBuilder from './MultiChartBuilder'; // Import the new component
 import EnhancedCalculatedFieldsEditor from './CalculatedFieldsEditor';
+import { toast } from 'react-toastify';
 
 
 
@@ -289,37 +290,40 @@ export default function EnhancedReportDesigner() {
 
             setCalculatedFields(data.calculatedFields || []);
             // Normalize chartConfigs handling for backward compatibility
-            let charts = data.chartConfig || [];
-            if ((!charts || charts.length === 0) && data.chartConfig) {
-                charts = [{
-                    id: data.chartConfig.id || 1,
-                    title: data.chartConfig.title || "Chart 1",
-                    type: data.chartConfig.type || "bar",
-                    // Keep metrics as labels (don't convert back to IDs)
-                    metrics: data.chartConfig.metrics || [],
-                    // Keep xField as label (don't convert back to ID)
-                    xField: data.chartConfig.xField || null,
-                    position: {
-                        row: data.chartConfig.position?.Row ?? 0,
-                        col: data.chartConfig.position?.Col ?? 0,
-                        width: data.chartConfig.position?.Width ?? 12,
-                        height: data.chartConfig.position?.Height ?? 6
-                    },
-                    comboConfig: data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] }
-                }];
-            } else {
-                // Normalize positions but keep field references as labels
-                charts = charts.map(chart => ({
-                    ...chart,
-                    position: {
-                        row: chart.position?.Row ?? chart.position?.row ?? 0,
-                        col: chart.position?.Col ?? chart.position?.col ?? 0,
-                        width: chart.position?.Width ?? chart.position?.width ?? 12,
-                        height: chart.position?.Height ?? chart.position?.height ?? 6,
-                    }
-                    // Don't convert metrics/xField - keep as labels
-                }));
+            let charts = [];
+
+            if (data.chartConfig) {
+                if (Array.isArray(data.chartConfig)) {
+                    // Handle array of charts
+                    charts = data.chartConfig.map(chart => ({
+                        ...chart,
+                        position: {
+                            row: chart.position?.Row ?? chart.position?.row ?? 0,
+                            col: chart.position?.Col ?? chart.position?.col ?? 0,
+                            width: chart.position?.Width ?? chart.position?.width ?? 12,
+                            height: chart.position?.Height ?? chart.position?.height ?? 6,
+                        }
+                    }));
+                } else {
+                    // Handle single chart object (backward compatibility)
+                    charts = [{
+                        id: data.chartConfig.id || 1,
+                        title: data.chartConfig.title || "Chart 1",
+                        type: data.chartConfig.type || "bar",
+                        metrics: data.chartConfig.metrics || [],
+                        xField: data.chartConfig.xField || null,
+                        position: {
+                            row: data.chartConfig.position?.Row ?? 0,
+                            col: data.chartConfig.position?.Col ?? 0,
+                            width: data.chartConfig.position?.Width ?? 12,
+                            height: data.chartConfig.position?.Height ?? 6
+                        },
+                        comboConfig: data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] }
+                    }];
+                }
             }
+            // If data.chartConfig is null/undefined, charts remains empty array []
+
             console.log(charts)
             setChartConfigs(charts);
         });
@@ -657,9 +661,11 @@ export default function EnhancedReportDesigner() {
             const data = await response.json();
 
             if (response.ok) {
+                console.log("Reported Saved Successfully")
                 setSuccess("Report template saved successfully!");
-
+                toast.success("Report template saved successfully!");
                 // Optionally: redirect to the report viewer
+                console.log(data)
                 if (data && data.id) {
                     setTimeout(() => {
                         navigate(`/reports/view/${data.id}`);
