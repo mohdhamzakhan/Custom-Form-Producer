@@ -286,42 +286,173 @@ const FormBuilder = () => {
                 return;
             }
 
-            // Transform the fields similar to fetchFormLayout but generate new IDs
-            const transformedFields = (data.fields || []).map((field, index) => {
-                const isGrid = field.type === "grid";
+            console.log("=== COPY FORMAT DEBUG - SOURCE DATA ===");
+            console.log("Original fields:", data.fields);
 
-                return {
-                    ...field,
+            // Transform the fields with COMPLETE property mapping
+            const transformedFields = (data.fields || []).map((field, index) => {
+                console.log(`=== COPYING FIELD ${index} ===`);
+                console.log("Original field:", field);
+
+                const isGrid = field.type === "grid";
+                const isLinked = field.type === "linkedTextbox";
+
+                // CRITICAL: Copy ALL properties from the original field
+                const copiedField = {
                     id: generateGuid(), // Generate new ID to avoid conflicts
-                    order: index, // Reset order
-                    columns: isGrid
-                        ? (field.column || field.columns || []).map(col => ({
-                            ...col,
-                            type: col.type || "textbox",
-                            name: col.name || "",
-                            id: generateGuid(), // New ID for columns too
-                            width: col.width || "1fr",
-                            options: col.options || [],
-                            textColor: col.textColor || "#000000",
-                            backgroundColor: col.backgroundColor || "#ffffff",
-                            formula: col.formula || "",
-                            min: col.min ?? null,
-                            max: col.max ?? null,
-                            decimal: col.decimal ?? null,
-                            parentColumn: col.parentColumn || "",
-                            dependentOptions: col.dependentOptions || {},
-                            startTime: col.startTime || "",
-                            endTime: col.endTime || ""
-                        }))
-                        : undefined,
-                    column: undefined,
+                    type: field.type,
+                    label: field.label || field.name || `Field ${index}`,
+                    name: field.name || field.label || `Field ${index}`,
+                    required: field.required || false,
+                    width: field.width || "w-full",
+                    order: field.order !== undefined ? field.order : index,
+
+                    // Copy ALL dropdown-specific properties
+                    options: Array.isArray(field.options) ? [...field.options] : [],
+                    requireRemarks: Array.isArray(field.requireRemarks)
+                        ? [...field.requireRemarks]
+                        : (Array.isArray(field.remarksOptions) ? [...field.remarksOptions] : []),
+
+                    // Copy numeric field properties
+                    min: field.min !== undefined ? field.min : null,
+                    max: field.max !== undefined ? field.max : null,
+                    decimal: field.decimal !== undefined ? field.decimal : null,
+                    requireRemarksOutOfRange: field.requireRemarksOutOfRange || false,
+
+                    // Copy calculation properties
                     formula: field.formula || "",
                     resultDecimal: field.resultDecimal || false,
-                    fieldReferences: field.fieldReferencesJson || [],
-                    remarkTriggers: field.remarkTriggers || [],
-                    IMAGEOPTIONS: field.IMAGEOPTIONS || [],
+                    fieldReferences: field.fieldReferencesJson ?
+                        JSON.parse(field.fieldReferencesJson) : (field.fieldReferences || []),
+
+                    // Copy remark triggers
+                    remarkTriggers: Array.isArray(field.remarkTriggers) ?
+                        [...field.remarkTriggers] : [],
+
+                    // Copy visual properties
+                    textColor: field.textColor || "#000000",
+                    backgroundColor: field.backgroundColor || "#ffffff",
+
+                    // Copy grid-specific properties
+                    parentColumn: field.parentColumn || "",
+                    dependentOptions: field.dependentOptions || {},
+                    startTime: field.startTime || "",
+                    endTime: field.endTime || "",
+
+                    // Copy date properties
+                    showDayInTextbox: field.showDayInTextbox || false,
+
+                    // Copy image properties
+                    IMAGEOPTIONS: field.IMAGEOPTIONS || null,
+                    imageFile: null, // Don't copy the actual file
+                    maxFileSize: field.maxFileSize || 5242880,
+
+                    // CRITICAL: Copy ALL linked field properties
+                    linkedFormId: field.linkedFormId || null,
+                    linkedFieldId: field.linkedFieldId || null,
+                    linkedFieldType: field.linkedFieldType || null,
+                    linkedGridFieldId: field.linkedGridFieldId || null,
+                    linkedColumnId: field.linkedColumnId || null,
+                    displayMode: field.displayMode || null,
+                    displayFormat: field.displayFormat || null,
+                    allowManualEntry: field.allowManualEntry || null,
+                    showLookupButton: field.showLookupButton || null,
+                    keyFieldMappingsJson: field.keyFieldMappingsJson || null,
+                    keyFieldMappings: field.keyFieldMappings || []
                 };
+
+                // Handle grid fields with complete column copying
+                if (isGrid) {
+                    console.log("=== COPYING GRID FIELD ===");
+                    console.log("Original columns:", field.columns);
+
+                    let columns = [];
+
+                    // Try multiple ways to get columns (like in fetchFormLayout)
+                    if (field.columnsJson) {
+                        try {
+                            if (typeof field.columnsJson === 'string') {
+                                columns = JSON.parse(field.columnsJson);
+                            } else if (Array.isArray(field.columnsJson)) {
+                                columns = field.columnsJson;
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse columnsJson:", e);
+                        }
+                    }
+
+                    // Fallback to columns property
+                    if ((!columns || columns.length === 0) && field.columns && Array.isArray(field.columns)) {
+                        columns = field.columns;
+                    }
+
+                    // Fallback to column property (old format)
+                    if ((!columns || columns.length === 0) && field.column && Array.isArray(field.column)) {
+                        columns = field.column;
+                    }
+
+                    // Copy columns with ALL their properties
+                    copiedField.columns = (columns || []).map(col => ({
+                        id: generateGuid(), // New ID for column
+                        name: col.name || "",
+                        type: col.type || "textbox",
+                        width: col.width || "1fr",
+                        required: col.required || false,
+
+                        // CRITICAL: Copy ALL column properties
+                        options: Array.isArray(col.options) ? [...col.options] : [],
+                        textColor: col.textColor || "#000000",
+                        backgroundColor: col.backgroundColor || "#ffffff",
+                        formula: col.formula || "",
+                        min: col.min !== undefined ? col.min : null,
+                        max: col.max !== undefined ? col.max : null,
+                        decimal: col.decimal !== undefined ? col.decimal : null,
+                        parentColumn: col.parentColumn || "",
+                        dependentOptions: col.dependentOptions || {},
+                        startTime: col.startTime || "",
+                        endTime: col.endTime || "",
+
+                        // Copy linked properties for grid columns
+                        linkedFormId: col.linkedFormId || null,
+                        linkedFieldId: col.linkedFieldId || null,
+                        linkedFieldType: col.linkedFieldType || null,
+                        linkedGridFieldId: col.linkedGridFieldId || null,
+                        linkedColumnId: col.linkedColumnId || null,
+                        displayMode: col.displayMode || null,
+                        displayFormat: col.displayFormat || null,
+                        allowManualEntry: col.allowManualEntry || null,
+                        showLookupButton: col.showLookupButton || null,
+                        keyFieldMappingsJson: col.keyFieldMappingsJson || null,
+                        keyFieldMappings: col.keyFieldMappings || []
+                    }));
+
+                    // Copy grid settings
+                    copiedField.initialRows = field.initialRows || 3;
+                    copiedField.minRows = field.minRows || 1;
+                    copiedField.maxRows = field.maxRows || 10;
+                }
+
+                // Handle linked field mappings
+                if (isLinked && field.keyFieldMappingsJson) {
+                    try {
+                        const mappings = JSON.parse(field.keyFieldMappingsJson);
+                        copiedField.keyFieldMappings = mappings.map(mapping => ({
+                            currentField: mapping.currentFormField || mapping.currentField,
+                            linkedField: mapping.linkedFormField || mapping.linkedField
+                        }));
+                    } catch (e) {
+                        console.warn("Failed to parse keyFieldMappingsJson:", e);
+                    }
+                }
+
+                console.log("=== COPIED FIELD RESULT ===");
+                console.log("Copied field:", copiedField);
+
+                return copiedField;
             });
+
+            console.log("=== FINAL TRANSFORMED FIELDS ===");
+            console.log("Transformed fields:", transformedFields);
 
             // Sort fields by their order property
             const sortedFields = transformedFields.sort((a, b) => a.order - b.order);
@@ -330,10 +461,12 @@ const FormBuilder = () => {
             setFormFields(sortedFields);
             setApprovers(data.approvers || []); // Optionally copy approvers too
 
+            // Handle linked form
             if (data.linkedFormId) {
                 fetchLinkedFormDetails(data.linkedFormId);
             }
 
+            // Handle key fields
             if (data.keyFields && data.keyFields.length > 0) {
                 const reconstructedKeyFields = data.keyFields.map(kf => ({
                     currentFormField: kf.currentFieldType === 'gridColumn'
@@ -346,8 +479,7 @@ const FormBuilder = () => {
                 setKeyFields(reconstructedKeyFields);
             }
 
-
-            alert(`Successfully copied format from "${data.name}". You can now modify and save as a new form.`);
+            alert(`Successfully copied format from "${data.name}". All field properties have been preserved.`);
             setShowCopyFormat(false);
             setCopyFormLink("");
 
@@ -356,6 +488,7 @@ const FormBuilder = () => {
             alert("Failed to copy form format from server.");
         }
     };
+
 
     const moveField = (dragIndex, hoverIndex) => {
         setFormFields((prevFields) => {
@@ -579,32 +712,31 @@ const FormBuilder = () => {
         }
 
         const currentUtc = new Date();
-
         const currentUser = user[0].toLowerCase();
 
         try {
-            // If updating, first fetch the current form to get the RowVersion
+            // Handle image uploads first
             console.log('=== DEBUGGING IMAGE UPLOAD ===');
             console.log('Total formFields:', formFields.length);
+
             for (let i = 0; i < formFields.length; i++) {
                 const field = formFields[i];
 
                 if (field.type === 'image' && field.imageFile) {
                     console.log('Uploading image:', field.imageFile.name);
 
-                    // CREATE the imageFormData object first
                     const imageFormData = new FormData();
                     imageFormData.append('image', field.imageFile);
 
-                    // Upload image
                     const uploadResponse = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Image/upload-image`, {
                         method: 'POST',
                         body: imageFormData
                     });
+
                     if (uploadResponse.ok) {
                         const result = await uploadResponse.json();
 
-                        // Store image data in the new IMAGEOPTIONS field
+                        // Store image data as a JSON STRING, not an object
                         const imageOptionsData = {
                             imageUrl: result.url,
                             fileName: result.filename,
@@ -614,31 +746,37 @@ const FormBuilder = () => {
                             uploadedAt: new Date().toISOString()
                         };
 
+                        // CRITICAL: Store as JSON string to prevent array parsing issues
                         formFields[i] = {
                             ...formFields[i],
-                            IMAGEOPTIONS: JSON.stringify(imageOptionsData) // Store as JSON string
+                            IMAGEOPTIONS: JSON.stringify(imageOptionsData)
                         };
 
+                        // Remove file object to prevent serialization issues
                         delete formFields[i].imageFile;
                         console.log('Image uploaded successfully:', result.url);
                     } else {
                         throw new Error('Image upload failed');
                     }
                 }
-
             }
 
-
-            let existingRowVersion = null;
+            // Get existing row version for updates - CRITICAL FIX
+            let existingRowVersion = "";
             if (formId) {
                 const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}`);
                 if (response.ok) {
                     const currentForm = await response.json();
-                    existingRowVersion = currentForm.rowVersion;
+                    existingRowVersion = currentForm.rowVersion || "";
                 }
             }
 
-            // Base form object with RowVersion
+            // For new forms, set a default empty string for rowVersion
+            if (!existingRowVersion && !formId) {
+                existingRowVersion = "";
+            }
+
+            // Base form object - SIMPLIFIED to avoid circular references
             const baseForm = {
                 id: formId || 0,
                 name: formName,
@@ -647,44 +785,34 @@ const FormBuilder = () => {
                 createdAt: currentUtc,
                 updatedBy: currentUser,
                 updatedAt: currentUtc,
-                rowVersion: existingRowVersion || "", // Include RowVersion if it exists
-
-                linkedFormId: linkedForm?.id || null,
-                keyFieldMappings: keyFields || [],
-
+                // CRITICAL: Always provide rowVersion, even if empty string
+                rowVersion: existingRowVersion,
+                linkedFormId: linkedForm?.id || null
             };
 
-            console.log(approvers)
-            // Construct form data payload
+            // Construct form data payload - CLEAN VERSION
             const formData = {
                 ...baseForm,
+                // CRITICAL: Add required form property at root level
                 form: baseForm,
-                createdBy: currentUser,
-                linkedFormId: linkedForm?.id || null,
-                // Around line 600-650, replace the keyFields mapping:
+
+                // Process key fields
                 keyFields: keyFields.map(keyField => ({
                     currentFormField: keyField.currentFormField,
                     linkedFormField: keyField.linkedFormField,
-
-                    // Parse grid column references
                     currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
                     linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
-
-                    // Extract parent field ID and column ID for grid columns
                     currentParentFieldId: keyField.currentFormField?.includes('.')
-                        ? keyField.currentFormField.split('.')[0]
-                        : null,
+                        ? keyField.currentFormField.split('.')[0] : null,
                     currentColumnId: keyField.currentFormField?.includes('.')
-                        ? keyField.currentFormField.split('.')[1]
-                        : null,
+                        ? keyField.currentFormField.split('.')[1] : null,
                     linkedParentFieldId: keyField.linkedFormField?.includes('.')
-                        ? keyField.linkedFormField.split('.')[0]
-                        : null,
+                        ? keyField.linkedFormField.split('.')[0] : null,
                     linkedColumnId: keyField.linkedFormField?.includes('.')
-                        ? keyField.linkedFormField.split('.')[1]
-                        : null,
+                        ? keyField.linkedFormField.split('.')[1] : null,
                 })),
 
+                // Process approvers
                 approvers: approvers.map((a) => ({
                     adObjectId: a.name,
                     name: a.name,
@@ -693,189 +821,180 @@ const FormBuilder = () => {
                     level: a.level,
                     formId: baseForm.id
                 })),
+
+                // CRITICAL: Clean field processing with proper RowVersion handling
                 fields: formFields.map((field) => {
-                    const fieldObj = {
-                        ...field,
+                    // Create a clean field object without circular references
+                    const cleanField = {
+                        id: field.id,
+                        type: field.type,
+                        label: field.label,
+                        name: field.name,
+                        required: field.required || false,
+                        width: field.width,
                         formId: baseForm.id,
-                        Form: {  // Capital F version
-                            ...baseForm,
-                            rowVersion: existingRowVersion || "" // Include RowVersion in Form
+                        order:field.order,
+
+                        // CRITICAL: Provide form reference WITH rowVersion
+                        form: {
+                            id: baseForm.id,
+                            name: baseForm.name,
+                            formLink: baseForm.formLink,
+                            // FIX: Include rowVersion in each field's form reference
+                            rowVersion: existingRowVersion,
+                            createdBy: currentUser,
+                            createdAt: currentUtc,
+                            updatedBy: currentUser,
+                            updatedAt: currentUtc,
+                            linkedFormId: linkedForm?.id || null
                         },
-                        form: {  // Lowercase f version
-                            ...baseForm,
-                            rowVersion: existingRowVersion || "" // Include RowVersion in form
-                        },
-                        // Handle arrays properly
-                        fieldReferences: null,
+
+                        // Handle field-specific properties safely
                         options: Array.isArray(field.options) ? field.options : [],
-                        iIMAGEOPTIONS: field.IMAGEOPTIONS || null,
                         requireRemarks: Array.isArray(field.requireRemarks) ? field.requireRemarks : [],
+
+                        // Handle image options safely - ensure it's a string or null
+                        IMAGEOPTIONS: field.IMAGEOPTIONS && typeof field.IMAGEOPTIONS === 'string'
+                            ? field.IMAGEOPTIONS
+                            : (field.IMAGEOPTIONS ? JSON.stringify(field.IMAGEOPTIONS) : null),
+
+                        // Handle numeric fields
+                        min: field.min ?? null,
+                        max: field.max ?? null,
+                        decimal: field.decimal ?? false,
+                        requireRemarksOutOfRange: field.requireRemarksOutOfRange ?? false,
+
+                        // Handle calculation fields
+                        formula: field.formula || "",
+                        resultDecimal: field.resultDecimal ?? false,
+
+                        // Handle field references - set to null to avoid circular reference issues
+                        fieldReferences: null,
+
+                        // Handle remark triggers - clean them to avoid circular references
                         remarkTriggers: Array.isArray(field.remarkTriggers)
                             ? field.remarkTriggers.map(trigger => ({
-                                ...trigger,
-                                formFieldId: field.id,
-                                formField: {
-                                    id: field.id,
-                                    type: field.type,
-                                    label: field.label || field.name,
-                                    width: field.width,
-                                    form: {
-                                        id: baseForm.id,
-                                        name: baseForm.name,
-                                        formLink: baseForm.formLink,
-                                        rowVersion: baseForm.rowVersion
-                                    }
-                                }
+                                id: trigger.id,
+                                condition: trigger.condition,
+                                value: trigger.value,
+                                message: trigger.message,
+                                formFieldId: field.id
+                                // Remove formField reference to avoid circular reference
                             }))
-                            : [],
-                        linkedFormId: field.type === "linkedTextbox" ? (linkedForm?.id || null) : null,
-                        linkedFieldId: field.type === "linkedTextbox" ? field.linkedFieldId : null,
-                        keyFieldMappings: field.keyFieldMappings || [],
-                        linkedFormFieldId: field.type === "linkedTextbox" ? field.linkedFormFieldId : null,
-                        bridgeFieldId: field.type === "linkedTextbox" ? field.bridgeFieldId : null
+                            : []
                     };
 
-                    // Handle grid type
-                    if (field.type === "grid" && field.columns) {
-                        // Process each column for special types like linkedTextbox
-                        const processedColumns = field.columns.map(column => {
-                            const processedColumn = { ...column };
-
-                            // Handle linkedTextbox columns within grids
-                            // In the grid processing section, around line 750-800:
-                            if (column.type === "linkedTextbox") {
-                                processedColumn.linkedFormId = column.linkedFormId || (linkedForm?.id || null);
-                                processedColumn.linkedFieldId = column.linkedFieldId;
-                                processedColumn.displayMode = column.displayMode || "readonly";
-                                processedColumn.displayFormat = column.displayFormat || "{value}";
-                                processedColumn.allowManualEntry = column.allowManualEntry || false;
-                                processedColumn.showLookupButton = column.showLookupButton !== false;
-
-                                // Process key field mappings for grid column - FIX PROPERTY NAMES
-                                processedColumn.keyFieldMappings = (column.keyFieldMappings || []).map(mapping => ({
-                                    currentFormField: mapping.currentField,  // Changed from mapping.currentField
-                                    linkedFormField: mapping.linkedField,   // Changed from mapping.linkedField
-
-                                    currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
-                                    linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
-                                    currentParentFieldId: mapping.currentField?.includes('.')
-                                        ? mapping.currentField.split('.')[0]
-                                        : null,
-                                    currentColumnId: mapping.currentField?.includes('.')
-                                        ? mapping.currentField.split('.')[1]
-                                        : null,
-                                    linkedParentFieldId: mapping.linkedField?.includes('.')
-                                        ? mapping.linkedField.split('.')[0]
-                                        : null,
-                                    linkedColumnId: mapping.linkedField?.includes('.')
-                                        ? mapping.linkedField.split('.')[1]
-                                        : null,
-                                }));
-
-                                // Store as JSON for database
-                                processedColumn.keyFieldMappingsJson = JSON.stringify(processedColumn.keyFieldMappings);
-                            }
-
-                            if (column.type === "date") {
-                                processedColumn.showDayName = column.showDayName || false;
-                            }
-                            return processedColumn;
-                        });
-
-                        fieldObj.columns = processedColumns;
-                        fieldObj.columnsJson = JSON.stringify(processedColumns);
-                    }
-
-                    // Handle calculation type
-                    if (field.type === "calculation") {
-                        fieldObj.formula = field.formula.replace(/\{([^}]+)\}/g, (match, fieldName) => {
-                            const referencedField = formFields.find(f => f.name === fieldName);
-                            return referencedField ? referencedField.id : match;
-                        });
-                    }
-                    // Around line 700-750, in the linkedTextbox field processing:
+                    // Handle linked textbox fields
                     if (field.type === "linkedTextbox") {
-                        console.log("=== DEBUGGING LINKEDTEXTBOX SAVE ===");
-                        console.log("Field object:", field);
-                        console.log("linkedFieldReference:", field.linkedFieldReference);
-                        console.log("linkedFieldId:", field.linkedFieldId);
-                        console.log("linkedFieldType:", field.linkedFieldType);
-                        console.log("keyFieldMappings:", field.keyFieldMappings);
+                        cleanField.linkedFormId = field.linkedFormId || linkedForm?.id || null;
+                        cleanField.displayMode = field.displayMode || "readonly";
+                        cleanField.displayFormat = field.displayFormat || "{value}";
+                        cleanField.allowManualEntry = field.allowManualEntry || false;
+                        cleanField.showLookupButton = field.showLookupButton !== false;
 
-                        fieldObj.linkedFormId = field.linkedFormId;
-
-                        // The issue might be here - let's fix the logic
+                        // Handle linked field references
                         if (field.linkedFieldReference) {
-                            console.log("Using linkedFieldReference:", field.linkedFieldReference);
                             if (field.linkedFieldReference.includes('.')) {
-                                // Grid column reference
                                 const [gridFieldId, columnId] = field.linkedFieldReference.split('.');
-                                fieldObj.linkedFieldId = null;
-                                fieldObj.linkedFieldType = "gridColumn";
-                                fieldObj.linkedGridFieldId = gridFieldId;
-                                fieldObj.linkedColumnId = columnId;
-                                console.log("Set as grid column - gridFieldId:", gridFieldId, "columnId:", columnId);
+                                cleanField.linkedFieldId = null;
+                                cleanField.linkedFieldType = "gridColumn";
+                                cleanField.linkedGridFieldId = gridFieldId;
+                                cleanField.linkedColumnId = columnId;
                             } else {
-                                // Regular field reference
-                                fieldObj.linkedFieldId = field.linkedFieldReference;
-                                fieldObj.linkedFieldType = "field";
-                                fieldObj.linkedGridFieldId = null;
-                                fieldObj.linkedColumnId = null;
-                                console.log("Set as regular field - fieldId:", field.linkedFieldReference);
+                                cleanField.linkedFieldId = field.linkedFieldReference;
+                                cleanField.linkedFieldType = "field";
+                                cleanField.linkedGridFieldId = null;
+                                cleanField.linkedColumnId = null;
                             }
-                        } else if (field.linkedFieldId || field.linkedGridFieldId) {
-                            // Fallback to existing individual properties
-                            console.log("Using individual properties as fallback");
-                            fieldObj.linkedFieldId = field.linkedFieldId;
-                            fieldObj.linkedFieldType = field.linkedFieldType || "field";
-                            fieldObj.linkedGridFieldId = field.linkedGridFieldId;
-                            fieldObj.linkedColumnId = field.linkedColumnId;
                         } else {
-                            console.log("No linked field data found!");
-                            // Set defaults
-                            fieldObj.linkedFieldId = null;
-                            fieldObj.linkedFieldType = null;
-                            fieldObj.linkedGridFieldId = null;
-                            fieldObj.linkedColumnId = null;
+                            cleanField.linkedFieldId = field.linkedFieldId || null;
+                            cleanField.linkedFieldType = field.linkedFieldType || null;
+                            cleanField.linkedGridFieldId = field.linkedGridFieldId || null;
+                            cleanField.linkedColumnId = field.linkedColumnId || null;
                         }
 
-                        console.log("Final fieldObj linked properties:", {
-                            linkedFieldId: fieldObj.linkedFieldId,
-                            linkedFieldType: fieldObj.linkedFieldType,
-                            linkedGridFieldId: fieldObj.linkedGridFieldId,
-                            linkedColumnId: fieldObj.linkedColumnId
-                        });
-
-                        // Rest of the processing...
-                        fieldObj.displayMode = field.displayMode || "readonly";
-                        fieldObj.displayFormat = field.displayFormat || "{value}";
-                        fieldObj.allowManualEntry = field.allowManualEntry || false;
-                        fieldObj.showLookupButton = field.showLookupButton !== false;
-
-                        // Process key field mappings
-                        fieldObj.keyFieldMappings = (field.keyFieldMappings || []).map(mapping => ({
+                        // Handle key field mappings - clean format
+                        const mappings = (field.keyFieldMappings || []).map(mapping => ({
                             currentFormField: mapping.currentField,
                             linkedFormField: mapping.linkedField,
                             currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
                             linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
-                            currentParentFieldId: mapping.currentField?.includes('.') ? mapping.currentField.split('.')[0] : null,
-                            currentColumnId: mapping.currentField?.includes('.') ? mapping.currentField.split('.')[1] : null,
-                            linkedParentFieldId: mapping.linkedField?.includes('.') ? mapping.linkedField.split('.')[0] : null,
-                            linkedColumnId: mapping.linkedField?.includes('.') ? mapping.linkedField.split('.')[1] : null,
+                            currentParentFieldId: mapping.currentField?.includes('.')
+                                ? mapping.currentField.split('.')[0] : null,
+                            currentColumnId: mapping.currentField?.includes('.')
+                                ? mapping.currentField.split('.')[1] : null,
+                            linkedParentFieldId: mapping.linkedField?.includes('.')
+                                ? mapping.linkedField.split('.')[0] : null,
+                            linkedColumnId: mapping.linkedField?.includes('.')
+                                ? mapping.linkedField.split('.')[1] : null,
                         }));
 
-                        fieldObj.keyFieldMappingsJson = JSON.stringify(fieldObj.keyFieldMappings);
+                        cleanField.keyFieldMappings = mappings;
+                        cleanField.keyFieldMappingsJson = JSON.stringify(mappings);
                     }
 
-                    // In your field processing, use imageValue instead of imageUrl
-                    delete fieldObj.imageFile;
-                    return fieldObj;
+                    // Handle grid fields
+                    if (field.type === "grid" && field.columns) {
+                        const cleanColumns = field.columns.map(column => {
+                            const cleanColumn = {
+                                id: column.id,
+                                name: column.name,
+                                type: column.type,
+                                width: column.width,
+                                required: column.required || false,
+                                options: Array.isArray(column.options) ? column.options : [],
+                                textColor: column.textColor || "#000000",
+                                backgroundColor: column.backgroundColor || "#ffffff"
+                            };
+
+                            // Handle linkedTextbox columns in grids
+                            if (column.type === "linkedTextbox") {
+                                cleanColumn.linkedFormId = column.linkedFormId || linkedForm?.id || null;
+                                cleanColumn.linkedFieldId = column.linkedFieldId;
+                                cleanColumn.displayMode = column.displayMode || "readonly";
+                                cleanColumn.displayFormat = column.displayFormat || "{value}";
+                                cleanColumn.allowManualEntry = column.allowManualEntry || false;
+                                cleanColumn.showLookupButton = column.showLookupButton !== false;
+
+                                // Clean key field mappings for columns
+                                const columnMappings = (column.keyFieldMappings || []).map(mapping => ({
+                                    currentFormField: mapping.currentField,
+                                    linkedFormField: mapping.linkedField,
+                                    currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
+                                    linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
+                                    currentParentFieldId: mapping.currentField?.includes('.')
+                                        ? mapping.currentField.split('.')[0] : null,
+                                    currentColumnId: mapping.currentField?.includes('.')
+                                        ? mapping.currentField.split('.')[1] : null,
+                                    linkedParentFieldId: mapping.linkedField?.includes('.')
+                                        ? mapping.linkedField.split('.')[0] : null,
+                                    linkedColumnId: mapping.linkedField?.includes('.')
+                                        ? mapping.linkedField.split('.')[1] : null,
+                                }));
+
+                                cleanColumn.keyFieldMappings = columnMappings;
+                                cleanColumn.keyFieldMappingsJson = JSON.stringify(columnMappings);
+                            }
+
+                            return cleanColumn;
+                        });
+
+                        cleanField.columns = cleanColumns;
+                        cleanField.columnsJson = JSON.stringify(cleanColumns);
+                        cleanField.initialRows = field.initialRows || 3;
+                        cleanField.minRows = field.minRows || 1;
+                        cleanField.maxRows = field.maxRows || 10;
+                    }
+
+                    return cleanField;
                 })
             };
 
-            console.log(formData)
-
-            console.log("Payload being sent to the backend:", JSON.stringify(formData, null, 2));
+            console.log("=== CLEAN PAYLOAD WITH ROWVERSION DEBUG ===");
+            console.log("existingRowVersion:", existingRowVersion);
+            console.log("baseForm.rowVersion:", baseForm.rowVersion);
+            console.log("Sample field form rowVersion:", formData.fields[0]?.form?.rowVersion);
+            console.log("Payload being sent to backend:", JSON.stringify(formData, null, 2));
 
             const url = formId
                 ? `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}`
@@ -888,6 +1007,7 @@ const FormBuilder = () => {
                 headers: {
                     "Content-Type": "application/json",
                     "Accept": "application/json",
+                    // CRITICAL: Include If-Match header for concurrency control
                     "If-Match": existingRowVersion ? `"${existingRowVersion}"` : "*"
                 },
                 body: JSON.stringify(formData)
@@ -897,7 +1017,6 @@ const FormBuilder = () => {
                 const errorText = await response.text();
                 console.error("Server response:", errorText);
 
-                // Handle concurrency conflicts
                 if (response.status === 409) {
                     const shouldRetry = window.confirm(
                         "The form has been modified by another user. Would you like to:\n\n" +
@@ -918,13 +1037,13 @@ const FormBuilder = () => {
             console.log("Form saved successfully:", responseBody);
             toast.success("Form template saved successfully!");
             navigate(`/formbuilder/${responseBody.formLink}`);
-            //alert(`Form saved successfully! Link: ${window.location.origin}/form/${responseBody.formLink}`);
 
         } catch (error) {
             console.error("Error saving form:", error);
             alert(`An error occurred while saving the form: ${error.message}`);
         }
     };
+
 
     const addField = (type) => {
         const newField = {
@@ -1958,7 +2077,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
     drag(drop(ref));
 
     const [newOption, setNewOption] = useState("");
-    const [tempDropdownOptions, setTempDropdownOptions] = useState("");
+    const [tempDropdownOptions, setTempDropdownOptions] = useState({});
     const [newRemarkTrigger, setNewRemarkTrigger] = useState({
         value: "",
         operator: "=",
@@ -2485,21 +2604,40 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <label className="block text-xs text-gray-500 mb-1">Options (comma separated)</label>
                                         <input
                                             type="text"
-                                            value={tempDropdownOptions}
-                                            onChange={(e) => setTempDropdownOptions(e.target.value)}
+                                            // Create unique key for each column
+                                            value={tempDropdownOptions[`${field.id}_${colIndex}`] || (column.options || []).join(", ")}
+                                            onChange={(e) => setTempDropdownOptions(prev => ({
+                                                ...prev,
+                                                [`${field.id}_${colIndex}`]: e.target.value
+                                            }))}
                                             onBlur={() => {
-                                                const options = tempDropdownOptions
+                                                const currentKey = `${field.id}_${colIndex}`;
+                                                const options = (tempDropdownOptions[currentKey] || "")
                                                     .split(",")
                                                     .map((opt) => opt.trim())
                                                     .filter(Boolean);
 
                                                 const updatedColumns = [...(field.columns || [])];
-                                                updatedColumns[colIndex].options = options;
+                                                updatedColumns[colIndex] = {
+                                                    ...updatedColumns[colIndex],
+                                                    options: options
+                                                };
                                                 updateField({ ...field, columns: updatedColumns });
+
+                                                // Clear the temporary state for this specific column
+                                                setTempDropdownOptions(prev => {
+                                                    const newState = { ...prev };
+                                                    delete newState[currentKey];
+                                                    return newState;
+                                                });
                                             }}
                                             onFocus={() => {
-                                                // Populate temp input with current options when editing starts
-                                                setTempDropdownOptions((column.options || []).join(", "));
+                                                const currentKey = `${field.id}_${colIndex}`;
+                                                // Only set temp state for THIS specific column
+                                                setTempDropdownOptions(prev => ({
+                                                    ...prev,
+                                                    [currentKey]: (column.options || []).join(", ")
+                                                }));
                                             }}
                                             className="w-full px-2 py-1 border rounded"
                                             placeholder="Option 1, Option 2, Option 3"
@@ -2510,14 +2648,17 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         {console.log(column.remarksOptions)}
                                         <select
                                             multiple
-                                            value={column.remarksOptions || []}   // <-- must always be an array
+                                            value={column.remarksOptions || []}
                                             onChange={(e) => {
                                                 const selected = Array.from(
                                                     e.target.selectedOptions,
                                                     opt => opt.value
                                                 );
                                                 const updatedColumns = [...field.columns];
-                                                updatedColumns[colIndex].remarksOptions = selected;
+                                                updatedColumns[colIndex] = {
+                                                    ...updatedColumns[colIndex],
+                                                    remarksOptions: selected
+                                                };
                                                 updateField({ ...field, columns: updatedColumns });
                                             }}
                                             className="w-full px-2 py-1 border rounded mt-1 h-24"
@@ -2528,10 +2669,9 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 </option>
                                             ))}
                                         </select>
-
-
                                     </div>
                                 )}
+
 
                                 {column.type === "dependentDropdown" && (
                                     <div className="w-full space-y-4">

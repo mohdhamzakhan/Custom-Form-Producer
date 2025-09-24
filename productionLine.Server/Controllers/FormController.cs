@@ -361,7 +361,8 @@ namespace productionLine.Server.Controllers
                     KeyFieldMappingsJson = f.KeyFieldMappingsJson,
                     KeyFieldMappings = f.KeyFieldMappings,
                     IMAGEOPTIONS = f.IMAGEOPTIONS,
-
+                    Order=f.Order,
+                    ImageData=f.IMAGEOPTIONS,
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,

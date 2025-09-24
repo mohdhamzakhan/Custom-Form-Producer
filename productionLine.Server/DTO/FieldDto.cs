@@ -23,6 +23,7 @@ namespace productionLine.Server.DTO
         public double? Min { get; set; }
         public List<RemarkTriggerDto> RemarkTriggers { get; set; } = new();
         public string? Formula { get; set; }
+        public int Order { get; set; }
         public bool? ResultDecimal { get; set; }
         public string? FieldReferencesJson { get; set; }
         public List<GridColumnDto> Column { get; set; }

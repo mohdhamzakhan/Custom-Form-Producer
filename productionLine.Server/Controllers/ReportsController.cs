@@ -72,8 +72,8 @@ namespace productionLine.Server.Controllers
                 LayoutType = reportDto.LayoutType,
                 DefinitionJson = reportDto.DefinitionJson,
                 CreatedBy = User.Identity.Name ?? "Hamza",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.Now,
+                UpdatedAt = DateTime.Now,
                 AccessList = reportDto.AccessList.Select(a => new ReportAccess
                 {
                     UserOrGroupId = a.UserOrGroupId,
@@ -108,7 +108,7 @@ namespace productionLine.Server.Controllers
             report.Description = updated.Description;
             report.LayoutType = updated.LayoutType;
             report.DefinitionJson = updated.DefinitionJson;
-            report.UpdatedAt = DateTime.UtcNow;
+            report.UpdatedAt = DateTime.Now;
 
             report.AccessList.Clear();
             foreach (var a in updated.AccessList)

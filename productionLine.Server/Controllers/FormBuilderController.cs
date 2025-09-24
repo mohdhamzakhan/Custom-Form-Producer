@@ -277,6 +277,8 @@ namespace productionLine.Server.Controllers
                     KeyFieldMappings = f.KeyFieldMappings,
                     IMAGEOPTIONS = f.IMAGEOPTIONS,
                     ImageData = f.IMAGEOPTIONS,
+                    Order = f.Order,
+                    
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {

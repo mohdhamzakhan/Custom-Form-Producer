@@ -50,13 +50,14 @@ export default function EnhancedReportViewer() {
                 setSelectedFields(resolvedFields);
 
                 setTemplate(prev => ({ ...prev, calculatedFields }));
-
                 const charts = res.data.chartConfig || [];
-                if (charts.length === 0 && res.data.chartConfig) {
+                // Only create default chart if chartConfig exists and has valid data
+                if (charts.length === 0 && res.data.chartConfig &&
+                    (res.data.chartConfig.title || res.data.chartConfig.metrics?.length > 0)) {
                     charts.push({
                         id: 1,
-                        title: res.data.chartConfig.title || "Chart 1",
-                        type: res.data.chartConfig.type || "bar",
+                        title: res.data.chartConfig.title || 'Chart 1',
+                        type: res.data.chartConfig.type || 'bar',
                         metrics: res.data.chartConfig.metrics || [],
                         xField: res.data.chartConfig.xField,
                         position: { row: 0, col: 0, width: 12, height: 6 },
