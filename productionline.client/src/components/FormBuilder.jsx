@@ -22,6 +22,8 @@ const generateGuid = () => {
 // Define the drag item type
 const ITEM_TYPE = "FORM_FIELD";
 const APPROVER_ITEM_TYPE = "APPROVER";
+const COLUMNITEMTYPE = 'COLUMN'
+
 
 const FormBuilder = () => {
     const [formFields, setFormFields] = useState([]);
@@ -504,6 +506,40 @@ const FormBuilder = () => {
         });
     };
 
+    const moveColumn = (fieldIndex, dragColumnIndex, hoverColumnIndex) => {
+        setFormFields(prevFields => {
+            const updatedFields = [...prevFields];
+            const field = updatedFields[fieldIndex];
+            const updatedColumns = [...field.columns];
+
+            const movedColumn = updatedColumns.splice(dragColumnIndex, 1)[0];
+            updatedColumns.splice(hoverColumnIndex, 0, movedColumn);
+
+            updatedFields[fieldIndex] = {
+                ...field,
+                columns: updatedColumns
+            };
+
+            return updatedFields;
+        });
+    };
+
+    const removeColumn = (fieldIndex, columnIndex) => {
+        setFormFields(prevFields => {
+            const updatedFields = [...prevFields]
+            const field = updatedFields[fieldIndex]
+            const updatedColumns = [...field.columns]
+
+            updatedColumns.splice(columnIndex, 1)
+
+            updatedFields[fieldIndex] = {
+                ...field,
+                columns: updatedColumns
+            }
+
+            return updatedFields
+        })
+    }
     const moveApprover = (dragIndex, hoverIndex) => {
         setApprovers((prevApprovers) => {
             const updatedApprovers = [...prevApprovers];
@@ -936,6 +972,8 @@ const FormBuilder = () => {
                     // Handle grid fields
                     if (field.type === "grid" && field.columns) {
                         const cleanColumns = field.columns.map(column => {
+                            // In the saveForm function, update the cleanColumn creation (around line 800-900):
+
                             const cleanColumn = {
                                 id: column.id,
                                 name: column.name,
@@ -943,9 +981,45 @@ const FormBuilder = () => {
                                 width: column.width,
                                 required: column.required || false,
                                 options: Array.isArray(column.options) ? column.options : [],
-                                textColor: column.textColor || "#000000",
-                                backgroundColor: column.backgroundColor || "#ffffff"
+                                textColor: column.textColor || "000000",
+                                backgroundColor: column.backgroundColor || "ffffff",
+
+                                // CRITICAL FIX: Add formula for calculation columns
+                                formula: column.formula || "",  // <-- ADD THIS LINE
+
+                                // Also add other numeric and calculation-related fields
+                                min: column.min ?? null,
+                                max: column.max ?? null,
+                                decimal: column.decimal ?? null,
+                                parentColumn: column.parentColumn || "",
+                                dependentOptions: column.dependentOptions || {},
+                                startTime: column.startTime || "",
+                                endTime: column.endTime || "",
+
+                                // Handle linkedTextbox columns in grids
+                                ...(column.type === "linkedTextbox" && {
+                                    linkedFormId: column.linkedFormId || (linkedForm?.id) || null,
+                                    linkedFieldId: column.linkedFieldId,
+                                    displayMode: column.displayMode || "readonly",
+                                    displayFormat: column.displayFormat || "value",
+                                    allowManualEntry: column.allowManualEntry || false,
+                                    showLookupButton: column.showLookupButton !== false,
+
+                                    // Clean key field mappings for columns
+                                    keyFieldMappings: (column.keyFieldMappings || []).map(mapping => ({
+                                        currentFormField: mapping.currentField,
+                                        linkedFormField: mapping.linkedField,
+                                        currentFieldType: mapping.currentField?.includes(".") ? "gridColumn" : "field",
+                                        linkedFieldType: mapping.linkedField?.includes(".") ? "gridColumn" : "field",
+                                        currentParentFieldId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[0] : null,
+                                        currentColumnId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[1] : null,
+                                        linkedParentFieldId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[0] : null,
+                                        linkedColumnId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[1] : null,
+                                    })),
+                                    keyFieldMappingsJson: JSON.stringify(columnMappings)
+                                })
                             };
+
 
                             // Handle linkedTextbox columns in grids
                             if (column.type === "linkedTextbox") {
@@ -2078,6 +2152,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
     const [newOption, setNewOption] = useState("");
     const [tempDropdownOptions, setTempDropdownOptions] = useState({});
+    const [draggedItem, setDraggedItem] = useState(null);
+    const [dragOverIndex, setDragOverIndex] = useState(null);
     const [newRemarkTrigger, setNewRemarkTrigger] = useState({
         value: "",
         operator: "=",
@@ -2484,6 +2560,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
                         {(field.columns || []).map((column, colIndex) => (
                             <div key={column.id || colIndex} className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-gray-200">
+
+                                <GripVertical className="text-gray-400 cursor-move mr-2" size={16} />
                                 <div className="w-full md:w-1/3 mb-2 md:mb-0">
                                     <label className="block text-xs text-gray-500 mb-1">Name</label>
                                     <input
@@ -2671,7 +2749,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         </select>
                                     </div>
                                 )}
-
 
                                 {column.type === "dependentDropdown" && (
                                     <div className="w-full space-y-4">
@@ -2947,14 +3024,15 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             onClick={() => {
                                 const newColumn = {
                                     id: generateGuid(),
-                                    name: `Column ${(field.columns || []).length + 1}`,
-                                    type: "textbox",
-                                    width: "1fr",
-                                    ...(type === "date" && {
-                                        showDayName: false
-                                    })
+                                    name: `Column ${field.columns.length + 1}`,
+                                    type: 'textbox', // Use literal string instead of undefined variable
+                                    width: '1fr',
+                                    required: false,
+                                    options: [],
+                                    textColor: '#000000',
+                                    backgroundColor: '#ffffff'
                                 };
-                                updateField({ columns: [...(field.columns || []), newColumn] });
+                                updateField({ columns: [...field.columns, newColumn] });
                             }}
                             className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 flex items-center gap-1 text-sm"
                         >
@@ -3253,9 +3331,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     })()}
                 </div>
             )}
-
-
-
 
             {(field.type === "dropdown" ||
                 field.type === "checkbox" ||
