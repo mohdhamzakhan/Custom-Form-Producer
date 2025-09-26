@@ -9,6 +9,7 @@ import { APP_CONSTANTS } from "./store";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { toast } from 'react-toastify';
+import LoadingDots from './LoadingDots';
 
 // Function to generate a GUID
 const generateGuid = () => {
@@ -1664,7 +1665,8 @@ const FormBuilder = () => {
     // Add this component to your FormBuilder return statement, right after the form name section:
     // <GridDebugComponent />
 
-    if (loading) return <div className="p-4">Loading form builder...</div>;
+    if (loading) return <LoadingDots />;
+
 
 
     return (

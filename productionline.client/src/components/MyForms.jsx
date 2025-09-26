@@ -3,6 +3,7 @@ import { Plus, Edit, Copy, Trash, Calendar, User, ExternalLink } from "lucide-re
 import Layout from "./Layout";
 import { APP_CONSTANTS } from "./store";
 import { useNavigate } from 'react-router-dom';
+import LoadingDots from './LoadingDots';
 
 const MyForms = () => {
     const [forms, setForms] = useState([]);
@@ -147,15 +148,8 @@ const MyForms = () => {
         });
     };
 
-    if (loading) {
-        return (
-            <Layout>
-                <div className="flex justify-center items-center h-64">
-                    <div className="text-gray-500">Loading your forms...</div>
-                </div>
-            </Layout>
-        );
-    }
+    if (loading) return <LoadingDots />;
+
 
     return (
         <Layout>

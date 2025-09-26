@@ -4,6 +4,8 @@ import axios from "axios";
 import ReportCharts from "./ReportCharts";
 import { APP_CONSTANTS } from "./store";
 import "../report_viewer_styles.css";
+import LoadingDots from './LoadingDots';
+
 
 export default function EnhancedReportViewer() {
     const { templateId } = useParams();
@@ -883,7 +885,8 @@ export default function EnhancedReportViewer() {
         }
     };
 
-    if (loading) return <div className="loading">Loading report...</div>;
+    if (loading) return <LoadingDots />;
+
     if (error) return <div className="error">{error}</div>;
 
     return (

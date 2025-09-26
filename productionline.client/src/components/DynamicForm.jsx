@@ -3,6 +3,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useParams } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
+import LoadingDots from './LoadingDots';
 
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
@@ -879,6 +880,10 @@ export default function DynamicForm() {
                     errors[field.id] = `${field.label} is required`;
                 } else if (field.type === "date" && !value) {
                     errors[field.id] = `${field.label} is required`;
+                } else if (field.type === "date" && !value) {
+                    errors[field.id] = `${field.label} is required`;
+                } else if (field.type === "date" && value && !isValidDate(value)) {
+                    errors[field.id] = `Please enter a valid date for ${field.label}`;
                 }
             }
 
@@ -898,7 +903,7 @@ export default function DynamicForm() {
                         if (col.type === "date" && value !== null && value !== "") {
                             const errorKey = `${field.id}_${rowIndex}_${col.name}`;
 
-                            if (!(value instanceof Date) || isNaN(value.getTime())) {
+                            if (!isValidDate(value)) {
                                 errors[errorKey] = `Please enter a valid date in row ${rowIndex + 1}`;
                             }
                         }
@@ -997,20 +1002,24 @@ export default function DynamicForm() {
 
         return errors;
     };
-    const cleanGridData = (gridData) => {
-        if (!Array.isArray(gridData)) return gridData;
 
-        return gridData.map(row => {
-            const cleanedRow = {};
-            Object.keys(row).forEach(key => {
-                // Only include non-empty values or non-remark fields
-                if (!key.endsWith('_remarks') || (key.endsWith('_remarks') && row[key] && row[key].trim() !== '')) {
-                    cleanedRow[key] = row[key];
-                }
-            });
-            return cleanedRow;
-        });
+    const isValidDate = (date) => {
+        return date instanceof Date && !isNaN(date.getTime());
     };
+    //const cleanGridData = (gridData) => {
+    //    if (!Array.isArray(gridData)) return gridData;
+
+    //    return gridData.map(row => {
+    //        const cleanedRow = {};
+    //        Object.keys(row).forEach(key => {
+    //            // Only include non-empty values or non-remark fields
+    //            if (!key.endsWith('_remarks') || (key.endsWith('_remarks') && row[key] && row[key].trim() !== '')) {
+    //                cleanedRow[key] = row[key];
+    //            }
+    //        });
+    //        return cleanedRow;
+    //    });
+    //};
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -1049,7 +1058,12 @@ export default function DynamicForm() {
                     fieldValue = fieldValue.join(', ');
                 } else if (fieldTypes[fieldId] === 'date' && fieldValue) {
                     // Format date values to ISO string for backend storage
-                    fieldValue = new Date(fieldValue).toISOString();
+                    if (fieldValue instanceof Date) {
+                        const year = fieldValue.getFullYear();
+                        const month = String(fieldValue.getMonth() + 1).padStart(2, '0');
+                        const day = String(fieldValue.getDate()).padStart(2, '0');
+                        fieldValue = `${year}-${month}-${day}`;
+                    }
                 } else if (fieldValue === null || fieldValue === undefined) {
                     // Handle null/undefined values
                     fieldValue = "";
@@ -1102,6 +1116,35 @@ export default function DynamicForm() {
             }
         }
     };
+
+    const cleanGridData = (gridData) => {
+        if (!Array.isArray(gridData)) return gridData;
+
+        return gridData.map(row => {
+            const cleanedRow = {};
+            Object.keys(row).forEach(key => {
+                // Only include non-empty values or non-remark fields
+                if (!key.endsWith('remarks') && key.endsWith('remarks')) {
+                    if (row[key] && row[key].trim() !== '') {
+                        cleanedRow[key] = row[key];
+                    }
+                } else {
+                    // Handle date values in grid
+                    if (row[key] instanceof Date) {
+                        const date = row[key];
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        cleanedRow[key] = `${year}-${month}-${day}`;
+                    } else if (row[key] !== null && row[key] !== undefined && row[key] !== '') {
+                        cleanedRow[key] = row[key];
+                    }
+                }
+            });
+            return cleanedRow;
+        });
+    }
+
 
     const resetForm = () => {
         if (!formData) return;
@@ -2401,13 +2444,8 @@ export default function DynamicForm() {
 
 
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                Loading form...
-            </div>
-        );
-    }
+    if (loading) return <LoadingDots />;
+
 
     if (error) {
         return <div className="text-red-500">Error: {error}</div>;

@@ -1,7 +1,8 @@
 ﻿import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Layout from "./Layout";
-import {APP_CONSTANTS} from "./store";
+import { APP_CONSTANTS } from "./store";
+import LoadingDots from './LoadingDots';
 
 export default function ApprovalPage() {
     const { submissionId } = useParams();
@@ -12,6 +13,7 @@ export default function ApprovalPage() {
     const [formDefinition, setFormDefinition] = useState(null);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
+
 
     // Fetch current user
     useEffect(() => {
@@ -177,15 +179,8 @@ export default function ApprovalPage() {
         }
     };
 
-    if (loading) {
-        return (
-            <Layout>
-                <div className="flex justify-center items-center h-64">
-                    Loading submission details...
-                </div>
-            </Layout>
-        );
-    }
+    if (loading) return <LoadingDots />;
+
 
     if (!submission) {
         return (

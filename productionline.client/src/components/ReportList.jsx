@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { APP_CONSTANTS } from "./store";
 import Layout from "./Layout"
+import LoadingDots from './LoadingDots';
 
 export default function ReportsList() {
     const [reports, setReports] = useState([]);
@@ -86,14 +87,8 @@ export default function ReportsList() {
         report.description?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center p-8">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-                <span className="ml-3">Loading reports...</span>
-            </div>
-        );
-    }
+    if (loading) return <LoadingDots />;
+
 
     return (
         <Layout>

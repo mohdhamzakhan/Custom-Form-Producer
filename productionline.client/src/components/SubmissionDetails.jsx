@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {APP_CONSTANTS} from "./store";
+import { APP_CONSTANTS } from "./store";
+
 
 export default function SubmissionDetails() {
     const { submissionId } = useParams();
@@ -87,13 +88,8 @@ export default function SubmissionDetails() {
         window.print();
     };
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                Loading submission details...
-            </div>
-        );
-    }
+    if (loading) return <LoadingDots />;
+
 
     if (error) {
         return <div className="text-red-500 text-center">{error}</div>;
