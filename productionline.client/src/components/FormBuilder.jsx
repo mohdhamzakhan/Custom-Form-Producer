@@ -413,7 +413,7 @@ const FormBuilder = () => {
                         dependentOptions: col.dependentOptions || {},
                         startTime: col.startTime || "",
                         endTime: col.endTime || "",
-
+                        remarksOptions: Array.isArray(col.remarksOptions) ? col.remarksOptions : [],
                         // Copy linked properties for grid columns
                         linkedFormId: col.linkedFormId || null,
                         linkedFieldId: col.linkedFieldId || null,
@@ -653,6 +653,7 @@ const FormBuilder = () => {
                             dependentOptions: col.dependentOptions || {},
                             startTime: col.startTime || "",
                             endTime: col.endTime || "",
+                            remarksOptions: Array.isArray(col.remarksOptions) ? col.remarksOptions : [],
                             // Handle linked textbox columns in grids
                             ...(col.type === "linkedTextbox" && {
                                 linkedFormId: col.linkedFormId || (linkedForm?.id || null),
@@ -995,6 +996,7 @@ const FormBuilder = () => {
                                 dependentOptions: column.dependentOptions || {},
                                 startTime: column.startTime || "",
                                 endTime: column.endTime || "",
+                                remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],
 
                                 // Handle linkedTextbox columns in grids
                                 ...(column.type === "linkedTextbox" && {
@@ -2152,8 +2154,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
     const [newOption, setNewOption] = useState("");
     const [tempDropdownOptions, setTempDropdownOptions] = useState({});
-    const [draggedItem, setDraggedItem] = useState(null);
-    const [dragOverIndex, setDragOverIndex] = useState(null);
+    const [draggedColumnIndex, setDraggedColumnIndex] = useState(null);
+    const [dragOverColumnIndex, setDragOverColumnIndex] = useState(null);
     const [newRemarkTrigger, setNewRemarkTrigger] = useState({
         value: "",
         operator: "=",
@@ -2256,6 +2258,82 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             (_, i) => i !== triggerIndex
         );
         updateField({ remarkTriggers: updatedTriggers });
+    };
+
+    // Reorder columns function
+    const reorderColumns = (fromIndex, toIndex) => {
+        if (fromIndex === toIndex) return;
+
+        const newColumns = [...field.columns];
+        const [movedColumn] = newColumns.splice(fromIndex, 1);
+        newColumns.splice(toIndex, 0, movedColumn);
+
+        updateField({ columns: newColumns });
+    };
+
+    // Drag handlers for table headers
+    const handleHeaderDragStart = (e, columnIndex) => {
+        // Stop propagation to prevent grid drag
+        e.stopPropagation();
+
+        setDraggedColumnIndex(columnIndex);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', columnIndex.toString());
+
+        // Add visual feedback
+        setTimeout(() => {
+            if (e.target) {
+                e.target.style.opacity = '0.5';
+            }
+        }, 0);
+    };
+
+    const handleHeaderDragEnd = (e) => {
+        e.stopPropagation();
+
+        if (e.target) {
+            e.target.style.opacity = '';
+        }
+        setDraggedColumnIndex(null);
+        setDragOverColumnIndex(null);
+    };
+
+    const handleHeaderDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleHeaderDragEnter = (e, columnIndex) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (draggedColumnIndex !== null && draggedColumnIndex !== columnIndex) {
+            setDragOverColumnIndex(columnIndex);
+        }
+    };
+
+    const handleHeaderDragLeave = (e) => {
+        // Only clear if we're leaving the header entirely
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+            setDragOverColumnIndex(null);
+        }
+    };
+
+    const handleHeaderDrop = (e, dropColumnIndex) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (draggedColumnIndex !== null && draggedColumnIndex !== dropColumnIndex) {
+            reorderColumns(draggedColumnIndex, dropColumnIndex);
+        }
+
+        setDraggedColumnIndex(null);
+        setDragOverColumnIndex(null);
     };
 
     return (
@@ -3040,16 +3118,50 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         </button>
                     </div>
 
-                    <div className="bg-gray-50 p-3 rounded border">
-                        <h4 className="text-sm font-semibold mb-2">Grid Preview</h4>
-                        <div className="overflow-x-auto">
-                            <table className="w-full border-collapse">
+                    <div className="bg-gray-50 p-3 rounded border mb-4">
+                        <h4 className="text-sm font-semibold mb-2">Interactive Grid Preview - Drag Headers to Reorder Columns</h4>
+                        <div className="overflow-x-auto" onDragOver={(e) => e.preventDefault()}>
+                            <table
+                                className="w-full border-collapse"
+                                onDragStart={(e) => {
+                                    // Only allow dragging from headers, not the table itself
+                                    if (!e.target.closest('th')) {
+                                        e.preventDefault();
+                                    }
+                                }}
+                            >
                                 <thead>
                                     <tr>
                                         {(field.columns || []).map((col, i) => (
-                                            <th key={col.id || i} className="border border-gray-300 bg-gray-100 p-2 text-sm text-left"
-                                                style={{ width: col.width }}>
-                                                {col.name}
+                                            <th
+                                                key={col.id || i}
+                                                draggable
+                                                onDragStart={(e) => handleHeaderDragStart(e, i)}
+                                                onDragEnd={handleHeaderDragEnd}
+                                                onDragOver={handleHeaderDragOver}
+                                                onDragEnter={(e) => handleHeaderDragEnter(e, i)}
+                                                onDragLeave={handleHeaderDragLeave}
+                                                onDrop={(e) => handleHeaderDrop(e, i)}
+                                                onMouseDown={(e) => e.stopPropagation()} // Prevent grid drag on mouse down
+                                                onClick={(e) => e.stopPropagation()} // Prevent any parent click handlers
+                                                className={`border border-gray-300 bg-gray-100 p-2 text-sm text-left cursor-move select-none transition-all duration-200 relative ${draggedColumnIndex === i ? 'opacity-50 scale-95' : ''
+                                                    } ${dragOverColumnIndex === i && draggedColumnIndex !== i
+                                                        ? 'border-l-4 border-l-blue-500 bg-blue-100'
+                                                        : ''
+                                                    }`}
+                                                style={{
+                                                    width: col.width,
+                                                    color: col.textColor,
+                                                    backgroundColor: dragOverColumnIndex === i && draggedColumnIndex !== i
+                                                        ? '#dbeafe'
+                                                        : col.backgroundColor
+                                                }}
+                                                title="Drag to reorder columns"
+                                            >
+                                                <div className="flex items-center gap-2 pointer-events-none">
+                                                    <GripVertical size={12} className="text-gray-500" />
+                                                    <span>{col.name} {col.required && <span className="text-red-500">*</span>}</span>
+                                                </div>
                                             </th>
                                         ))}
                                     </tr>
@@ -3060,10 +3172,11 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             {(field.columns || []).map((col, colIndex) => (
                                                 <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2">
                                                     {col.type === "textbox" && (
-                                                        <input type="text" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                        <input type="text" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" placeholder="Sample text" />
                                                     )}
                                                     {col.type === "numeric" && (
-                                                        <input type="number" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                        <input type="number" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50"
+                                                            min={col.min} max={col.max} step={col.decimal ? "0.01" : "1"} placeholder="123" />
                                                     )}
                                                     {col.type === "dropdown" && (
                                                         <select className="w-full bg-gray-50 border px-2 py-1 opacity-50">
@@ -3083,26 +3196,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     {col.type === "time" && (
                                                         <input type="time" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
                                                     )}
-                                                    {col.type === "timecalculation" && (
-                                                        <input type="text" disabled placeholder="Calculated duration" className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
-                                                    )}
-
                                                     {col.type === "date" && (
-                                                        <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2">
-                                                            <input
-                                                                type="date"
-                                                                disabled
-                                                                className="w-full bg-gray-50 border px-2 py-1 opacity-50"
-                                                            />
-                                                            {col.showDayName && (
-                                                                <input
-                                                                    type="text"
-                                                                    disabled
-                                                                    placeholder="Day name"
-                                                                    className="w-full bg-gray-50 border px-2 py-1 opacity-50 text-xs mt-1"
-                                                                />
-                                                            )}
-                                                        </td>
+                                                        <input type="date" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
                                                     )}
                                                 </td>
                                             ))}
@@ -3110,6 +3205,9 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-600 bg-blue-50 p-2 rounded border border-blue-200">
+                            💡 <strong>Tip:</strong> Click and drag the grip icon (⋮⋮) or column header text to reorder columns. The entire header is draggable.
                         </div>
                     </div>
                 </div>
