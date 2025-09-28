@@ -45,29 +45,37 @@ const MultiChartBuilder = ({
     };
 
     const getAvailableFields = () => {
-        // Separate fields for X-axis (all types) and metrics (numeric only)
+        // Get all base fields from selectedFields
         const baseFields = selectedFields.map(fieldId => {
             const field = fields.find(f => f.id === fieldId);
             return {
                 id: fieldId,
                 label: field?.label || fieldId,
                 type: field?.type || 'text',
-                isNumeric: ['number', 'decimal', 'integer', 'currency', 'percentage'].includes(field?.type)
+                isNumeric: field ? ['number', 'decimal', 'integer', 'currency', 'percentage'].includes(field.type) : false
             };
         }).filter(field => field.type !== 'grid');
+
+        console.log('Base fields before filtering:', baseFields);
+        console.log('Selected fields:', selectedFields);
+        console.log('Fields array:', fields);
 
         const calcFields = calculatedFields
             .filter(cf => cf.label && cf.formula)
             .map(cf => ({
                 id: `calc_${cf.id}`,
-                label: `${cf.label} (Calculated)`,
+                label: `${cf.label} ${cf.calculationType === 'columnwise' ? '(Summary)' : '(Per Row)'}`,
                 type: 'calculated',
                 calculationType: cf.calculationType,
-                isNumeric: true
+                isNumeric: true,
+                isColumnwise: cf.calculationType === 'columnwise'
             }));
+
+        console.log('Calculated fields:', calcFields);
 
         return [...baseFields, ...calcFields];
     };
+
 
     const validateChart = (chart) => {
         const chartType = CHART_TYPES[chart.type];
@@ -85,8 +93,24 @@ const MultiChartBuilder = ({
             return "This chart type only allows one metric";
         }
 
+        // NEW: Check for columnwise calculated fields in charts
+        const hasColumnwiseFields = chart.metrics.some(metric => {
+            if (metric.startsWith('calc_')) {
+                const calcId = metric.replace('calc_', '');
+                const calcField = calculatedFields?.find(cf => cf.id == calcId);
+                return calcField && calcField.calculationType === 'columnwise';
+            }
+            return false;
+        });
+
+        if (hasColumnwiseFields) {
+            return "Warning: Columnwise calculated fields show individual row calculations, not summary values";
+        }
+
         return null;
-    };
+    }; 
+
+    
 
     const renderChartConfiguration = (chart) => {
         const chartType = CHART_TYPES[chart.type];
@@ -99,7 +123,17 @@ const MultiChartBuilder = ({
 
         const regularXFields = xAxisFields.filter(f => f.type !== 'calculated');
         const calculatedXFields = xAxisFields.filter(f => f.type === 'calculated');
-        const regularMetricFields = metricFields.filter(f => f.type !== 'calculated');
+        const regularMetricFields = selectedFields.map(fieldId => {
+            const field = fields.find(f => f.id === fieldId);
+            return {
+                id: fieldId,
+                label: field?.label || fieldId,
+                type: field?.type || 'text'
+            };
+        }).filter(field => {
+            // Include more field types - basically everything except grids
+            return field.type !== 'grid' && field.type !== 'file' && field.type !== 'signature';
+        });
         const calculatedMetricFields = metricFields.filter(f => f.type === 'calculated');
 
 
@@ -213,9 +247,10 @@ const MultiChartBuilder = ({
                             className="w-full border-2 border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             size={Math.min(metricFields.length + 2, 8)}
                         >
-                            {regularXFields.length > 0 && (
-                                <optgroup label="📋 Form Fields">
-                                    {regularXFields.map(field => (
+                            {console.log("Metrics ", regularMetricFields)}
+                            {regularMetricFields.length > 0 && (
+                                <optgroup label="📋 Form Fields (Varies per entry)">
+                                    {regularMetricFields.map(field => (
                                         <option key={field.id} value={field.label}>
                                             {field.label}
                                         </option>
@@ -225,11 +260,24 @@ const MultiChartBuilder = ({
 
                             {calculatedMetricFields.length > 0 && (
                                 <optgroup label="📊 Calculated Fields">
-                                    {calculatedMetricFields.map(field => (
-                                        <option key={field.id} value={field.id}>
-                                            {field.label}
-                                        </option>
-                                    ))}
+                                    {calculatedMetricFields.map(field => {
+                                        const calcId = field.id.replace('calc_', '');
+                                        const calcField = calculatedFields.find(cf => cf.id == calcId);
+                                        const isColumnwise = calcField?.calculationType === 'columnwise';
+
+                                        return (
+                                            <option
+                                                key={field.id}
+                                                value={field.id}
+                                                style={{
+                                                    fontStyle: isColumnwise ? 'italic' : 'normal',
+                                                    color: isColumnwise ? '#6b7280' : 'inherit'
+                                                }}
+                                            >
+                                                {field.label} {isColumnwise ? '(Flat line - same value for all)' : '(Varies per entry)'}
+                                            </option>
+                                        );
+                                    })}
                                 </optgroup>
                             )}
                         </select>

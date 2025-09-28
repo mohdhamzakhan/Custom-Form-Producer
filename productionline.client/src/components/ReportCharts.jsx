@@ -189,13 +189,64 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
     return targetData;
 };
 
+const getFieldKey = (metric, data) => {
+    // Check if the metric exists directly in the data
+    if (data.length > 0 && data[0].hasOwnProperty(metric)) {
+        return metric;
+    }
+
+    // For calculated fields, try different variations
+    if (metric.startsWith('calc_')) {
+        // Try the metric as is
+        if (data.length > 0 && data[0].hasOwnProperty(metric)) {
+            return metric;
+        }
+
+        // Try without the calc_ prefix
+        const withoutPrefix = metric.replace('calc_', '');
+        if (data.length > 0 && data[0].hasOwnProperty(withoutPrefix)) {
+            return withoutPrefix;
+        }
+
+        // Try finding by partial match
+        if (data.length > 0) {
+            const keys = Object.keys(data[0]);
+            const matchedKey = keys.find(key =>
+                key.includes(withoutPrefix) || withoutPrefix.includes(key)
+            );
+            if (matchedKey) {
+                return matchedKey;
+            }
+        }
+    }
+
+    return metric; // fallback to original
+};
+
+const getChartSubtitle = (metrics, calculatedFields) => {
+    const hasColumnwise = metrics.some(metric => {
+        if (metric.startsWith('calc_')) {
+            const calcId = metric.replace('calc_', '');
+            const calcField = calculatedFields.find(cf => cf.id == calcId);
+            return calcField?.calculationType === 'columnwise';
+        }
+        return false;
+    });
+
+    if (hasColumnwise) {
+        return "Note: Summary metrics show as horizontal lines (same value across all data points)";
+    }
+    return null;
+};
+
 const ReportCharts = ({
     data,
     metrics,
     type,
     xField,
     title,
-    comboConfig
+    comboConfig,
+    calculatedFields = []
 }) => {
     console.log('ReportCharts rendering with:', {
         data: data?.length,
@@ -205,6 +256,11 @@ const ReportCharts = ({
         title
     });
 
+    console.log('=== DEBUG REPORT CHARTS ===');
+    console.log('xField:', xField);
+    console.log('Raw data passed to charts:', data);
+    console.log('Sample data item:', data[0]);
+    console.log('Date field value:', data[0]?.[xField]);
     // State for shift chart configuration
     const [currentShift, setCurrentShift] = useState(getCurrentShift());
     const [shiftConfig, setShiftConfig] = useState({
@@ -370,6 +426,7 @@ const ReportCharts = ({
         ) : null
     );
 
+
     // Custom tooltip
     const CustomTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
@@ -387,156 +444,270 @@ const ReportCharts = ({
         return null;
     };
 
+    const findCalculatedFieldValue = (metric, item, calculatedFields, allData) => {
+        if (metric.startsWith('calc_')) {
+            const calcId = metric.replace('calc_', '');
+            const calcField = calculatedFields?.find(cf => cf.id == calcId);
+
+            if (calcField) {
+                if (calcField.calculationType === 'columnwise') {
+                    // For columnwise calculations, calculate the aggregated value
+                    return calculateColumnwiseValue(calcField, allData);
+                } else {
+                    // For rowwise calculations, use the individual row value
+                    if (calcField.label && item[calcField.label] !== undefined) {
+                        return item[calcField.label];
+                    }
+                }
+            }
+
+            // Fallback for existing fields
+            const possibleKeys = Object.keys(item).filter(key => {
+                const lowerKey = key.toLowerCase();
+                return lowerKey.includes('efficiency') ||
+                    lowerKey.includes('efficency') ||
+                    lowerKey.includes('calc');
+            });
+
+            if (possibleKeys.length > 0) {
+                return item[possibleKeys[0]];
+            }
+        }
+
+        return item[metric];
+    };
+
+    const calculateRowwiseExpression = (formula, rowData) => {
+        try {
+            let processedFormula = formula;
+
+            // Extract field references in quotes
+            const fieldMatches = formula.match(/"([^"]+)"/g);
+            if (fieldMatches) {
+                fieldMatches.forEach(match => {
+                    const fieldName = match.replace(/"/g, '');
+                    const fieldValue = rowData[fieldName];
+
+                    let numericValue = 0;
+                    if (fieldValue !== undefined && fieldValue !== null) {
+                        numericValue = parseFloat(fieldValue) || 0;
+                    }
+
+                    processedFormula = processedFormula.replace(match, numericValue.toString());
+                });
+            }
+
+            // Safely evaluate the expression
+            const result = Function('"use strict"; return (' + processedFormula + ')')();
+
+            if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
+                return result;
+            }
+
+            return 0;
+        } catch (error) {
+            console.error('Error calculating rowwise expression:', error);
+            return 0;
+        }
+    };
+
+    const calculateColumnwiseValue = (calcField, allData) => {
+        try {
+            const { formula, functionType } = calcField;
+
+            if (functionType === 'EXPRESSION') {
+                // For expression-based columnwise calculations
+                const fieldRefs = formula.match(/"([^"]+)"/g);
+                if (!fieldRefs) return 0;
+
+                // Calculate totals for each field referenced in the formula
+                let processedFormula = formula;
+
+                fieldRefs.forEach(match => {
+                    const fieldName = match.replace(/"/g, '');
+
+                    // Sum up all values for this field across all data
+                    const totalValue = allData.reduce((sum, item) => {
+                        const value = parseFloat(item[fieldName]) || 0;
+                        return sum + value;
+                    }, 0);
+
+                    processedFormula = processedFormula.replace(match, totalValue.toString());
+                });
+
+                // Evaluate the expression with totals
+                const result = Function('"use strict"; return (' + processedFormula + ')')();
+                return typeof result === 'number' && !isNaN(result) ? result : 0;
+            }
+
+            // Handle other function types (SUM, AVG, etc.)
+            const fieldRefs = formula.match(/"([^"]+)"/g);
+            if (!fieldRefs || fieldRefs.length === 0) return 0;
+
+            const fieldName = fieldRefs[0].replace(/"/g, '');
+            const allValues = allData.map(item => parseFloat(item[fieldName]) || 0);
+
+            switch (functionType) {
+                case 'SUM':
+                    return allValues.reduce((sum, val) => sum + val, 0);
+                case 'AVG':
+                    return allValues.length > 0 ? allValues.reduce((sum, val) => sum + val, 0) / allValues.length : 0;
+                case 'MIN':
+                    return allValues.length > 0 ? Math.min(...allValues) : 0;
+                case 'MAX':
+                    return allValues.length > 0 ? Math.max(...allValues) : 0;
+                case 'COUNT':
+                    return allValues.length;
+                default:
+                    return 0;
+            }
+        } catch (error) {
+            console.error('Error calculating columnwise value:', error);
+            return 0;
+        }
+    };
+
     // Render different chart types
     switch (type) {
         case 'bar':
-            // Check if xField contains date-like values
+            // Debug logging
+            console.log('Bar chart - xField:', xField, 'Sample data:', data[0]);
+
             const isDateField = data.some(item => {
                 const value = item[xField];
-                console.log('Checking date field:', xField, value);
-
                 if (!value) return false;
-
-                // Handle year-only values (like your current case)
-                if (typeof value === 'number' && value >= 1900 && value <= 2100) {
-                    return true;
-                }
-
-                // Handle ISO datetime format
-                if (typeof value === 'string' && value.includes('T') && value.includes('Z')) {
-                    return !isNaN(Date.parse(value));
-                }
-
-                // Handle other date formats
-                if (typeof value === 'string' && (value.includes('/') || value.includes('-'))) {
-                    return !isNaN(Date.parse(value));
-                }
-
+                if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/)) return true;
+                if (typeof value === 'string' && value.includes('T')) return true;
                 return false;
             });
 
-            console.log('Is date field detected:', isDateField);
-
             let barData;
-
             if (isDateField) {
-                barData = data.map((item, index) => {
+                // For date fields, format each date and then group
+                const processedData = data.map(item => {
                     const dateValue = item[xField];
                     let formattedDate = dateValue;
+                    let sortableDate = new Date();
 
-                    // Handle year-only values
-                    if (typeof dateValue === 'number') {
-                        formattedDate = dateValue.toString();
-                    }
-                    // Handle full ISO datetime
-                    else if (typeof dateValue === 'string' && dateValue.includes('T')) {
-                        const date = new Date(dateValue);
-                        if (!isNaN(date.getTime())) {
-                            formattedDate = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                    // Handle your ISO date format: 2025-08-10T18:30:00.000Z
+                    if (typeof dateValue === 'string' && (dateValue.match(/^\d{4}-\d{2}-\d{2}/) || dateValue.includes('T'))) {
+                        sortableDate = new Date(dateValue);
+                        if (!isNaN(sortableDate.getTime())) {
+                            // SHOW FULL DATE: 10/08/2025 (same as combo chart)
+                            formattedDate = `${String(sortableDate.getDate()).padStart(2, '0')}/${String(sortableDate.getMonth() + 1).padStart(2, '0')}/${sortableDate.getFullYear()}`;
+                            console.log('Formatted date:', formattedDate);
                         }
                     }
 
                     return {
                         ...item,
-                        [xField]: formattedDate,
+                        [xField]: formattedDate, // This will be "10/08/2025"
                         originalDate: dateValue,
-                        sortIndex: index // For proper sorting when dates are identical
+                        sortableDate: sortableDate
                     };
-                });
-            } else {
-                // Original grouping logic for non-date fields
-                const groupedBarData = data.reduce((acc, item) => {
-                    const categoryValue = item[xField] || item.name || 'Unknown';
+                }).sort((a, b) => a.sortableDate - b.sortableDate);
 
-                    if (!acc[categoryValue]) {
-                        acc[categoryValue] = { [xField]: categoryValue };
+                // Group by formatted date (if you want to group same dates)
+                const grouped = processedData.reduce((acc, item) => {
+                    const key = item[xField]; // This is now the formatted date like "10/08/2025"
+                    if (!acc[key]) {
+                        acc[key] = {
+                            ...item,
+                            count: 0
+                        };
+                        metrics.forEach(metric => {
+                            acc[key][metric] = 0;
+                        });
                     }
 
                     metrics.forEach(metric => {
-                        const metricValue = item[metric];
-                        const numericValue = typeof metricValue === 'number' ? metricValue : parseFloat(metricValue) || 0;
-
-                        if (acc[categoryValue][metric]) {
-                            acc[categoryValue][metric] += numericValue;
-                        } else {
-                            acc[categoryValue][metric] = numericValue;
-                        }
+                        const value = parseFloat(item[metric]) || 0;
+                        acc[key][metric] += value;
+                        acc[key].count += 1;
                     });
 
                     return acc;
                 }, {});
 
-                barData = Object.values(groupedBarData)
-                    .sort((a, b) => {
-                        const aValue = a[metrics[0]] || 0;
-                        const bValue = b[metrics[0]] || 0;
-                        return bValue - aValue;
+                barData = Object.values(grouped);
+                console.log('Final bar data:', barData);
+            } else {
+                // Non-date grouping logic (keep your existing logic)
+                const grouped = data.reduce((acc, item) => {
+                    const key = item[xField];
+                    if (!acc[key]) {
+                        acc[key] = { ...item, count: 0 };
+                        metrics.forEach(metric => {
+                            acc[key][metric] = 0;
+                        });
+                    }
+
+                    metrics.forEach(metric => {
+                        const value = parseFloat(item[metric]) || 0;
+                        acc[key][metric] += value;
+                        acc[key].count += 1;
                     });
+
+                    return acc;
+                }, {});
+
+                barData = Object.values(grouped);
             }
 
-            console.log('Bar chart processed data:', barData);
-
-            if (barData.length === 0) {
-                return (
-                    <div className="p-6 text-center bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <div className="text-4xl mb-2">📊</div>
-                        <h3 className="text-lg font-medium text-yellow-800 mb-1">No Valid Data</h3>
-                        <p className="text-yellow-600 text-sm">No data available for bar chart</p>
-                    </div>
-                );
-            }
-
-            // Custom tick formatter for dates
-            const formatXAxisTick = (tickItem) => {
-                if (isDateField) {
-                    // If it's already formatted (dd/mm/yyyy), return as is
-                    if (typeof tickItem === 'string' && tickItem.includes('/')) {
-                        return tickItem;
-                    }
-                    // If it's still a date object or ISO string, format it
-                    const date = new Date(tickItem);
-                    if (!isNaN(date.getTime())) {
-                        return date.toLocaleDateString('en-GB');
-                    }
-                }
-                return tickItem;
-            };
-
+            // Rest of your bar chart JSX with the same tooltip logic as combo
             return (
                 <div className="w-full">
                     <ChartTitle />
-                    <div className="mb-2 text-center">
-                        <p className="text-sm text-gray-600">
-                            Showing {barData.length} {isDateField ? 'data points' : 'categories'} • {metrics.length} metric{metrics.length > 1 ? 's' : ''}
-                        </p>
-                    </div>
+                    {getChartSubtitle(metrics || [], calculatedFields) && (
+                        <div className="mb-2 text-center">
+                            <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full inline-block">
+                                {getChartSubtitle(metrics || [], calculatedFields)}
+                            </p>
+                        </div>
+                    )}
                     <ResponsiveContainer width="100%" height={400}>
-                        <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 90 }}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis
-                                dataKey={xField || 'name'}
-                                tick={{ fontSize: 10 }}
-                                tickFormatter={formatXAxisTick}
+                                dataKey={xField}
+                                tick={{ fontSize: 8 }}
                                 angle={-45}
                                 textAnchor="end"
-                                height={80}
-                                interval={0} // Show all ticks for dates
+                                height={90}
+                                interval={0}
                             />
                             <YAxis tick={{ fontSize: 12 }} />
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip
+                                content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                        return (
+                                            <div className="bg-white p-3 border rounded shadow-lg">
+                                                <p className="font-medium">{isDateField ? `Date: ${label}` : label}</p>
+                                                {payload.map((entry, index) => (
+                                                    <p key={index} style={{ color: entry.color }}>
+                                                        {`${entry.name}: ${entry.value.toLocaleString()}`}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
+                            />
                             <Legend />
                             {metrics.map((metric, index) => (
                                 <Bar
                                     key={metric}
                                     dataKey={metric}
                                     fill={colors[index % colors.length]}
-                                    name={metric}
+                                    name={`${metric.split(' → ').pop()}`}
                                 />
                             ))}
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
             );
+
 
         case 'line':
             return (
@@ -555,17 +726,20 @@ const ReportCharts = ({
                             <YAxis tick={{ fontSize: 12 }} />
                             <Tooltip content={<CustomTooltip />} />
                             <Legend />
-                            {metrics.map((metric, index) => (
-                                <Line
-                                    key={metric}
-                                    type="monotone"
-                                    dataKey={metric}
-                                    stroke={colors[index % colors.length]}
-                                    strokeWidth={2}
-                                    name={metric}
-                                    connectNulls={false}
-                                />
-                            ))}
+                            {metrics.map((metric, index) => {
+                                const fieldKey = getFieldKey(metric, data);
+                                return (
+                                    <Line
+                                        key={metric}
+                                        type="monotone"
+                                        dataKey={fieldKey}
+                                        stroke={colors[index % colors.length]}
+                                        strokeWidth={2}
+                                        name={metric.replace('calc_', '')}
+                                        connectNulls={false}
+                                    />
+                                );
+                            })}
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
@@ -671,88 +845,318 @@ const ReportCharts = ({
                 </div>
             );
 
+            // 1. In EnhancedReportViewer.js, update the chartData useMemo to include better debugging:
+
+            const chartData = useMemo(() => {
+                if (!reportData || reportData.length === 0) return [];
+
+                console.log('=== CHART DATA TRANSFORMATION DEBUG ===');
+                console.log('reportData sample:', reportData[0]);
+                console.log('calculatedFields:', calculatedFields);
+
+                const transformedData = reportData.map((row, index) => {
+                    const chartPoint = { submissionId: row.submissionId || index };
+
+                    (row.data || []).forEach(cell => {
+                        const fieldLabel = cell.fieldLabel;
+                        let value = cell.value;
+
+                        // Debug calculated fields specifically
+                        if (cell.fieldType === 'calculated') {
+                            console.log('Processing calculated field:', {
+                                fieldLabel,
+                                originalValue: value,
+                                fieldType: cell.fieldType
+                            });
+                        }
+
+                        if (value === null || value === undefined || value === '') {
+                            chartPoint[fieldLabel] = 0;
+                            return;
+                        }
+
+                        // Handle calculated field values
+                        if (cell.fieldType === 'calculated') {
+                            if (typeof value === 'string') {
+                                // Remove formatting and convert to number
+                                const cleanValue = value.replace(/[%,$\s]/g, '');
+                                const numValue = parseFloat(cleanValue);
+                                if (!isNaN(numValue) && isFinite(numValue)) {
+                                    chartPoint[fieldLabel] = numValue;
+                                    console.log('Converted calculated field:', fieldLabel, 'from', value, 'to', numValue);
+                                    return;
+                                }
+                            } else if (typeof value === 'number') {
+                                chartPoint[fieldLabel] = value;
+                                console.log('Number calculated field:', fieldLabel, '=', value);
+                                return;
+                            }
+                        }
+
+                        // Handle regular fields (existing logic)
+                        try {
+                            const parsed = JSON.parse(value);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                if (typeof parsed[0] === 'object') {
+                                    chartPoint[fieldLabel] = parsed.length;
+                                } else {
+                                    const numericValues = parsed.map(v => parseFloat(v)).filter(v => !isNaN(v));
+                                    chartPoint[fieldLabel] = numericValues.length > 0 ?
+                                        numericValues.reduce((a, b) => a + b, 0) : 0;
+                                }
+                            } else if (typeof parsed === 'number') {
+                                chartPoint[fieldLabel] = parsed;
+                            } else {
+                                chartPoint[fieldLabel] = parsed;
+                            }
+                        } catch (e) {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && isFinite(numValue)) {
+                                chartPoint[fieldLabel] = numValue;
+                            } else {
+                                chartPoint[fieldLabel] = value;
+                            }
+                        }
+                    });
+
+                    return chartPoint;
+                });
+
+                console.log('Final chart data keys for first item:', Object.keys(transformedData[0] || {}));
+                console.log('First transformed item:', transformedData[0]);
+
+                return transformedData;
+            }, [reportData, calculatedFields]);
+
+        // 2. In ReportCharts.js, replace the combo chart section with this debugging version:
+
+        // Replace the combo chart case in ReportCharts.js with this version that preserves individual dates:
+
         case 'combo':
             const barMetrics = comboConfig?.barMetrics || [];
             const lineMetrics = comboConfig?.lineMetrics || [];
 
-            // Sort data by xField if it's a date field for better visualization
-            const sortedComboData = [...data].map(item => {
-                const dateValue = item[xField];
-                let processedItem = { ...item };
+            const sortedRawData = [...data].sort((a, b) => {
+                const aDate = a[xField]; // Original ISO date string
+                const bDate = b[xField];
 
-                // Format ISO datetime to dd/mm/yyyy if it's a datetime string
-                if (typeof dateValue === 'string' && dateValue.includes('T')) {
-                    const date = new Date(dateValue);
-                    processedItem[xField] = date.toLocaleDateString('en-GB'); // dd/mm/yyyy format
-                    processedItem.originalDate = dateValue; // Keep original for sorting
+                // If both are date strings, sort by date
+                if (typeof aDate === 'string' && typeof bDate === 'string' &&
+                    (aDate.includes('T') || aDate.match(/^\d{4}-\d{2}-\d{2}/)) &&
+                    (bDate.includes('T') || bDate.match(/^\d{4}-\d{2}-\d{2}/))) {
+
+                    const dateA = new Date(aDate);
+                    const dateB = new Date(bDate);
+
+                    if (!isNaN(dateA) && !isNaN(dateB)) {
+                        return dateA - dateB;
+                    }
                 }
 
-                return processedItem;
-            }).sort((a, b) => {
-                const aVal = a.originalDate || a[xField];
-                const bVal = b.originalDate || b[xField];
-
-                // Try to parse as date first
-                const aDate = new Date(aVal);
-                const bDate = new Date(bVal);
-
-                if (!isNaN(aDate) && !isNaN(bDate)) {
-                    return aDate - bDate;
-                }
-
-                // Fall back to string comparison
-                return String(aVal).localeCompare(String(bVal));
+                // Fallback: sort by submissionId
+                return (a.submissionId || 0) - (b.submissionId || 0);
             });
+
+            console.log('Raw data sorted by date:', sortedRawData.slice(0, 3).map(item => ({
+                date: item[xField],
+                submissionId: item.submissionId
+            })));
+
+            // Data-driven date field detection instead of hardcoding
+            const isDateField1 = data.some(item => {
+                const value = item[xField];
+                if (!value) return false;
+
+                // Check if it's an ISO date format: 2025-08-13T18:30:00.000Z or 2025-08-14
+                if (typeof value === 'string' && value.match(/^\d{4}-\d{2}-\d{2}/)) return true;
+                // Check if it's a timestamp with T
+                if (typeof value === 'string' && value.includes('T')) return true;
+                // Check if it's a year number
+                if (typeof value === 'number' && value >= 1900 && value <= 2100) return true;
+                // Check if it's already a formatted date
+                if (typeof value === 'string' && (value.includes('/') || value.includes('-'))) return true;
+
+                return false;
+            });
+
+            // Group and aggregate data by xField - but preserve individual dates
+            const groupedComboData = sortedRawData.reduce((acc, item) => {
+                let categoryValue;
+
+                // Process date fields to show ACTUAL DATE, not just year
+                if (isDateField1) {
+                    const dateVal = item[xField];
+
+                    if (dateVal) {
+                        // Handle ISO date strings: 2025-08-13T18:30:00.000Z or 2025-08-14
+                        if (typeof dateVal === 'string' && dateVal.match(/^\d{4}-\d{2}-\d{2}/)) {
+                            const date = new Date(dateVal);
+                            if (!isNaN(date.getTime())) {
+                                // Show actual date: 13/08/2025 (not just year)
+                                categoryValue = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                            } else {
+                                categoryValue = dateVal; // Fallback to original
+                            }
+                        }
+                        // Handle ISO date strings with T: 2025-08-13T18:30:00.000Z
+                        else if (typeof dateVal === 'string' && dateVal.includes('T')) {
+                            const date = new Date(dateVal);
+                            if (!isNaN(date.getTime())) {
+                                // Show actual date: 13/08/2025 (not just year)
+                                categoryValue = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                            } else {
+                                categoryValue = dateVal; // Fallback to original
+                            }
+                        }
+                        // If it's already a year number
+                        else if (typeof dateVal === 'number') {
+                            categoryValue = dateVal.toString();
+                        }
+                        // If it's already a formatted date string
+                        else if (typeof dateVal === 'string' && (dateVal.includes('/') || dateVal.includes('-'))) {
+                            categoryValue = dateVal; // Use as-is if already formatted
+                        }
+                        else {
+                            categoryValue = String(dateVal);
+                        }
+                    } else {
+                        categoryValue = `Entry ${item.submissionId || 'Unknown'}`;
+                    }
+                } else {
+                    // Non-date fields use the original value
+                    categoryValue = item[xField] || `Entry ${item.submissionId || 'Unknown'}`;
+                }
+
+                // Use submissionId to ensure each row gets its own entry instead of grouping
+                const uniqueKey = `${categoryValue}_${item.submissionId || Math.random()}`;
+
+                if (!acc[uniqueKey]) {
+                    acc[uniqueKey] = {
+                        [xField]: categoryValue,
+                        originalSubmissionId: item.submissionId,
+                        count: 0
+                    };
+
+                    // Initialize all metrics
+                    [...barMetrics, ...lineMetrics].forEach(metric => {
+                        acc[uniqueKey][metric] = 0;
+                    });
+                }
+
+                // Process metrics (keep your existing logic)
+                barMetrics.forEach(metric => {
+                    const value = parseFloat(item[metric]) || 0;
+                    acc[uniqueKey][metric] = value;
+                });
+
+                lineMetrics.forEach(metric => {
+                    const actualValue = findCalculatedFieldValue(metric, item, calculatedFields, data);
+                    const value = parseFloat(actualValue) || 0;
+                    acc[uniqueKey][metric] = value;
+                });
+
+                acc[uniqueKey].count = 1;
+                return acc;
+            }, {});
+
+            // Process the data - since we're not grouping, no averaging needed
+            const processedComboData = Object.values(groupedComboData);
+
+            // Sort by submission ID or year
+            const sortedComboData = processedComboData;
+
+            console.log('Sorted combo data with individual entries:', sortedComboData);
 
             return (
                 <div className="w-full">
                     <ChartTitle />
-                    <div className="mb-2 text-center">
-                        <p className="text-sm text-gray-600">
-                            {barMetrics.length} bar metric{barMetrics.length !== 1 ? 's' : ''} • {lineMetrics.length} line metric{lineMetrics.length !== 1 ? 's' : ''}
-                        </p>
-                    </div>
+                    {getChartSubtitle(metrics || [], calculatedFields) && (
+                        <div className="mb-2 text-center">
+                            <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full inline-block">
+                                {getChartSubtitle(metrics || [], calculatedFields)}
+                            </p>
+                        </div>
+                    )}
                     <ResponsiveContainer width="100%" height={400}>
-                        <ComposedChart data={sortedComboData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <ComposedChart data={sortedComboData} margin={{ top: 20, right: 30, left: 20, bottom: 90 }}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis
-                                dataKey="time"
-                                tick={{ fontSize: 9 }}
+                                dataKey={xField}
+                                tick={{ fontSize: 8 }}
                                 angle={-45}
                                 textAnchor="end"
                                 height={90}
-                                interval={0}  // Show ALL 5-minute marks
+                                interval={0}
                             />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <Tooltip content={<CustomTooltip />} />
+                            <YAxis
+                                yAxisId="left"
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'Quantity', angle: -90, position: 'insideLeft' }}
+                            />
+                            <YAxis
+                                yAxisId="right"
+                                orientation="right"
+                                tick={{ fontSize: 12 }}
+                                label={{ value: 'Efficiency (%)', angle: 90, position: 'insideRight' }}
+                                domain={[0, 110]} // Fixed domain for efficiency percentage
+                            />
+                            <Tooltip
+                                content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                        return (
+                                            <div className="bg-white p-3 border rounded shadow-lg">
+                                                <p className="font-medium">{isDateField1 ? `Date: ${label}` : label}</p>
+                                                {payload.map((entry, index) => (
+                                                    <p key={index} style={{ color: entry.color }}>
+                                                        {`${entry.name}: ${entry.dataKey === 'calc_1756367042383' || lineMetrics.includes(entry.dataKey)
+                                                            ? `${entry.value}%`
+                                                            : entry.value.toLocaleString()
+                                                            }`}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
+                            />
                             <Legend />
 
-                            {/* Render bars */}
+                            {/* Render bars on left axis */}
                             {barMetrics.map((metric, index) => (
                                 <Bar
                                     key={`bar-${metric}`}
+                                    yAxisId="left"
                                     dataKey={metric}
                                     fill={colors[index % colors.length]}
-                                    name={`${metric} (Bar)`}
+                                    name={`${metric.split(' → ').pop()}`}
                                 />
                             ))}
 
-                            {/* Render lines */}
+                            {/* Render lines on right axis */}
                             {lineMetrics.map((metric, index) => (
                                 <Line
                                     key={`line-${metric}`}
+                                    yAxisId="right"
                                     type="monotone"
                                     dataKey={metric}
                                     stroke={colors[(barMetrics.length + index) % colors.length]}
-                                    strokeWidth={2}
-                                    name={`${metric} (Line)`}
+                                    strokeWidth={3}
+                                    name="Efficiency (%)"
                                     connectNulls={false}
+                                    dot={{ fill: colors[(barMetrics.length + index) % colors.length], strokeWidth: 2, r: 4 }}
                                 />
                             ))}
                         </ComposedChart>
                     </ResponsiveContainer>
+
+                    <div className="mt-4 text-center text-sm text-gray-600">
+                        <p>Each bar represents an individual entry • Line shows efficiency percentage per entry</p>
+                        <p>Showing {sortedComboData.length} individual data entries</p>
+                    </div>
                 </div>
             );
+
 
         case 'shift':
             // Calculate chart data for shift production

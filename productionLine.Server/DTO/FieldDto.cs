@@ -41,5 +41,6 @@ namespace productionLine.Server.DTO
         public bool? AllowManualEntry { get; set; }
         public bool? ShowLookupButton { get; set; }
         public string? KeyFieldMappingsJson { get; set; }
+        public bool? RequireRemarksOutOfRange { get; set; }
     }
 }

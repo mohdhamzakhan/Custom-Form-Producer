@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
-
-
+import LoadingDots from './LoadingDots';
 export default function SubmissionDetails() {
     const { submissionId } = useParams();
     const navigate = useNavigate();
@@ -157,10 +156,10 @@ export default function SubmissionDetails() {
                         {processedData.map((item, index) => (
                             <div key={index} className="border-b pb-4">
                                 <div className="flex justify-between items-center">
-                                    <div>
+                                    <div className="flex-1">
                                         <p className="text-sm text-gray-600">{item.label}</p>
-                                        <p className="font-semibold break-words">{isGridValue(item.value) ? (
-                                            <div className="overflow-auto">
+                                        {isGridValue(item.value) ? (
+                                            <div className="overflow-auto mt-2">
                                                 <table className="min-w-full text-sm text-left border border-gray-300">
                                                     <thead className="bg-gray-100">
                                                         <tr>
@@ -173,7 +172,9 @@ export default function SubmissionDetails() {
                                                         {JSON.parse(item.value).map((row, rIdx) => (
                                                             <tr key={rIdx} className="border-t">
                                                                 {Object.values(row).map((cell, cIdx) => (
-                                                                    <td key={cIdx} className="px-4 py-2 border">{cell}</td>
+                                                                    <td key={cIdx} className="px-4 py-2 border">
+                                                                        {typeof cell === 'boolean' ? String(cell) : cell}
+                                                                    </td>
                                                                 ))}
                                                             </tr>
                                                         ))}
@@ -181,36 +182,13 @@ export default function SubmissionDetails() {
                                                 </table>
                                             </div>
                                         ) : (
-                                                <p className="font-semibold break-words">{isGridValue(item.value) ? (
-                                                    <div className="overflow-auto mt-2">
-                                                        <table className="min-w-full text-sm text-left border border-gray-300">
-                                                            <thead className="bg-gray-100">
-                                                                <tr>
-                                                                    {Object.keys(JSON.parse(item.value)[0] || {}).map((col, idx) => (
-                                                                        <th key={idx} className="px-4 py-2 border">{col}</th>
-                                                                    ))}
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {JSON.parse(item.value).map((row, rIdx) => (
-                                                                    <tr key={rIdx} className="border-t">
-                                                                        {Object.values(row).map((cell, cIdx) => (
-                                                                            <td key={cIdx} className="px-4 py-2 border">{cell}</td>
-                                                                        ))}
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                ) : (
-                                                    <p className="font-semibold break-words mt-1">{item.value}</p>
-                                                )}
-</p>
+                                            <div className="font-semibold break-words mt-2">
+                                                {typeof item.value === 'boolean' ? String(item.value) : item.value}
+                                            </div>
                                         )}
-</p>
                                     </div>
                                     {item.remark && (
-                                        <div className="text-right max-w-sm">
+                                        <div className="text-right max-w-sm ml-4">
                                             <p className="text-sm text-gray-600">Remark</p>
                                             <p className="italic text-gray-700 break-words">{item.remark}</p>
                                         </div>
@@ -220,6 +198,7 @@ export default function SubmissionDetails() {
                         ))}
                     </div>
                 )}
+
             </div>
         </div>
     );

@@ -233,6 +233,7 @@ namespace productionLine.Server.Controllers
             {
                 return NotFound("Form not found.");
             }
+
             FormDto formDto = new FormDto
             {
                 Id = form.Id,
@@ -262,6 +263,8 @@ namespace productionLine.Server.Controllers
                     IsDecimal = f.Decimal,
                     Max = f.Max,
                     Min = f.Min,
+                    RequireRemarksOutOfRange = f.RequireRemarksOutOfRange ?? false,
+
 
                     // Add these missing linked textbox properties:
                     LinkedFormId = f.LinkedFormId,

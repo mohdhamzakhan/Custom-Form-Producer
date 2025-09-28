@@ -625,7 +625,7 @@ const FormBuilder = () => {
 
                 setKeyFields(expandedKeyFields);
             }
-
+            console.log("Data ", data)
             // Transform the fields similar to before
             // Around line 400-450, in the fetchFormLayout function, update the field transformation:
             const transformedFields = (data.fields || []).map((field, index) => {
@@ -636,6 +636,11 @@ const FormBuilder = () => {
                     ...field,
                     id: field.id || generateGuid(),
                     order: field.order !== undefined ? field.order : index,
+                    decimal: field.decimal !== undefined ? field.decimal : (field.isDecimal || false),
+                    requireRemarksOutOfRange: field.requireRemarksOutOfRange !== undefined
+                        ? field.requireRemarksOutOfRange
+                        : false,
+
                     columns: isGrid
                         ? (field.column || field.columns || []).map(col => ({
                             ...col,
@@ -649,7 +654,7 @@ const FormBuilder = () => {
                             formula: col.formula || "",
                             min: col.min ?? null,
                             max: col.max ?? null,
-                            decimal: col.decimal ?? null,
+                            decimal: col.isDecimal ?? true,
                             parentColumn: col.parentColumn || "",
                             dependentOptions: col.dependentOptions || {},
                             startTime: col.startTime || "",
@@ -682,6 +687,7 @@ const FormBuilder = () => {
                     resultDecimal: field.resultDecimal || false,
                     fieldReferences: field.fieldReferencesJson || [],
                     remarkTriggers: field.remarkTriggers || [],
+
                     // Preserve linked field properties
                     linkedFormId: field.linkedFormId || null,
                     IMAGEOPTIONS: field.IMAGEOPTIONS,
@@ -871,7 +877,7 @@ const FormBuilder = () => {
                         required: field.required || false,
                         width: field.width,
                         formId: baseForm.id,
-                        order:field.order,
+                        order: field.order,
 
                         // CRITICAL: Provide form reference WITH rowVersion
                         form: {
@@ -907,19 +913,53 @@ const FormBuilder = () => {
                         resultDecimal: field.resultDecimal ?? false,
 
                         // Handle field references - set to null to avoid circular reference issues
+                        // Handle field references - set to null to avoid circular reference issues
                         fieldReferences: null,
 
-                        // Handle remark triggers - clean them to avoid circular references
-                        remarkTriggers: Array.isArray(field.remarkTriggers)
+                        // Handle remark triggers - WITH REQUIRED FormField REFERENCE
+                        remarkTriggers: Array.isArray(field.remarkTriggers) && field.remarkTriggers.length > 0
                             ? field.remarkTriggers.map(trigger => ({
-                                id: trigger.id,
-                                condition: trigger.condition,
-                                value: trigger.value,
-                                message: trigger.message,
-                                formFieldId: field.id
-                                // Remove formField reference to avoid circular reference
+                                id: trigger.id || 0,
+                                operator: trigger.condition || trigger.operator || "equals",
+                                value: trigger.value || "",
+                                message: trigger.message || "",
+                                formFieldId: field.id || 0,
+
+                                // API VALIDATION REQUIREMENT: Include FormField reference
+                                formField: {
+                                    id: field.id || 0,
+                                    name: field.name,
+                                    type: field.type,
+                                    label: field.label,
+                                    required: field.required || false,
+                                    width: field.width,
+                                    formId: baseForm.id,
+                                    order: field.order,
+
+                                    // Include essential field properties
+                                    options: Array.isArray(field.options) ? field.options : [],
+                                    min: field.min ?? null,
+                                    max: field.max ?? null,
+                                    decimal: field.decimal ?? false,
+                                    formula: field.formula || "",
+
+                                    // Minimal form reference without circular dependencies
+                                    form: {
+                                        id: baseForm.id,
+                                        name: baseForm.name,
+                                        formLink: baseForm.formLink,
+                                        rowVersion: existingRowVersion,
+                                        createdBy: currentUser,
+                                        createdAt: currentUtc,
+                                        updatedBy: currentUser,
+                                        updatedAt: currentUtc,
+                                        linkedFormId: linkedForm?.id || null
+                                    }
+                                    // IMPORTANT: Do NOT include remarkTriggers here to prevent circular reference
+                                }
                             }))
                             : []
+
                     };
 
                     // Handle linked textbox fields

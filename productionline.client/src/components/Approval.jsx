@@ -233,7 +233,7 @@ export default function ApprovalPage() {
                         <h3 className="text-lg font-semibold mb-2">Important Fields</h3>
                         <div className="space-y-2">
                             {console.log(processedData) }
-                            {processedData.slice(0, 5).map((item, index) => (
+                            {processedData.map((item, index) => (
                                 <div key={index}>
                                     <p className="text-gray-700">
                                         <strong>{item.label}:</strong>

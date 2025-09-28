@@ -40,12 +40,15 @@ export default function EnhancedReportViewer() {
                     type: f.type || "text",
                 }));
 
+                // Only add non-column-wise calculated fields to the grid columns
                 calculatedFields.forEach(cf => {
-                    resolvedFields.push({
-                        id: `calc_${cf.label}`,
-                        label: cf.label,
-                        type: "calculated"
-                    });
+                    if (cf.calculationType !== 'columnwise') {
+                        resolvedFields.push({
+                            id: `calc_${cf.label}`,
+                            label: cf.label,
+                            type: "calculated"
+                        });
+                    }
                 });
 
                 setFields(resolvedFields);
@@ -53,7 +56,7 @@ export default function EnhancedReportViewer() {
 
                 setTemplate(prev => ({ ...prev, calculatedFields }));
                 const charts = res.data.chartConfig || [];
-                // Only create default chart if chartConfig exists and has valid data
+
                 if (charts.length === 0 && res.data.chartConfig &&
                     (res.data.chartConfig.title || res.data.chartConfig.metrics?.length > 0)) {
                     charts.push({
@@ -99,25 +102,8 @@ export default function EnhancedReportViewer() {
 
     const chartData = useMemo(() => {
         if (!reportData || reportData.length === 0) return [];
-        const isDateLikeValue = (value) => {
-            if (typeof value !== 'string') return false;
 
-            // Check for common date patterns
-            const datePatterns = [
-                /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, // ISO datetime: 2025-06-12T18:30:00
-                /^\d{4}-\d{2}-\d{2}/, // Date: 2025-06-12
-                /^\d{2}\/\d{2}\/\d{4}/, // Date: 12/06/2025
-                /^\d{2}-\d{2}-\d{4}/, // Date: 12-06-2025
-            ];
-
-            // Test if value matches any date pattern
-            const matchesPattern = datePatterns.some(pattern => pattern.test(value));
-
-            // Also check if it's a valid date when parsed
-            const isValidDate = !isNaN(Date.parse(value));
-
-            return matchesPattern && isValidDate;
-        };
+        console.log(...reportData)
         const transformedData = reportData.map((row, index) => {
             const chartPoint = { submissionId: row.submissionId || index };
 
@@ -125,21 +111,37 @@ export default function EnhancedReportViewer() {
                 const fieldLabel = cell.fieldLabel;
                 let value = cell.value;
 
-                if (fieldLabel === 'Date') {
-                    console.log('Date processing:', {
-                        original: value,
-                        type: typeof value,
-                        isString: typeof value === 'string',
-                        parseFloat: parseFloat(value),
-                        isNaN: isNaN(parseFloat(value))
-                    });
-                }
-
                 if (value === null || value === undefined || value === '') {
                     chartPoint[fieldLabel] = 0;
                     return;
                 }
 
+                // Handle calculated field values
+                if (cell.fieldType === 'calculated') {
+                    if (typeof value === 'string') {
+                        const cleanValue = value.replace(/[%,$\s]/g, '');
+                        const numValue = parseFloat(cleanValue);
+                        if (!isNaN(numValue) && isFinite(numValue)) {
+                            chartPoint[fieldLabel] = numValue;
+                            // ALSO map it to the calc ID format for charts
+                            const calcField = calculatedFields.find(cf => cf.label === fieldLabel);
+                            if (calcField) {
+                                chartPoint[`calc_${calcField.id}`] = numValue;
+                            }
+                            return;
+                        }
+                    } else if (typeof value === 'number') {
+                        chartPoint[fieldLabel] = value;
+                        // ALSO map it to the calc ID format for charts
+                        const calcField = calculatedFields.find(cf => cf.label === fieldLabel);
+                        if (calcField) {
+                            chartPoint[`calc_${calcField.id}`] = value;
+                        }
+                        return;
+                    }
+                }
+
+                // Handle regular fields - PRESERVE DATE STRINGS
                 try {
                     const parsed = JSON.parse(value);
                     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -156,9 +158,20 @@ export default function EnhancedReportViewer() {
                         chartPoint[fieldLabel] = parsed;
                     }
                 } catch (e) {
-                    if (typeof value === 'string' && isDateLikeValue(value)) {
-                        chartPoint[fieldLabel] = value; // Keep as date string
+                    // THIS IS THE KEY FIX - Check if it's a date field before parsing as number
+                    const isDateLikeField = fieldLabel.toLowerCase().includes('date') ||
+                        fieldLabel.toLowerCase().includes('time') ||
+                        fieldLabel.toLowerCase().includes('created') ||
+                        fieldLabel.toLowerCase().includes('submitted');
+
+                    const isDateLikeValue = typeof value === 'string' &&
+                        (value.includes('T') || value.match(/^\d{4}-\d{2}-\d{2}/));
+
+                    if (isDateLikeField || isDateLikeValue) {
+                        // Preserve date strings as-is
+                        chartPoint[fieldLabel] = value;
                     } else {
+                        // Try to parse as number for non-date fields
                         const numValue = parseFloat(value);
                         if (!isNaN(numValue) && isFinite(numValue)) {
                             chartPoint[fieldLabel] = numValue;
@@ -167,34 +180,18 @@ export default function EnhancedReportViewer() {
                         }
                     }
                 }
-                if (fieldLabel === 'Date') {
-                    console.log('Final chart point value:', chartPoint[fieldLabel]);
-                }
             });
 
             return chartPoint;
         });
 
+        console.log('=== DEBUG TRANSFORMED CHART DATA ===');
+        console.log('Sample transformed data:', transformedData[0]);
+        console.log('Date field value:', transformedData[0]?.Date);
+
         return transformedData;
-    }, [reportData]);
+    }, [reportData, calculatedFields]);
 
-    
-
-    const resolveFieldReference = (fieldRef, fields) => {
-        let field = fields.find(f => f.id === fieldRef);
-        if (field) return field;
-
-        field = fields.find(f => f.label === fieldRef);
-        if (field) return field;
-
-        if (typeof fieldRef === 'string' && fieldRef.includes(':')) {
-            const parentId = fieldRef.split(':')[0];
-            field = fields.find(f => f.id === parentId);
-            if (field) return field;
-        }
-
-        return null;
-    };
 
     const formatCellValue = (value, field) => {
         if (!value || value === "-" || value === "") return "—";
@@ -363,6 +360,7 @@ export default function EnhancedReportViewer() {
                             xField={chart.xField || "submissionId"}
                             title={chart.title || `Chart ${index + 1}`}
                             comboConfig={chart.comboConfig}
+                            calculatedFields={calculatedFields}
                         />
                     </div>
                 ))}
@@ -429,6 +427,7 @@ export default function EnhancedReportViewer() {
                                 xField={chart.xField || "Line Name"}
                                 title={chart.title || `Chart ${index + 1}`}
                                 comboConfig={chart.comboConfig}
+                                calculatedFields={calculatedFields}
                             />
                         </div>
                     ))}
@@ -575,15 +574,16 @@ export default function EnhancedReportViewer() {
         const processedData = [];
         const summaryRows = [];
 
+        // Filter out column-wise fields from being added to row data
+        const rowwiseFields = calculatedFields.filter(cf => cf.calculationType !== 'columnwise');
+        const columnwiseFields = calculatedFields.filter(cf => cf.calculationType === 'columnwise');
+
         for (const row of reportData) {
             const newRow = { ...row };
             const calculatedData = [];
 
-            for (const calcField of calculatedFields) {
-                if (calcField.calculationType === 'columnwise') {
-                    continue;
-                }
-
+            // Only process non-column-wise calculated fields for row data
+            for (const calcField of rowwiseFields) {
                 const calculatedValue = evaluateCalculatedField(calcField, row.data, reportData, fields);
 
                 calculatedData.push({
@@ -597,25 +597,29 @@ export default function EnhancedReportViewer() {
             processedData.push(newRow);
         }
 
-        for (const calcField of calculatedFields) {
-            if (calcField.calculationType === 'columnwise') {
-                const summaryValue = calculateColumnwiseSummary(calcField, reportData, fields);
-                summaryRows.push({
-                    label: calcField.label,
-                    value: formatCalculatedValue(summaryValue, calcField),
-                    type: calcField.functionType || 'CALCULATION',
-                    formula: calcField.formula
-                });
-            }
+        // Process column-wise fields for summary rows only
+        for (const calcField of columnwiseFields) {
+            const summaryValue = calculateColumnwiseSummary(calcField, reportData, fields);
+            summaryRows.push({
+                label: calcField.label,
+                value: formatCalculatedValue(summaryValue, calcField),
+                type: calcField.functionType || 'CALCULATION',
+                formula: calcField.formula
+            });
         }
 
         return { processedData, summaryRows };
     };
 
     const renderExpandedTableWithSummary = (reportData, summaryRows, selectedFields, fields) => {
-        const columnFields = selectedFields.filter(field => {
-            const fieldType = typeof field === 'object' ? field.type : 'normal';
-            return fieldType !== 'calculated' || field.showAsColumn;
+        // Filter selectedFields to exclude any column-wise calculated fields
+        const displayFields = selectedFields.filter(field => {
+            if (typeof field === 'object' && field.type === 'calculated') {
+                // Check if this calculated field is column-wise
+                const calcField = calculatedFields.find(cf => cf.label === field.label);
+                return !calcField || calcField.calculationType !== 'columnwise';
+            }
+            return true;
         });
 
         return (
@@ -625,7 +629,7 @@ export default function EnhancedReportViewer() {
                     <table className="report-table">
                         <thead>
                             <tr>
-                                {selectedFields.map((field, i) => {
+                                {displayFields.map((field, i) => {
                                     const label = typeof field === 'object' ? field.label : field;
                                     const cleanedLabel = label.includes("→")
                                         ? label.split("→").pop().trim()
@@ -639,7 +643,7 @@ export default function EnhancedReportViewer() {
                         <tbody>
                             {reportData.map((row, i) => (
                                 <tr key={i}>
-                                    {selectedFields.map((field, j) => {
+                                    {displayFields.map((field, j) => {
                                         const fLabel = typeof field === 'object' ? field.label : field;
                                         const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
                                         return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
@@ -650,9 +654,9 @@ export default function EnhancedReportViewer() {
                             {summaryRows.length > 0 && (
                                 <>
                                     <tr className="summary-divider">
-                                        <td colSpan={selectedFields.length} className="summary-divider-cell">
+                                        <td colSpan={displayFields.length} className="summary-divider-cell">
                                             <div className="summary-divider-line">
-                                                <span>📊 Summary & Totals</span>
+                                                <span>Summary & Totals</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -663,7 +667,7 @@ export default function EnhancedReportViewer() {
                                                 <strong>{summaryRow.label}</strong>
                                                 <div className="summary-type">{summaryRow.type.toUpperCase()}</div>
                                             </td>
-                                            <td className="summary-value" colSpan={selectedFields.length - 1}>
+                                            <td className="summary-value" colSpan={displayFields.length - 1}>
                                                 <span className="summary-result">{summaryRow.value}</span>
                                                 <div className="summary-formula">{summaryRow.formula}</div>
                                             </td>
@@ -685,21 +689,105 @@ export default function EnhancedReportViewer() {
             switch (calculationType) {
                 case 'rowwise':
                     return evaluateRowwiseCalculation(formula, rowData, functionType, fields);
+
                 case 'aggregate':
                     return evaluateAggregateCalculation(formula, allReportData, functionType, fields);
+
                 case 'columnwise':
+                    // For column-wise, we don't calculate per row, only in summary
                     return 0;
+
                 case 'grouping':
                     return evaluateGroupingCalculation(formula, rowData, allReportData, functionType, fields);
+
                 default:
                     return evaluateRowwiseCalculation(formula, rowData, functionType, fields);
             }
         } catch (error) {
+            console.error('Calculated field evaluation error:', error);
             return 'Error';
         }
     };
 
+
+
+    const evaluateExpression = (expression, rowData, fields) => {
+        try {
+            // Replace field references with actual values
+            let processedExpression = expression;
+
+            // Find all field references in quotes
+            const fieldMatches = expression.match(/"([^"]+)"/g);
+            if (fieldMatches) {
+                fieldMatches.forEach(match => {
+                    const fieldName = match.replace(/"/g, '');
+                    const value = getFieldValue(fieldName, rowData, fields);
+                    // Replace the quoted field reference with the numeric value
+                    processedExpression = processedExpression.replace(match, value.toString());
+                });
+            }
+
+            // Clean up the expression - remove any EXPRESSION() wrapper if present
+            if (processedExpression.startsWith('EXPRESSION(') && processedExpression.endsWith(')')) {
+                processedExpression = processedExpression.slice(11, -1);
+            }
+
+            // Handle mathematical functions
+            processedExpression = processedExpression
+                .replace(/sqrt\(/g, 'Math.sqrt(')
+                .replace(/abs\(/g, 'Math.abs(')
+                .replace(/round\(/g, 'Math.round(')
+                .replace(/floor\(/g, 'Math.floor(')
+                .replace(/ceil\(/g, 'Math.ceil(')
+                .replace(/pow\(/g, 'Math.pow(')
+                .replace(/max\(/g, 'Math.max(')
+                .replace(/min\(/g, 'Math.min(')
+                .replace(/\^/g, '**'); // Convert ^ to ** for exponentiation
+
+            // Handle IF statements - simple IF(condition, trueValue, falseValue)
+            const ifMatches = processedExpression.match(/IF\(([^,]+),([^,]+),([^)]+)\)/g);
+            if (ifMatches) {
+                ifMatches.forEach(ifMatch => {
+                    const parts = ifMatch.slice(3, -1).split(',');
+                    if (parts.length === 3) {
+                        const condition = parts[0].trim();
+                        const trueValue = parts[1].trim();
+                        const falseValue = parts[2].trim();
+
+                        // Evaluate the condition
+                        const conditionResult = Function('"use strict"; return (' + condition + ')')();
+                        const result = conditionResult ?
+                            Function('"use strict"; return (' + trueValue + ')')() :
+                            Function('"use strict"; return (' + falseValue + ')')();
+
+                        processedExpression = processedExpression.replace(ifMatch, result.toString());
+                    }
+                });
+            }
+
+            // Safely evaluate the mathematical expression
+            const result = Function('"use strict"; return (' + processedExpression + ')')();
+
+            // Check if result is a valid number
+            if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
+                return result;
+            }
+
+            return 0;
+        } catch (error) {
+            console.error('Expression evaluation error:', error, 'Expression:', expression);
+            return 0;
+        }
+    };
+
+
     const evaluateRowwiseCalculation = (formula, rowData, functionType, fields) => {
+        // Handle EXPRESSION type
+        if (functionType === 'EXPRESSION') {
+            return evaluateExpression(formula, rowData, fields);
+        }
+
+        // Handle other function types (existing logic)
         const fieldRefs = extractFieldReferences(formula);
         const values = fieldRefs.map(fieldName => {
             return getFieldValue(fieldName, rowData, fields);
@@ -721,6 +809,11 @@ export default function EnhancedReportViewer() {
                     return ((values[0] / values[1]) / values[2]) * 100;
                 }
                 return 0;
+            case 'CONCATENATE':
+                return fieldRefs.map(fieldName => {
+                    const fieldData = rowData.find(d => d.fieldLabel === fieldName);
+                    return fieldData?.value || '';
+                }).join(' ');
             default:
                 return values.reduce((sum, val) => sum + val, 0);
         }
@@ -779,34 +872,157 @@ export default function EnhancedReportViewer() {
     };
 
     const calculateColumnwiseSummary = (calcField, allReportData, fields) => {
-        const { formula, functionType } = calcField;
-        const fieldRefs = extractFieldReferences(formula);
+        const { formula, functionType, calculationType } = calcField;
 
+        // Handle EXPRESSION type for column-wise calculations
+        if (functionType === 'EXPRESSION') {
+            return evaluateColumnwiseExpression(formula, allReportData, fields);
+        }
+
+        // Handle predefined functions
+        const fieldRefs = extractFieldReferences(formula);
         if (fieldRefs.length === 0) return 0;
 
         const fieldName = fieldRefs[0];
         const allValues = allReportData.map(row => getFieldValue(fieldName, row.data, fields))
-            .filter(val => !isNaN(val) && val !== 0);
+            .filter(val => !isNaN(val) && val !== null && val !== undefined);
 
         switch (functionType) {
             case 'SUM':
             case 'RUNNING_TOTAL':
                 return allValues.reduce((sum, val) => sum + val, 0);
+
             case 'AVG':
             case 'CUMULATIVE_AVG':
-                return allValues.length > 0 ? allValues.reduce((sum, val) => sum + val, 0) / allValues.length : 0;
+                if (allValues.length === 0) return 0;
+                const sum = allValues.reduce((sum, val) => sum + val, 0);
+                return sum / allValues.length;
+
             case 'COUNT':
                 return allValues.length;
+
             case 'MIN':
                 return allValues.length > 0 ? Math.min(...allValues) : 0;
+
             case 'MAX':
                 return allValues.length > 0 ? Math.max(...allValues) : 0;
+
             case 'PERCENT_OF_TOTAL':
-                return 100;
+                return 100; // This represents the total percentage
+
+            case 'RANK':
+                // For ranking in summary, show the count of ranked items
+                return allValues.length;
+
+            case 'MOVING_AVG':
+                // For moving average summary, return overall average
+                if (allValues.length === 0) return 0;
+                return allValues.reduce((sum, val) => sum + val, 0) / allValues.length;
+
+            case 'DIFFERENCE':
+                // For difference summary, return total change from first to last
+                if (allValues.length < 2) return 0;
+                return allValues[allValues.length - 1] - allValues[0];
+
             default:
                 return allValues.reduce((sum, val) => sum + val, 0);
         }
     };
+
+    const evaluateColumnwiseExpression = (expression, allReportData, fields) => {
+        try {
+            // For column-wise expressions, we need to aggregate the data first
+            let processedExpression = expression;
+
+            // Remove EXPRESSION wrapper if present
+            if (processedExpression.startsWith('EXPRESSION(') && processedExpression.endsWith(')')) {
+                processedExpression = processedExpression.slice(11, -1);
+            }
+
+            // Find field references and replace with aggregated values
+            const fieldMatches = expression.match(/"([^"]+)"/g);
+            if (fieldMatches) {
+                fieldMatches.forEach(match => {
+                    const fieldName = match.replace(/"/g, '');
+
+                    // Get all values for this field
+                    const allValues = allReportData.map(row => getFieldValue(fieldName, row.data, fields))
+                        .filter(val => !isNaN(val) && val !== null && val !== undefined);
+
+                    // For column-wise, we typically want the sum unless specified otherwise
+                    const aggregatedValue = allValues.reduce((sum, val) => sum + val, 0);
+
+                    processedExpression = processedExpression.replace(match, aggregatedValue.toString());
+                });
+            }
+
+            // Handle mathematical functions
+            processedExpression = processedExpression
+                .replace(/sqrt\(/g, 'Math.sqrt(')
+                .replace(/abs\(/g, 'Math.abs(')
+                .replace(/round\(/g, 'Math.round(')
+                .replace(/floor\(/g, 'Math.floor(')
+                .replace(/ceil\(/g, 'Math.ceil(')
+                .replace(/pow\(/g, 'Math.pow(')
+                .replace(/max\(/g, 'Math.max(')
+                .replace(/min\(/g, 'Math.min(')
+                .replace(/\^/g, '**');
+
+            // Handle special column functions
+            processedExpression = processedExpression.replace(/AVG\(([^)]+)\)/g, (match, fieldRef) => {
+                const cleanFieldRef = fieldRef.replace(/"/g, '');
+                const allValues = allReportData.map(row => getFieldValue(cleanFieldRef, row.data, fields))
+                    .filter(val => !isNaN(val));
+                const avg = allValues.length > 0 ? allValues.reduce((sum, val) => sum + val, 0) / allValues.length : 0;
+                return avg.toString();
+            });
+
+            processedExpression = processedExpression.replace(/COUNT\(([^)]+)\)/g, (match, fieldRef) => {
+                const cleanFieldRef = fieldRef.replace(/"/g, '');
+                const allValues = allReportData.map(row => getFieldValue(cleanFieldRef, row.data, fields))
+                    .filter(val => val !== null && val !== undefined);
+                return allValues.length.toString();
+            });
+
+            // Handle IF statements
+            const ifMatches = processedExpression.match(/IF\(([^,]+),([^,]+),([^)]+)\)/g);
+            if (ifMatches) {
+                ifMatches.forEach(ifMatch => {
+                    const parts = ifMatch.slice(3, -1).split(',');
+                    if (parts.length === 3) {
+                        const condition = parts[0].trim();
+                        const trueValue = parts[1].trim();
+                        const falseValue = parts[2].trim();
+
+                        try {
+                            const conditionResult = Function('"use strict"; return (' + condition + ')')();
+                            const result = conditionResult ?
+                                Function('"use strict"; return (' + trueValue + ')')() :
+                                Function('"use strict"; return (' + falseValue + ')')();
+
+                            processedExpression = processedExpression.replace(ifMatch, result.toString());
+                        } catch (e) {
+                            console.error('IF evaluation error:', e);
+                            processedExpression = processedExpression.replace(ifMatch, '0');
+                        }
+                    }
+                });
+            }
+
+            // Safely evaluate the expression
+            const result = Function('"use strict"; return (' + processedExpression + ')')();
+
+            if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
+                return result;
+            }
+
+            return 0;
+        } catch (error) {
+            console.error('Column-wise expression evaluation error:', error, 'Expression:', expression);
+            return 0;
+        }
+    };
+
 
     const extractFieldReferences = (formula) => {
         const regex = /"([^"]+)"/g;
@@ -868,15 +1084,18 @@ export default function EnhancedReportViewer() {
     };
 
     const formatCalculatedValue = (value, calcField) => {
-        if (isNaN(value)) return "Error";
+        if (value === null || value === undefined || isNaN(value)) {
+            console.log('Invalid calculated value:', value, 'for field:', calcField.label);
+            return "0"; // Return "0" instead of "Error" to ensure numeric parsing works
+        }
 
         const { format, precision = 2 } = calcField;
 
         switch (format) {
             case 'currency':
-                return `${value.toFixed(precision)}`;
+                return value.toFixed(precision); // Remove currency symbol for charts
             case 'percentage':
-                return `${value.toFixed(precision)}%`;
+                return value.toFixed(precision); // Remove % symbol for charts, add it in display
             case 'integer':
                 return Math.round(value).toString();
             case 'decimal':
