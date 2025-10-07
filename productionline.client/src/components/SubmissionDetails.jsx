@@ -102,17 +102,29 @@ export default function SubmissionDetails() {
         console.log(value)
         try {
             const parsed = JSON.parse(value);
-            return Array.isArray(parsed) && typeof parsed[0] === 'object';
+            return Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object';
         } catch {
             return false;
         }
+    };
+
+    const getGridColumns = (gridData) => {
+        if (!gridData || gridData.length === 0) return [];
+
+        // Get all unique column names from all rows
+        const columnSet = new Set();
+        gridData.forEach(row => {
+            Object.keys(row).forEach(key => columnSet.add(key));
+        });
+
+        return Array.from(columnSet);
     };
 
 
     const processedData = processSubmissionData();
 
     return (
-        <div className="max-w-4xl mx-auto p-6">
+        <div className="max-w-1xl mx-auto p-6">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Submission Details</h1>
                 <div>
@@ -149,55 +161,63 @@ export default function SubmissionDetails() {
 
                 <h2 className="text-xl font-semibold mb-4">Submitted Data</h2>
 
-                {processedData.length === 0 ? (
-                    <div className="text-gray-500">No submission data available.</div>
-                ) : (
-                    <div className="space-y-6">
-                        {processedData.map((item, index) => (
-                            <div key={index} className="border-b pb-4">
-                                <div className="flex justify-between items-center">
-                                    <div className="flex-1">
-                                        <p className="text-sm text-gray-600">{item.label}</p>
-                                        {isGridValue(item.value) ? (
-                                            <div className="overflow-auto mt-2">
-                                                <table className="min-w-full text-sm text-left border border-gray-300">
+                {processedData.map((item, index) => (
+                    <div key={index} className="border-b pb-4">
+                        <div className="flex flex-col space-y-2">
+                            <div className="w-full">
+                                <p className="text-sm text-gray-600 mb-1">{item.label}</p>
+                                {isGridValue(item.value) ? (
+                                    <div className="w-full overflow-x-auto border border-gray-300 rounded">
+                                        {(() => {
+                                            const gridData = JSON.parse(item.value);
+                                            const columns = getGridColumns(gridData);
+
+                                            return (
+                                                <table className="w-full text-sm text-left">
                                                     <thead className="bg-gray-100">
                                                         <tr>
-                                                            {Object.keys(JSON.parse(item.value)[0] || {}).map((col, idx) => (
-                                                                <th key={idx} className="px-4 py-2 border">{col}</th>
+                                                            {columns.map((col, idx) => (
+                                                                <th key={idx} className="px-2 py-1 border-b border-r whitespace-nowrap font-medium">
+                                                                    {col}
+                                                                </th>
                                                             ))}
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {JSON.parse(item.value).map((row, rIdx) => (
-                                                            <tr key={rIdx} className="border-t">
-                                                                {Object.values(row).map((cell, cIdx) => (
-                                                                    <td key={cIdx} className="px-4 py-2 border">
-                                                                        {typeof cell === 'boolean' ? String(cell) : cell}
-                                                                    </td>
-                                                                ))}
+                                                        {gridData.map((row, rIdx) => (
+                                                            <tr key={rIdx} className="border-b hover:bg-gray-50">
+                                                                {columns.map((col, cIdx) => {
+                                                                    const cellValue = row[col];
+                                                                    return (
+                                                                        <td key={cIdx} className="px-2 py-1 border-r whitespace-nowrap">
+                                                                            {cellValue !== undefined && cellValue !== null
+                                                                                ? (typeof cellValue === 'boolean' ? String(cellValue) : String(cellValue))
+                                                                                : ''}
+                                                                        </td>
+                                                                    );
+                                                                })}
                                                             </tr>
                                                         ))}
                                                     </tbody>
                                                 </table>
-                                            </div>
-                                        ) : (
-                                            <div className="font-semibold break-words mt-2">
-                                                {typeof item.value === 'boolean' ? String(item.value) : item.value}
-                                            </div>
-                                        )}
+                                            );
+                                        })()}
                                     </div>
-                                    {item.remark && (
-                                        <div className="text-right max-w-sm ml-4">
-                                            <p className="text-sm text-gray-600">Remark</p>
-                                            <p className="italic text-gray-700 break-words">{item.remark}</p>
-                                        </div>
-                                    )}
-                                </div>
+                                ) : (
+                                    <div className="font-semibold break-words">
+                                        {typeof item.value === 'boolean' ? String(item.value) : item.value}
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                            {item.remark && (
+                                <div className="w-full bg-gray-50 p-2 rounded">
+                                    <p className="text-sm text-gray-600">Remark</p>
+                                    <p className="italic text-gray-700 break-words">{item.remark}</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                )}
+                ))}
 
             </div>
         </div>

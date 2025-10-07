@@ -228,6 +228,7 @@ namespace productionLine.Server.Controllers
         {
             Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
                 .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+                .Include((Form f) => f.AllowedUsers)
                 .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
             if (form == null)
             {
@@ -242,6 +243,15 @@ namespace productionLine.Server.Controllers
                 LinkedFormId = form.LinkedFormId, // Move this to Form level
                 KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
                 Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
+                allowedUsers = (form.AllowedUsers?.Select((FormAccess a) => new ApproverDto
                 {
                     Id = a.Id,
                     AdObjectId = a.AdObjectId,

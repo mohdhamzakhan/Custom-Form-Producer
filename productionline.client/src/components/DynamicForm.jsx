@@ -24,6 +24,7 @@ export default function DynamicForm() {
     const [imageModalOpen, setImageModalOpen] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
+    const isEditMode = useRef(false); // Add this new ref
 
     useEffect(() => {
         // In a real application, this would be an actual API call
@@ -145,6 +146,11 @@ export default function DynamicForm() {
             // Prevent infinite loops
             if (updatingLinkedFields.current) return;
 
+            if (isEditMode.current) {
+                console.log('⏭️ Skipping linked data load - in edit mode');
+                return;
+            }
+
             console.log('🚀 loadLinkedDataAutomatically called');
 
             if (!formData?.linkedFormId || !formData?.keyFieldMappings?.length) {
@@ -256,6 +262,18 @@ export default function DynamicForm() {
         formData?.linkedFormId,
         formData?.keyFieldMappings?.length
     ]);
+
+    const handleNewSubmission = () => {
+        isEditMode.current = false;
+        setEditingSubmissionId(null);
+        // Reset form values to initial state
+        const initialValues = {};
+        formData.fields.forEach((field) => {
+            // Your existing initialization logic
+        });
+        setFormValues(initialValues);
+        setRemarks({});
+    };
 
     const clearLinkedTextboxFields = () => {
         console.log('🧹 Attempting to clear linked textbox fields');
@@ -564,23 +582,57 @@ export default function DynamicForm() {
         }
     };
 
+    //const handleEditSubmission = async (submissionId) => {
+    //    setIsModalOpen(false);
+    //    setEditingSubmissionId(submissionId);
+
+    //    try {
+    //        const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
+    //        if (!res.ok) throw new Error("Failed to load submission");
+
+    //        const json = await res.json();
+
+    //        const submission = json.submission;
+    //        const submissionData = submission.submissionData;
+    //        const formDefinition = json.formDefinition;
+
+    //        // Optional: update form structure if needed
+    //        setFormData(formDefinition);
+
+    //        const updatedValues = {};
+    //        const updatedRemarks = {};
+
+    //        for (const item of submissionData) {
+    //            if (item.fieldLabel.endsWith("(Remark)")) {
+    //                const baseLabel = item.fieldLabel.replace(" (Remark)", "");
+    //                updatedRemarks[baseLabel] = item.fieldValue;
+    //            } else {
+    //                updatedValues[item.fieldLabel] = parseFieldValue(item.fieldLabel, item.fieldValue);
+    //            }
+    //        }
+
+    //        setFormValues(updatedValues);
+    //        setRemarks(updatedRemarks);
+    //    } catch (err) {
+    //        console.error("Error loading submission:", err);
+    //        alert("Failed to load submission for editing.");
+    //    }
+    //};
+
     const handleEditSubmission = async (submissionId) => {
         setIsModalOpen(false);
         setEditingSubmissionId(submissionId);
+        isEditMode.current = true; // Set edit mode flag
 
         try {
             const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
             if (!res.ok) throw new Error("Failed to load submission");
-
             const json = await res.json();
-
             const submission = json.submission;
             const submissionData = submission.submissionData;
             const formDefinition = json.formDefinition;
 
-            // Optional: update form structure if needed
             setFormData(formDefinition);
-
             const updatedValues = {};
             const updatedRemarks = {};
 
@@ -595,9 +647,16 @@ export default function DynamicForm() {
 
             setFormValues(updatedValues);
             setRemarks(updatedRemarks);
+
+            // Reset edit mode after values are set
+            setTimeout(() => {
+                isEditMode.current = false;
+            }, 500);
+
         } catch (err) {
             console.error("Error loading submission:", err);
             alert("Failed to load submission for editing.");
+            isEditMode.current = false;
         }
     };
 
@@ -1003,8 +1062,17 @@ export default function DynamicForm() {
         return errors;
     };
 
-    const isValidDate = (date) => {
-        return date instanceof Date && !isNaN(date.getTime());
+    const isValidDate = (dateString) => {
+        if (!dateString) return false;
+
+        // If it's already a Date object
+        if (dateString instanceof Date) {
+            return !isNaN(dateString.getTime());
+        }
+
+        // If it's a string, try to parse it
+        const date = new Date(dateString);
+        return !isNaN(date.getTime());
     };
     //const cleanGridData = (gridData) => {
     //    if (!Array.isArray(gridData)) return gridData;
@@ -1949,13 +2017,26 @@ export default function DynamicForm() {
                                                             const parentValue = row[col.parentColumn] || "";
                                                             const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
 
+                                                            // Check if the selected option requires remarks
+                                                            const selectedValue = row[col.name] || "";
+                                                            const remarksKey = `${parentValue}:${selectedValue}`;
+                                                            const requiresRemarks = selectedValue && (col.remarksOptions || []).includes(remarksKey);
+                                                            const remarksFieldName = `${col.name}_remarks`;
+
                                                             return (
                                                                 <div>
                                                                     <select
-                                                                        value={row[col.name] || ""}
+                                                                        value={selectedValue}
                                                                         onChange={(e) => {
                                                                             const newValue = e.target.value;
                                                                             const updatedRow = { ...row, [col.name]: newValue };
+
+                                                                            // Clear remarks if the new selection doesn't require it
+                                                                            const newRemarksKey = `${parentValue}:${newValue}`;
+                                                                            if (!(col.remarksOptions || []).includes(newRemarksKey)) {
+                                                                                updatedRow[remarksFieldName] = "";
+                                                                            }
+
                                                                             handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
                                                                         }}
                                                                         disabled={!parentValue}
@@ -1973,9 +2054,29 @@ export default function DynamicForm() {
                                                                         ))}
                                                                     </select>
 
-                                                                    {row[col.name] && (
+                                                                    {selectedValue && (
                                                                         <div className="text-xs text-gray-600 mt-1">
-                                                                            You selected: <span className="font-semibold">{row[col.name]}</span>
+                                                                            You selected: <span className="font-semibold">{selectedValue}</span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {requiresRemarks && (
+                                                                        <div className="mt-2">
+                                                                            <label className="block text-xs text-gray-700 mb-1">
+                                                                                Remarks <span className="text-red-500">*</span>
+                                                                            </label>
+                                                                            <textarea
+                                                                                value={row[remarksFieldName] || ""}
+                                                                                onChange={(e) => {
+                                                                                    const remarksValue = e.target.value;
+                                                                                    const updatedRow = { ...row, [remarksFieldName]: remarksValue };
+                                                                                    handleGridChange(field.id, rowIndex, remarksFieldName, remarksValue, updatedRow);
+                                                                                }}
+                                                                                placeholder="Enter remarks..."
+                                                                                required
+                                                                                className="border rounded px-2 py-1 w-full text-sm"
+                                                                                rows="2"
+                                                                            />
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -2519,7 +2620,7 @@ export default function DynamicForm() {
                             type="submit"
                             className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
                         >
-                            Submit
+                            Save
                         </button>
 
                         <button

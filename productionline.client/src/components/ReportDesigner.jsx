@@ -174,6 +174,8 @@ export default function EnhancedReportDesigner() {
         metrics: []  // now an array
     });
     const [summaryRows, setSummaryRows] = useState([]);
+    const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current"); 
+
 
 
     // UI state for left panel

@@ -143,7 +143,10 @@ namespace productionLine.Server.Controllers
             {
                 return BadRequest();
             }
-            Form existingForm = await _context.Forms.Include((Form f) => f.Fields).ThenInclude((FormField f) => f.RemarkTriggers).Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+            Form existingForm = await _context.Forms.Include((Form f) => f.Fields)
+                .ThenInclude((FormField f) => f.RemarkTriggers)
+                .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+                .Include((Form f) => f.AllowedUsers.OrderBy((FormAccess a) => a.Name))
                 .FirstOrDefaultAsync((Form f) => f.Id == id);
             if (existingForm == null)
             {
@@ -274,6 +277,22 @@ namespace productionLine.Server.Controllers
                 };
                 _context.FormApprovers.Add(formApprover);
             }
+            _context.FormAccess.RemoveRange(existingForm.AllowedUsers);
+
+            foreach (FormAccess access in form.AllowedUsers)
+            {
+                FormAccess formAccess = new FormAccess
+                {
+                    AdObjectId = access.AdObjectId,
+                    Email = access.Email,
+                    Form = access.Form,
+                    FormId = id,
+                    Level = access.Level,
+                    Name = access.Name,
+                    Type = access.Type
+                };
+                _context.FormAccess.Add(formAccess);
+            }
             try
             {
                 await _context.SaveChangesAsync();
@@ -313,6 +332,7 @@ namespace productionLine.Server.Controllers
         {
             Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
                 .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+                .Include((Form f) => f.AllowedUsers)
                 .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
             if (form == null)
             {
@@ -326,6 +346,15 @@ namespace productionLine.Server.Controllers
                 LinkedFormId = form.LinkedFormId, // Move this to Form level
                 KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
                 Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
+                allowedUsers = (form.AllowedUsers?.Select((FormAccess a) => new ApproverDto
                 {
                     Id = a.Id,
                     AdObjectId = a.AdObjectId,
@@ -861,7 +890,15 @@ namespace productionLine.Server.Controllers
                 else
                 {
                     // Regular user sees only their forms
-                    formsQuery = _context.Forms.Where(f => f.CreatedBy == createdBy.ToLower());
+                    //formsQuery = _context.Forms.Where(f => f.CreatedBy == createdBy.ToLower());
+                    formsQuery = _context.Forms
+    .GroupJoin(_context.FormAccess,
+               form => form.Id,
+               access => access.FormId,
+               (form, accessList) => new { form, accessList })
+    .Where(x => x.form.CreatedBy == createdBy.ToLower() ||
+                x.accessList.Any(a => a.Name.ToLower() == createdBy))
+    .Select(x => x.form);
                 }
 
                 var forms = await formsQuery

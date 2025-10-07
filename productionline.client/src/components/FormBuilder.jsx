@@ -55,6 +55,13 @@ const FormBuilder = () => {
     const [keyFields, setKeyFields] = useState([]);
     const [linkedFormFields, setLinkedFormFields] = useState([]);
 
+    // Access control state
+    const [allowedUsers, setAllowedUsers] = useState([]);
+    const [accessSearchTerm, setAccessSearchTerm] = useState("");
+    const [accessSearchResults, setAccessSearchResults] = useState([]);
+    const [showAccessConfig, setShowAccessConfig] = useState(false);
+
+
     // Add this function to fetch linked form details
     // Replace your fetchLinkedFormDetails function with this safe version
     const fetchLinkedFormDetails = async (formId) => {
@@ -195,6 +202,7 @@ const FormBuilder = () => {
         }
     };
     const navigate = useNavigate();
+
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
 
@@ -234,6 +242,17 @@ const FormBuilder = () => {
             searchAdDirectory(searchTerm);
         }
     }, [searchTerm, searchAdDirectory]);
+
+    useEffect(() => {
+        if (accessSearchTerm.length >= 3) {
+            searchAdDirectory(accessSearchTerm).then(results => {
+                setAccessSearchResults(results || []);
+            });
+        } else {
+            setAccessSearchResults([]);
+        }
+    }, [accessSearchTerm, searchAdDirectory]);
+
     const fetchAvailableForms = async () => {
         setLoadingForms(true);
         try {
@@ -265,6 +284,7 @@ const FormBuilder = () => {
             setLoadingForms(false);
         }
     };
+
     const handleClearForm = () => {
         localStorage.removeItem("formBuilderFields");
         setFormFields([]); // Optional: Reset state if needed
@@ -463,6 +483,7 @@ const FormBuilder = () => {
             // Copy the format but keep current form name and ID
             setFormFields(sortedFields);
             setApprovers(data.approvers || []); // Optionally copy approvers too
+            setAllowedUsers(data.allowedUsers || []);
 
             // Handle linked form
             if (data.linkedFormId) {
@@ -492,7 +513,6 @@ const FormBuilder = () => {
         }
     };
 
-
     const moveField = (dragIndex, hoverIndex) => {
         setFormFields((prevFields) => {
             const updatedFields = [...prevFields];
@@ -504,49 +524,6 @@ const FormBuilder = () => {
                 ...field,
                 order: index
             }));
-        });
-    };
-
-    const moveColumn = (fieldIndex, dragColumnIndex, hoverColumnIndex) => {
-        setFormFields(prevFields => {
-            const updatedFields = [...prevFields];
-            const field = updatedFields[fieldIndex];
-            const updatedColumns = [...field.columns];
-
-            const movedColumn = updatedColumns.splice(dragColumnIndex, 1)[0];
-            updatedColumns.splice(hoverColumnIndex, 0, movedColumn);
-
-            updatedFields[fieldIndex] = {
-                ...field,
-                columns: updatedColumns
-            };
-
-            return updatedFields;
-        });
-    };
-
-    const removeColumn = (fieldIndex, columnIndex) => {
-        setFormFields(prevFields => {
-            const updatedFields = [...prevFields]
-            const field = updatedFields[fieldIndex]
-            const updatedColumns = [...field.columns]
-
-            updatedColumns.splice(columnIndex, 1)
-
-            updatedFields[fieldIndex] = {
-                ...field,
-                columns: updatedColumns
-            }
-
-            return updatedFields
-        })
-    }
-    const moveApprover = (dragIndex, hoverIndex) => {
-        setApprovers((prevApprovers) => {
-            const updatedApprovers = [...prevApprovers];
-            const [movedApprover] = updatedApprovers.splice(dragIndex, 1);
-            updatedApprovers.splice(hoverIndex, 0, movedApprover);
-            return updatedApprovers;
         });
     };
 
@@ -740,6 +717,7 @@ const FormBuilder = () => {
             const sortedFields = transformedFields.sort((a, b) => a.order - b.order);
             setFormFields(sortedFields);
             setApprovers(data.approvers || []);
+            setAllowedUsers(data.allowedUsers || []);
             setLoading(false);
 
         } catch (error) {
@@ -846,15 +824,29 @@ const FormBuilder = () => {
                     linkedFormField: keyField.linkedFormField,
                     currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
                     linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
-                    currentParentFieldId: keyField.currentFormField?.includes('.')
-                        ? keyField.currentFormField.split('.')[0] : null,
-                    currentColumnId: keyField.currentFormField?.includes('.')
-                        ? keyField.currentFormField.split('.')[1] : null,
-                    linkedParentFieldId: keyField.linkedFormField?.includes('.')
-                        ? keyField.linkedFormField.split('.')[0] : null,
-                    linkedColumnId: keyField.linkedFormField?.includes('.')
-                        ? keyField.linkedFormField.split('.')[1] : null,
+                    currentParentFieldId: keyField.currentFormField?.includes('.') ?
+                        keyField.currentFormField.split('.')[0] : null,
+                    currentColumnId: keyField.currentFormField?.includes('.') ?
+                        keyField.currentFormField.split('.')[1] : null,
+                    linkedParentFieldId: keyField.linkedFormField?.includes('.') ?
+                        keyField.linkedFormField.split('.')[0] : null,
+                    linkedColumnId: keyField.linkedFormField?.includes('.') ?
+                        keyField.linkedFormField.split('.')[1] : null,
                 })),
+                keyFieldMappingsJson: JSON.stringify(keyFields.map(keyField => ({
+                    currentFormField: keyField.currentFormField,
+                    linkedFormField: keyField.linkedFormField,
+                    currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
+                    linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
+                    currentParentFieldId: keyField.currentFormField?.includes('.') ?
+                        keyField.currentFormField.split('.')[0] : null,
+                    currentColumnId: keyField.currentFormField?.includes('.') ?
+                        keyField.currentFormField.split('.')[1] : null,
+                    linkedParentFieldId: keyField.linkedFormField?.includes('.') ?
+                        keyField.linkedFormField.split('.')[0] : null,
+                    linkedColumnId: keyField.linkedFormField?.includes('.') ?
+                        keyField.linkedFormField.split('.')[1] : null,
+                }))),
 
                 // Process approvers
                 approvers: approvers.map((a) => ({
@@ -863,6 +855,15 @@ const FormBuilder = () => {
                     email: a.email,
                     type: a.type,
                     level: a.level,
+                    formId: baseForm.id
+                })),
+
+                // Process allowed users for access control
+                allowedUsers: allowedUsers.map((u) => ({
+                    adObjectId: u.id || u.adObjectId,
+                    name: u.name,
+                    email: u.email,
+                    type: u.type,
                     formId: baseForm.id
                 })),
 
@@ -1037,6 +1038,7 @@ const FormBuilder = () => {
                                 dependentOptions: column.dependentOptions || {},
                                 startTime: column.startTime || "",
                                 endTime: column.endTime || "",
+                                /*remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],*/
                                 remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],
 
                                 // Handle linkedTextbox columns in grids
@@ -1112,6 +1114,35 @@ const FormBuilder = () => {
             console.log("baseForm.rowVersion:", baseForm.rowVersion);
             console.log("Sample field form rowVersion:", formData.fields[0]?.form?.rowVersion);
             console.log("Payload being sent to backend:", JSON.stringify(formData, null, 2));
+            console.log("BRIDGE FIELD SAVE DEBUG:");
+            formFields.forEach((field, index) => {
+                if (field.type === 'linkedTextbox') {
+                    console.log(`LinkedTextbox Field ${index}:`, {
+                        id: field.id,
+                        label: field.label,
+                        linkedFormId: field.linkedFormId,
+                        linkedFieldId: field.linkedFieldId,
+                        linkedFieldReference: field.linkedFieldReference,
+                        keyFieldMappings: field.keyFieldMappings,
+                        keyFieldMappingsJson: field.keyFieldMappingsJson
+                    });
+                }
+
+                if (field.type === 'grid' && field.columns) {
+                    field.columns.forEach((column, colIndex) => {
+                        if (column.type === 'linkedTextbox') {
+                            console.log(`Grid Column LinkedTextbox ${index}-${colIndex}:`, {
+                                columnId: column.id,
+                                columnName: column.name,
+                                linkedFormId: column.linkedFormId,
+                                linkedFieldReference: column.linkedFieldReference,
+                                keyFieldMappings: column.keyFieldMappings,
+                                keyFieldMappingsJson: column.keyFieldMappingsJson
+                            });
+                        }
+                    });
+                }
+            });
 
             const url = formId
                 ? `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}`
@@ -1252,6 +1283,32 @@ const FormBuilder = () => {
 
     const removeApprover = (index) => {
         setApprovers(approvers.filter((_, i) => i !== index));
+    };
+
+    const moveApprover = (fromIndex, toIndex) => {
+        setApprovers(prev => {
+            if (fromIndex === toIndex) return prev;
+            if (toIndex < 0 || toIndex >= prev.length) return prev; // out of bounds
+            const next = [...prev];
+            const [moved] = next.splice(fromIndex, 1);
+            next.splice(toIndex, 0, moved);
+            return next;
+        });
+    };
+
+    // Access control functions
+    const addAllowedUser = (item) => {
+        if (allowedUsers.some(u => u.id === item.id)) {
+            alert("This user/group has already been added.");
+            return;
+        }
+        setAllowedUsers([...allowedUsers, item]);
+        setAccessSearchTerm("");
+        setAccessSearchResults([]);
+    };
+
+    const removeAllowedUser = (index) => {
+        setAllowedUsers(allowedUsers.filter((_, i) => i !== index));
     };
 
     const getAllFormFieldsWithGridColumns = (fields) => {
@@ -1739,7 +1796,10 @@ const FormBuilder = () => {
                                         onChange={(e) => {
                                             const selectedFormId = e.target.value;
                                             if (selectedFormId) {
-                                                fetchLinkedFormDetails(selectedFormId);
+                                                fetchLinkedFormDetails(selectedFormId).then(() => {
+                                                    // Force re-render of bridge field options
+                                                    console.log("Linked form loaded, bridge fields should now be available");
+                                                });
                                             } else {
                                                 setLinkedForm(null);
                                                 setLinkedFormFields([]);
@@ -2043,6 +2103,103 @@ const FormBuilder = () => {
                         )}
                     </div>
 
+                    {/* Access Control Section */}
+                    <div className="mb-6">
+                        <div
+                            className="flex items-center gap-2 cursor-pointer"
+                            onClick={() => setShowAccessConfig(!showAccessConfig)}
+                        >
+                            <h2 className="text-xl font-semibold">Form Access Control</h2>
+                            {showAccessConfig ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
+
+                        {showAccessConfig && (
+                            <div className="bg-blue-50 p-4 rounded border mt-2">
+                                <div className="mb-3 text-sm text-gray-700">
+                                    <strong>Note:</strong> Only users and groups added here will be able to access and fill out this form.
+                                    If no users are specified, the form will be accessible to everyone.
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-1">Search Users or Groups:</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={accessSearchTerm}
+                                            onChange={(e) => setAccessSearchTerm(e.target.value)}
+                                            placeholder="Search Active Directory for access control..."
+                                            className="w-full px-3 py-2 border rounded"
+                                        />
+                                        {accessSearchTerm.length >= 3 && accessSearchResults.length === 0 && (
+                                            <div className="absolute right-3 top-2 text-sm text-gray-500">No results</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {accessSearchResults.length > 0 && (
+                                    <div className="max-h-40 overflow-y-auto mb-4 border rounded bg-white">
+                                        {accessSearchResults.map(item => (
+                                            <div
+                                                key={item.id}
+                                                className="flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer"
+                                                onClick={() => addAllowedUser(item)}
+                                            >
+                                                {item.type === 'user'
+                                                    ? <User size={16} className="text-blue-600" />
+                                                    : <Users size={16} className="text-blue-600" />
+                                                }
+                                                <div>
+                                                    <div className="font-medium">{item.name}</div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {item.type === 'user' ? item.email : `Group (${item.members?.length || 0} members)`}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="mt-4">
+                                    <h3 className="font-medium mb-2">Allowed Users & Groups:</h3>
+                                    {allowedUsers.length === 0 ? (
+                                        <div className="text-gray-500 italic p-3 bg-white rounded border">
+                                            No access restrictions set. Form will be accessible to all users.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {allowedUsers.map((user, index) => (
+                                                <div
+                                                    key={user.id || index}
+                                                    className="flex items-center justify-between p-3 bg-white rounded border"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {user.type === 'user'
+                                                            ? <User size={18} className="text-blue-600" />
+                                                            : <Users size={18} className="text-blue-600" />
+                                                        }
+                                                        <div>
+                                                            <div className="font-medium">{user.name}</div>
+                                                            <div className="text-xs text-gray-500">
+                                                                {user.type === 'user' ? user.email : 'Group'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeAllowedUser(index)}
+                                                        className="text-red-500 hover:text-red-600"
+                                                    >
+                                                        <X size={18} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    
                     <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
                         {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image"].map(
                             (type) => (
@@ -2441,10 +2598,11 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     const selectedValue = e.target.value;
                                     console.log("=== LINKEDTEXTBOX FIELD SELECTED ===");
                                     console.log("selectedValue:", selectedValue);
+                                    console.log("Available linked form fields:", linkedFormFields);
+                                    console.log("Bridge field selection:", selectedValue);
 
                                     if (selectedValue.includes('.')) {
                                         const [gridFieldId, columnId] = selectedValue.split('.');
-                                        console.log("Processing as grid column - gridFieldId:", gridFieldId, "columnId:", columnId);
                                         updateField({
                                             linkedFieldId: null,
                                             linkedFieldType: "gridColumn",
@@ -2454,7 +2612,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             linkedFormId: linkedForm?.id || null
                                         });
                                     } else {
-                                        console.log("Processing as regular field");
                                         updateField({
                                             linkedFieldId: selectedValue,
                                             linkedFieldType: "field",
@@ -2881,7 +3038,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     updatedColumns[colIndex] = {
                                                         ...updatedColumns[colIndex],
                                                         parentColumn: e.target.value,
-                                                        dependentOptions: {}
+                                                        dependentOptions: {},
+                                                        remarksOptions: []
                                                     };
                                                     updateField({ columns: updatedColumns });
                                                 }}
@@ -2897,32 +3055,127 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     ))}
                                             </select>
                                         </div>
-
                                         {/* Child options configuration */}
                                         {column.parentColumn && (
                                             <div className="space-y-2">
                                                 {field.columns
                                                     .find(c => c.name === column.parentColumn)
                                                     ?.options?.map(parentOption => (
-                                                        <div key={parentOption} className="border p-2 rounded">
+                                                        <div key={parentOption} className="border p-2 rounded space-y-2">
                                                             <div className="font-medium mb-2">When {column.parentColumn} is "{parentOption}"</div>
                                                             <textarea
                                                                 value={(column.dependentOptions?.[parentOption] || []).join(",")}
                                                                 onChange={(e) => {
-                                                                    const values = e.target.value.split(",").map(v => v.trim());
+                                                                    const values = e.target.value.split(",").map(v => v.trim()).filter(Boolean);
                                                                     const updatedColumns = [...field.columns];
-                                                                    updatedColumns[colIndex].dependentOptions[parentOption] = values;
+                                                                    updatedColumns[colIndex] = {
+                                                                        ...updatedColumns[colIndex],
+                                                                        dependentOptions: {
+                                                                            ...updatedColumns[colIndex].dependentOptions,
+                                                                            [parentOption]: values
+                                                                        }
+                                                                    };
                                                                     updateField({ columns: updatedColumns });
                                                                 }}
                                                                 placeholder="Enter comma-separated options"
                                                                 className="w-full border rounded p-2"
                                                             />
+                                                            <label className="block text-xs text-gray-500 mt-2">
+                                                                Remarks required for options:
+                                                            </label>
+                                                            <select
+                                                                multiple
+                                                                value={(column.remarksOptions || [])
+                                                                    .filter(item => item.startsWith(`${parentOption}:`))
+                                                                    .map(item => item.substring(parentOption.length + 1))}
+                                                                onChange={(e) => {
+                                                                    const selected = Array.from(
+                                                                        e.target.selectedOptions,
+                                                                        opt => opt.value
+                                                                    );
+
+                                                                    // Remove old entries for this parent option
+                                                                    const otherRemarks = (column.remarksOptions || [])
+                                                                        .filter(item => !item.startsWith(`${parentOption}:`));
+
+                                                                    // Add new entries with parent:child format
+                                                                    const newRemarks = selected.map(opt => `${parentOption}:${opt}`);
+
+                                                                    const updatedColumns = [...field.columns];
+                                                                    updatedColumns[colIndex] = {
+                                                                        ...updatedColumns[colIndex],
+                                                                        remarksOptions: [...otherRemarks, ...newRemarks]
+                                                                    };
+                                                                    updateField({ columns: updatedColumns });
+                                                                }}
+                                                                className="w-full px-2 py-1 border rounded h-24"
+                                                            >
+                                                                {(column.dependentOptions?.[parentOption] || []).map((opt, i) => (
+                                                                    <option key={i} value={opt}>
+                                                                        {opt}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
                                                         </div>
                                                     ))}
                                             </div>
                                         )}
                                     </div>
                                 )}
+
+                                {/*{column.type === "dependentDropdown" && (*/}
+                                {/*    <div className="w-full space-y-4">*/}
+                                {/*        <div>*/}
+                                {/*            <label className="block text-sm font-medium mb-1">Parent Column</label>*/}
+                                {/*            <select*/}
+                                {/*                value={column.parentColumn || ""}*/}
+                                {/*                onChange={(e) => {*/}
+                                {/*                    const updatedColumns = [...field.columns];*/}
+                                {/*                    updatedColumns[colIndex] = {*/}
+                                {/*                        ...updatedColumns[colIndex],*/}
+                                {/*                        parentColumn: e.target.value,*/}
+                                {/*                        dependentOptions: {}*/}
+                                {/*                    };*/}
+                                {/*                    updateField({ columns: updatedColumns });*/}
+                                {/*                }}*/}
+                                {/*                className="w-full border rounded p-2"*/}
+                                {/*            >*/}
+                                {/*                <option value="">Select Parent Column</option>*/}
+                                {/*                {field.columns*/}
+                                {/*                    .filter(c => c.type === "dropdown" && c.id !== column.id)*/}
+                                {/*                    .map(parentCol => (*/}
+                                {/*                        <option key={parentCol.id} value={parentCol.name}>*/}
+                                {/*                            {parentCol.name}*/}
+                                {/*                        </option>*/}
+                                {/*                    ))}*/}
+                                {/*            </select>*/}
+                                {/*        </div>*/}
+
+                                {/*        */}{/* Child options configuration */}
+                                {/*        {column.parentColumn && (*/}
+                                {/*            <div className="space-y-2">*/}
+                                {/*                {field.columns*/}
+                                {/*                    .find(c => c.name === column.parentColumn)*/}
+                                {/*                    ?.options?.map(parentOption => (*/}
+                                {/*                        <div key={parentOption} className="border p-2 rounded">*/}
+                                {/*                            <div className="font-medium mb-2">When {column.parentColumn} is "{parentOption}"</div>*/}
+                                {/*                            <textarea*/}
+                                {/*                                value={(column.dependentOptions?.[parentOption] || []).join(",")}*/}
+                                {/*                                onChange={(e) => {*/}
+                                {/*                                    const values = e.target.value.split(",").map(v => v.trim());*/}
+                                {/*                                    const updatedColumns = [...field.columns];*/}
+                                {/*                                    updatedColumns[colIndex].dependentOptions[parentOption] = values;*/}
+                                {/*                                    updateField({ columns: updatedColumns });*/}
+                                {/*                                }}*/}
+                                {/*                                placeholder="Enter comma-separated options"*/}
+                                {/*                                className="w-full border rounded p-2"*/}
+                                {/*                            />*/}
+                                {/*                        </div>*/}
+                                {/*                    ))}*/}
+                                {/*            </div>*/}
+                                {/*        )}*/}
+                                {/*    </div>*/}
+                                {/*)}*/}
 
                                 {column.type === "numeric" && (
                                     <div className="w-full grid grid-cols-3 gap-3 mt-2">

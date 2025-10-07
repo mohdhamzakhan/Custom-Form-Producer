@@ -23,6 +23,23 @@ export default function EnhancedReportViewer() {
     const [calculatedFields, setCalculatedFields] = useState([]);
     const [summaryRows, setSummaryRows] = useState([]);
 
+    const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current");
+
+    // Add this function to detect current shift
+    const getCurrentShift = () => {
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const currentTime = currentHour * 60 + currentMinute;
+
+        // Shift A: 6:00 AM to 2:30 PM (360 to 870 minutes)
+        if (currentTime >= 360 && currentTime < 870) return 'A';
+        // Shift B: 2:30 PM to 11:00 PM (870 to 1380 minutes)
+        if (currentTime >= 870 && currentTime < 1380) return 'B';
+        // Shift C: 11:00 PM to 6:00 AM next day
+        return 'C';
+    };
+
     useEffect(() => {
         const fetchTemplate = async () => {
             try {
@@ -98,6 +115,9 @@ export default function EnhancedReportViewer() {
             setError("Failed to run filtered report: " + (err.message || "Unknown error"));
             setLoading(false);
         }
+    };
+    const hasShiftChart = () => {
+        return chartConfigs.some(chart => chart.type === 'shift');
     };
 
     const chartData = useMemo(() => {
@@ -192,6 +212,13 @@ export default function EnhancedReportViewer() {
         return transformedData;
     }, [reportData, calculatedFields]);
 
+    useEffect(() => {
+        // Auto-switch to charts view if shift charts are detected
+        const hasShift = chartConfigs.some(chart => chart.type === 'shift');
+        if (hasShift && displayMode !== 'charts') {
+            setDisplayMode('charts');
+        }
+    }, [chartConfigs]);
 
     const formatCellValue = (value, field) => {
         if (!value || value === "-" || value === "") return "—";
@@ -339,6 +366,9 @@ export default function EnhancedReportViewer() {
     };
 
     const renderChartsView = () => {
+        const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
+        const regularCharts = chartConfigs.filter(chart => chart.type !== 'shift');
+
         if (chartConfigs.length === 0) {
             return (
                 <div className="text-center py-12 bg-gray-50 rounded">
@@ -349,6 +379,108 @@ export default function EnhancedReportViewer() {
             );
         }
 
+        // If there are shift charts, render them in full-screen mode
+        if (shiftCharts.length > 0) {
+            return (
+                <div className="shift-charts-fullscreen">
+                    {/* Shift Period Selector */}
+                    <div className="mb-6 flex justify-center items-center gap-4 bg-white p-4 rounded-lg shadow">
+                        <label className="font-medium text-gray-700">View Period:</label>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setSelectedShiftPeriod("current")}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === "current"
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                            >
+                                Current Shift ({getCurrentShift()})
+                            </button>
+                            <button
+                                onClick={() => setSelectedShiftPeriod("A")}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === "A"
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                            >
+                                Shift A
+                            </button>
+                            <button
+                                onClick={() => setSelectedShiftPeriod("B")}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === "B"
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                            >
+                                Shift B
+                            </button>
+                            <button
+                                onClick={() => setSelectedShiftPeriod("C")}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === "C"
+                                        ? "bg-blue-600 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                            >
+                                Shift C
+                            </button>
+                            <button
+                                onClick={() => setSelectedShiftPeriod("fullday")}
+                                className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === "fullday"
+                                        ? "bg-green-600 text-white"
+                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                            >
+                                Full Day (24h)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Render shift charts in full-screen */}
+                    {shiftCharts.map((chart, index) => (
+                        <div key={chart.id || index} className="shift-chart-fullscreen-container mb-8">
+                            <ReportCharts
+                                data={chartData}
+                                metrics={chart.metrics}
+                                type={chart.type}
+                                xField={chart.xField || "submissionId"}
+                                title={chart.title || `Shift Production Chart ${index + 1}`}
+                                comboConfig={chart.comboConfig}
+                                calculatedFields={calculatedFields}
+                                selectedShiftPeriod={selectedShiftPeriod}
+                                currentShift={getCurrentShift()}
+                                showConfiguration={false}
+                            />
+                        </div>
+                    ))}
+
+                    {/* If there are also regular charts, show them below */}
+                    {regularCharts.length > 0 && (
+                        <div className="mt-12 pt-8 border-t-2">
+                            <h3 className="text-xl font-semibold mb-4 text-gray-800">
+                                Additional Charts
+                            </h3>
+                            <div className="charts-grid space-y-6">
+                                {regularCharts.map((chart, index) => (
+                                    <div key={chart.id || index} className="chart-container">
+                                        <ReportCharts
+                                            data={chartData}
+                                            metrics={chart.metrics}
+                                            type={chart.type}
+                                            xField={chart.xField || "submissionId"}
+                                            title={chart.title || `Chart ${index + 1}`}
+                                            comboConfig={chart.comboConfig}
+                                            calculatedFields={calculatedFields}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // Regular charts rendering (no shift charts)
         return (
             <div className="charts-grid space-y-6">
                 {chartConfigs.map((chart, index) => (
@@ -367,6 +499,30 @@ export default function EnhancedReportViewer() {
             </div>
         );
     };
+
+
+    const shiftChartStyles = `
+.shift-charts-fullscreen {
+    width: 100%;
+    min-height: 100vh;
+}
+
+.shift-chart-fullscreen-container {
+    width: 100%;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    padding: 24px;
+}
+
+@media print {
+    .shift-chart-fullscreen-container {
+        page-break-inside: avoid;
+        page-break-after: always;
+    }
+}
+`;
+
 
     const DataInspector = ({ data, title = "Data Inspector" }) => {
         const [isExpanded, setIsExpanded] = useState(false);
@@ -399,6 +555,14 @@ export default function EnhancedReportViewer() {
     };
 
     const renderDashboardView = () => {
+        const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
+
+        // If shift charts exist, automatically switch to charts view
+        if (shiftCharts.length > 0) {
+            return renderChartsView();
+        }
+
+        // Original dashboard view code for non-shift charts
         if (chartConfigs.length === 0) {
             return renderChartsView();
         }
@@ -1109,108 +1273,111 @@ export default function EnhancedReportViewer() {
     if (error) return <div className="error">{error}</div>;
 
     return (
-        <div className="report-viewer-wrapper">
-            <h2 className="viewer-heading">📊 Enhanced Report Viewer</h2>
+        <>
+            <style>{shiftChartStyles}</style>
+            <div className="report-viewer-wrapper">
+                <h2 className="viewer-heading">📊 Enhanced Report Viewer</h2>
 
-            {filters.length > 0 && (
-                <div className="filter-section mb-6 bg-white p-4 rounded shadow">
-                    <h3 className="font-semibold mb-3 text-gray-800">🔍 Apply Filters</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filters.map((filter, idx) => {
-                            const field = fields.find(f => f.id === filter.fieldLabel || f.label === filter.fieldLabel);
+                {filters.length > 0 && (
+                    <div className="filter-section mb-6 bg-white p-4 rounded shadow">
+                        <h3 className="font-semibold mb-3 text-gray-800">🔍 Apply Filters</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {filters.map((filter, idx) => {
+                                const field = fields.find(f => f.id === filter.fieldLabel || f.label === filter.fieldLabel);
 
-                            if (filter.operator === "between" && filter.type === "date") {
-                                const [start, end] = (runtimeFilters[filter.fieldLabel] || "").split(",") || ["", ""];
+                                if (filter.operator === "between" && filter.type === "date") {
+                                    const [start, end] = (runtimeFilters[filter.fieldLabel] || "").split(",") || ["", ""];
+                                    return (
+                                        <div key={idx} className="flex flex-col">
+                                            <label className="text-sm font-medium text-gray-700 mb-1">
+                                                {field?.label || filter.fieldLabel} (From - To)
+                                            </label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="date"
+                                                    value={start || ""}
+                                                    onChange={(e) => {
+                                                        const newStart = e.target.value;
+                                                        setRuntimeFilters(prev => ({
+                                                            ...prev,
+                                                            [filter.fieldLabel]: `${newStart},${end || ""}`
+                                                        }));
+                                                    }}
+                                                    className="border px-2 py-1 rounded flex-1"
+                                                />
+                                                <input
+                                                    type="date"
+                                                    value={end || ""}
+                                                    onChange={(e) => {
+                                                        const newEnd = e.target.value;
+                                                        setRuntimeFilters(prev => ({
+                                                            ...prev,
+                                                            [filter.fieldLabel]: `${start || ""},${newEnd}`
+                                                        }));
+                                                    }}
+                                                    className="border px-2 py-1 rounded flex-1"
+                                                />
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
                                 return (
                                     <div key={idx} className="flex flex-col">
                                         <label className="text-sm font-medium text-gray-700 mb-1">
-                                            {field?.label || filter.fieldLabel} (From - To)
+                                            {field?.label || filter.fieldLabel}
                                         </label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="date"
-                                                value={start || ""}
-                                                onChange={(e) => {
-                                                    const newStart = e.target.value;
-                                                    setRuntimeFilters(prev => ({
-                                                        ...prev,
-                                                        [filter.fieldLabel]: `${newStart},${end || ""}`
-                                                    }));
-                                                }}
-                                                className="border px-2 py-1 rounded flex-1"
-                                            />
-                                            <input
-                                                type="date"
-                                                value={end || ""}
-                                                onChange={(e) => {
-                                                    const newEnd = e.target.value;
-                                                    setRuntimeFilters(prev => ({
-                                                        ...prev,
-                                                        [filter.fieldLabel]: `${start || ""},${newEnd}`
-                                                    }));
-                                                }}
-                                                className="border px-2 py-1 rounded flex-1"
-                                            />
-                                        </div>
+                                        <input
+                                            type="text"
+                                            value={runtimeFilters[filter.fieldLabel] || ""}
+                                            onChange={(e) =>
+                                                setRuntimeFilters(prev => ({
+                                                    ...prev,
+                                                    [filter.fieldLabel]: e.target.value
+                                                }))
+                                            }
+                                            className="border px-2 py-1 rounded"
+                                        />
                                     </div>
                                 );
-                            }
-
-                            return (
-                                <div key={idx} className="flex flex-col">
-                                    <label className="text-sm font-medium text-gray-700 mb-1">
-                                        {field?.label || filter.fieldLabel}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={runtimeFilters[filter.fieldLabel] || ""}
-                                        onChange={(e) =>
-                                            setRuntimeFilters(prev => ({
-                                                ...prev,
-                                                [filter.fieldLabel]: e.target.value
-                                            }))
-                                        }
-                                        className="border px-2 py-1 rounded"
-                                    />
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <div className="mt-4 text-right">
-                        <button
-                            onClick={fetchFilteredReport}
-                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                        >
-                            ▶️ Run Report
-                        </button>
-                        {Object.keys(runtimeFilters).length > 0 && (
+                            })}
+                        </div>
+                        <div className="mt-4 text-right">
                             <button
-                                onClick={() => {
-                                    setRuntimeFilters({});
-                                    fetchFilteredReport();
-                                }}
-                                className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-medium mb-4 ml-2"
+                                onClick={fetchFilteredReport}
+                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                             >
-                                🧹 Clear All Filters
+                                ▶️ Run Report
                             </button>
-                        )}
+                            {Object.keys(runtimeFilters).length > 0 && (
+                                <button
+                                    onClick={() => {
+                                        setRuntimeFilters({});
+                                        fetchFilteredReport();
+                                    }}
+                                    className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-medium mb-4 ml-2"
+                                >
+                                    🧹 Clear All Filters
+                                </button>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
-
-            {renderActiveFilters()}
-            {renderSummaryStats()}
-            {renderViewControls()}
-
-            <div className="main-content">
-                {displayMode === "table" ? (
-                    viewMode === "expanded" ? renderExpandedTable() : renderGroupedTable()
-                ) : displayMode === "charts" ? (
-                    renderChartsView()
-                ) : (
-                    renderDashboardView()
                 )}
+
+                {renderActiveFilters()}
+                {renderSummaryStats()}
+                {renderViewControls()}
+
+                <div className="main-content">
+                    {displayMode === "table" ? (
+                        viewMode === "expanded" ? renderExpandedTable() : renderGroupedTable()
+                    ) : displayMode === "charts" ? (
+                        renderChartsView()
+                    ) : (
+                        renderDashboardView()
+                    )}
+                </div>
             </div>
-        </div>
+        </>
     );
 }

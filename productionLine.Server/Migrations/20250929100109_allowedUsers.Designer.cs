@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250929100109_allowedUsers")]
+    partial class allowedUsers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -51,8 +54,7 @@ namespace productionLine.Server.Migrations
 
                     b.Property<int?>("LinkedFormId")
                         .HasColumnType("NUMBER(10)")
-                        .HasColumnName("LINKED_FORM_ID")
-                        .HasAnnotation("Relational:JsonPropertyName", "allowedUsers");
+                        .HasColumnName("LINKED_FORM_ID");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -70,50 +72,6 @@ namespace productionLine.Server.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("FF_FORM");
-                });
-
-            modelBuilder.Entity("productionLine.Server.Model.FormAccess", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("ID");
-
-                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AdObjectId")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("ADOBJECTID");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("EMAIL");
-
-                    b.Property<int>("FormId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("FORMID");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("LEVEL");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("NAME");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("TYPE");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FormId");
-
-                    b.ToTable("FF_FORMACCESS");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
@@ -187,6 +145,9 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FORMID");
 
+                    b.Property<int?>("FormId1")
+                        .HasColumnType("NUMBER(10)");
+
                     b.Property<int>("Level")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("LEVEL");
@@ -205,9 +166,11 @@ namespace productionLine.Server.Migrations
 
                     b.HasIndex("FormId");
 
+                    b.HasIndex("FormId1");
+
                     b.ToTable("FF_FORMAPPROVER");
 
-                    b.HasAnnotation("Relational:JsonPropertyName", "approvers");
+                    b.HasAnnotation("Relational:JsonPropertyName", "allowedUsers");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormField", b =>
@@ -785,17 +748,6 @@ namespace productionLine.Server.Migrations
                     b.ToTable("FF_REPORTTEMPLATE");
                 });
 
-            modelBuilder.Entity("productionLine.Server.Model.FormAccess", b =>
-                {
-                    b.HasOne("productionLine.Server.Model.Form", "Form")
-                        .WithMany("AllowedUsers")
-                        .HasForeignKey("FormId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Form");
-                });
-
             modelBuilder.Entity("productionLine.Server.Model.FormApproval", b =>
                 {
                     b.HasOne("productionLine.Server.Model.FormSubmission", "FormSubmission")
@@ -814,6 +766,10 @@ namespace productionLine.Server.Migrations
                         .HasForeignKey("FormId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("productionLine.Server.Model.Form", null)
+                        .WithMany("AllowedUsers")
+                        .HasForeignKey("FormId1");
 
                     b.Navigation("Form");
                 });

@@ -48,9 +48,9 @@ const SHIFT_CONFIG = {
         startTime: "06:00",
         endTime: "14:30",
         defaultBreaks: [
-            { id: 1, startTime: "09:00", endTime: "09:15", name: "Morning Break" },
+            { id: 1, startTime: "08:00", endTime: "08:10", name: "Tea Break" },
             { id: 2, startTime: "11:30", endTime: "12:00", name: "Lunch Break" },
-            { id: 3, startTime: "13:00", endTime: "13:15", name: "Afternoon Break" }
+            { id: 3, startTime: "13:00", endTime: "13:10", name: "Afternoon Break" },
         ]
     },
     B: {
@@ -58,9 +58,9 @@ const SHIFT_CONFIG = {
         startTime: "14:30",
         endTime: "23:00",
         defaultBreaks: [
-            { id: 1, startTime: "16:30", endTime: "16:45", name: "Evening Break" },
-            { id: 2, startTime: "18:30", endTime: "19:00", name: "Dinner Break" },
-            { id: 3, startTime: "21:00", endTime: "21:15", name: "Night Break" }
+            { id: 1, startTime: "16:30", endTime: "16:40", name: "Evening Break" },
+            { id: 2, startTime: "20:00", endTime: "20:30", name: "Dinner Break" },
+            { id: 3, startTime: "21:30", endTime: "21:40", name: "Night Break" }
         ]
     },
     C: {
@@ -68,9 +68,8 @@ const SHIFT_CONFIG = {
         startTime: "23:00",
         endTime: "06:00",
         defaultBreaks: [
-            { id: 1, startTime: "01:00", endTime: "01:15", name: "Midnight Break" },
-            { id: 2, startTime: "03:00", endTime: "03:30", name: "Early Morning Break" },
-            { id: 3, startTime: "05:00", endTime: "05:15", name: "Pre-Dawn Break" }
+            { id: 1, startTime: "01:00", endTime: "01:30", name: "Midnight Break" },
+            { id: 2, startTime: "04:00", endTime: "04:10", name: "Early Morning Break" },
         ]
     }
 };
@@ -89,6 +88,7 @@ const getCurrentShift = () => {
     return 'C';
 };
 
+// Update the calculateTargetLine function to better handle 06:00 to 06:00 overnight
 const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds, breaks) => {
     const targetData = [];
     const shiftStartTime = new Date();
@@ -99,16 +99,15 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
     const [endHour, endMinute] = shiftEnd.split(':');
     shiftEndTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
 
-    // Handle overnight shifts
-    if (shiftEndTime < shiftStartTime) {
+    // Handle overnight shifts (including full day 06:00 to 06:00)
+    if (shiftEndTime <= shiftStartTime) {
         shiftEndTime.setDate(shiftEndTime.getDate() + 1);
     }
 
-    // Calculate parts per minute
+    // Rest of your existing calculateTargetLine code...
     const partsPerSecond = 1 / cycleTimeSeconds;
     const partsPerMinute = partsPerSecond * 60;
 
-    // Generate target line data points every 5 minutes
     const currentTime = new Date(shiftStartTime);
     let cumulativeParts = 0;
 
@@ -118,7 +117,6 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
             minute: '2-digit'
         });
 
-        // Check if current time is during a break
         const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
         const isDuringBreak = breaks.some(breakItem => {
             const [startH, startM] = breakItem.startTime.split(':');
@@ -126,7 +124,6 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
             let breakStart = parseInt(startH) * 60 + parseInt(startM);
             let breakEnd = parseInt(endH) * 60 + parseInt(endM);
 
-            // Handle overnight break times
             if (breakEnd < breakStart) {
                 breakEnd += 24 * 60;
             }
@@ -139,9 +136,7 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
             return checkTime >= breakStart && checkTime <= breakEnd;
         });
 
-        // Calculate cumulative parts based on elapsed productive time
         if (!isDuringBreak) {
-            // Calculate how many productive minutes have passed from shift start to current time
             let productiveMinutes = 0;
             const tempTime = new Date(shiftStartTime);
 
@@ -166,7 +161,7 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
                 });
 
                 if (!isTempDuringBreak) {
-                    productiveMinutes += 5; // Count 5 minutes of production
+                    productiveMinutes += 5;
                 }
 
                 tempTime.setMinutes(tempTime.getMinutes() + 5);
@@ -182,7 +177,6 @@ const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds
             isBreak: isDuringBreak
         });
 
-        // Move to next 5-minute interval
         currentTime.setMinutes(currentTime.getMinutes() + 5);
     }
 
@@ -246,7 +240,10 @@ const ReportCharts = ({
     xField,
     title,
     comboConfig,
-    calculatedFields = []
+    calculatedFields = [],
+    selectedShiftPeriod = "current",
+    currentShift1 = "A",
+    showConfiguration
 }) => {
     console.log('ReportCharts rendering with:', {
         data: data?.length,
@@ -277,41 +274,44 @@ const ReportCharts = ({
     const [lastUpdate, setLastUpdate] = useState(new Date());
 
     // Auto-refresh effect for shift charts
+    // In ReportCharts.jsx, update the shift case useEffect:
+
     useEffect(() => {
-        let interval;
-        if (autoRefresh && type === 'shift') {
-            const fetchRealTimeData = async () => {
-                try {
-                    // Replace with your actual API endpoint
-                    const response = await fetch('/api/shift-production-data');
-                    if (response.ok) {
-                        const newData = await response.json();
-                        setRealTimeData(newData);
-                    } else {
-                        // Fallback to simulated data
-                        const simulatedData = generateSimulatedData();
-                        setRealTimeData(simulatedData);
-                    }
-                    setLastUpdate(new Date());
-                } catch (error) {
-                    console.error('Failed to fetch real-time data:', error);
-                    // Fallback to simulated data
-                    const simulatedData = generateSimulatedData();
-                    setRealTimeData(simulatedData);
-                    setLastUpdate(new Date());
-                }
-            };
-
-            // Initial load
-            fetchRealTimeData();
-
-            // Set up interval
-            interval = setInterval(fetchRealTimeData, 60000); // Refresh every 1 minute
+        if (selectedShiftPeriod === "current") {
+            setCurrentShift(currentShift1);
+            setShiftConfig(prev => ({
+                ...prev,
+                shift: currentShift1,
+                startTime: SHIFT_CONFIG[currentShift].startTime,
+                endTime: SHIFT_CONFIG[currentShift].endTime,
+                breaks: SHIFT_CONFIG[currentShift].defaultBreaks.map(b => ({ ...b }))
+            }));
+        } else if (selectedShiftPeriod === "fullday") {
+            // Set full day configuration (06:00 to 06:00 next day - 24 hours)
+            setShiftConfig(prev => ({
+                ...prev,
+                shift: "FULLDAY",
+                startTime: "06:00",
+                endTime: "06:00", // This represents 06:00 next day
+                targetParts: shiftConfig.targetParts * 3, // 3x target for full day (3 shifts)
+                breaks: [
+                    ...SHIFT_CONFIG.A.defaultBreaks,
+                    ...SHIFT_CONFIG.B.defaultBreaks,
+                    ...SHIFT_CONFIG.C.defaultBreaks
+                ]
+            }));
+        } else {
+            // Specific shift selected
+            setCurrentShift(selectedShiftPeriod);
+            setShiftConfig(prev => ({
+                ...prev,
+                shift: selectedShiftPeriod,
+                startTime: SHIFT_CONFIG[selectedShiftPeriod].startTime,
+                endTime: SHIFT_CONFIG[selectedShiftPeriod].endTime,
+                breaks: SHIFT_CONFIG[selectedShiftPeriod].defaultBreaks.map(b => ({ ...b }))
+            }));
         }
-        return () => {
-            if (interval) clearInterval(interval);
-        };
-    }, [autoRefresh, type, shiftConfig]);
+    }, [selectedShiftPeriod, currentShift]);
 
     const generateSimulatedData = () => {
         const targetData = calculateTargetLine(
@@ -1194,30 +1194,32 @@ const ReportCharts = ({
                                 </>
                             )}
                         </div>
-                        <div className="flex items-center space-x-4">
-                            <div className="flex items-center space-x-2">
-                                <div className={`w-3 h-3 rounded-full ${autoRefresh ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                <span className="text-sm text-gray-600">
-                                    {autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
-                                </span>
+                        {showConfiguration && (  // Only show controls in designer
+                            <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${autoRefresh ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                    <span className="text-sm text-gray-600">
+                                        {autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => setAutoRefresh(!autoRefresh)}
+                                    className={`p-2 rounded-lg ${autoRefresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}
+                                >
+                                    {autoRefresh ? <Pause size={20} /> : <Play size={20} />}
+                                </button>
+                                <button
+                                    onClick={() => setShowConfig(!showConfig)}
+                                    className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                                >
+                                    <Settings size={20} />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setAutoRefresh(!autoRefresh)}
-                                className={`p-2 rounded-lg ${autoRefresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}
-                            >
-                                {autoRefresh ? <Pause size={20} /> : <Play size={20} />}
-                            </button>
-                            <button
-                                onClick={() => setShowConfig(!showConfig)}
-                                className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
-                            >
-                                <Settings size={20} />
-                            </button>
-                        </div>
+                        )}
                     </div>
 
                     {/* Configuration Panel */}
-                    {showConfig && (
+                    {showConfiguration && showConfig && (
                         <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold text-gray-800">Configuration</h3>
@@ -1288,10 +1290,17 @@ const ReportCharts = ({
                                     <input
                                         type="number"
                                         min="1"
+                                        step="0.01" // Allows decimal values
                                         value={shiftConfig.cycleTimeSeconds}
-                                        onChange={(e) => setShiftConfig({ ...shiftConfig, cycleTimeSeconds: parseInt(e.target.value) })}
+                                        onChange={(e) =>
+                                            setShiftConfig({
+                                                ...shiftConfig,
+                                                cycleTimeSeconds: parseFloat(e.target.value) || 0, // Parse as float and handle empty input
+                                            })
+                                        }
                                         className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                     />
+
                                 </div>
 
                                 {/* Break Management */}

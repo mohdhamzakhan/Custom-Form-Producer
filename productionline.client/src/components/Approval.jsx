@@ -192,10 +192,22 @@ export default function ApprovalPage() {
     const isGridValue = (value) => {
         try {
             const parsed = JSON.parse(value);
-            return Array.isArray(parsed) && typeof parsed[0] === 'object';
+            return Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object';
         } catch {
             return false;
         }
+    };
+
+    const getGridColumns = (gridData) => {
+        if (!gridData || gridData.length === 0) return [];
+
+        // Get all unique column names from all rows
+        const columnSet = new Set();
+        gridData.forEach(row => {
+            Object.keys(row).forEach(key => columnSet.add(key));
+        });
+
+        return Array.from(columnSet);
     };
 
 
@@ -204,7 +216,7 @@ export default function ApprovalPage() {
 
     return (
         <Layout>
-            <div className="p-4 max-w-3xl mx-auto bg-white rounded-xl shadow-md">
+            <div className="p-4 max-w-1xl mx-auto bg-white rounded-xl shadow-md">
                 <h2 className="text-2xl font-bold mb-6">Approve Submission</h2>
 
                 {/* Submission Details */}
@@ -231,42 +243,60 @@ export default function ApprovalPage() {
                     {/* Important Fields */}
                     <div className="mt-6">
                         <h3 className="text-lg font-semibold mb-2">Important Fields</h3>
-                        <div className="space-y-2">
-                            {console.log(processedData) }
+                        <div className="space-y-4">
                             {processedData.map((item, index) => (
-                                <div key={index}>
-                                    <p className="text-gray-700">
-                                        <strong>{item.label}:</strong>
+                                <div key={index} className="border-b pb-3">
+                                    <p className="text-gray-700 font-medium mb-1">
+                                        {item.label}
                                     </p>
                                     {isGridValue(item.value) ? (
-                                        <div className="overflow-auto mt-1 border rounded">
-                                            <table className="min-w-full text-sm text-left border-collapse border border-gray-300">
-                                                <thead className="bg-gray-100">
-                                                    <tr>
-                                                        {Object.keys(JSON.parse(item.value)[0] || {}).map((col, idx) => (
-                                                            <th key={idx} className="px-4 py-2 border">{col}</th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {JSON.parse(item.value).map((row, rIdx) => (
-                                                        <tr key={rIdx} className="border-t">
-                                                            {Object.values(row).map((cell, cIdx) => (
-                                                                <td key={cIdx} className="px-4 py-2 border">{cell}</td>
+                                        <div className="w-full overflow-x-auto border border-gray-300 rounded">
+                                            {(() => {
+                                                const gridData = JSON.parse(item.value);
+                                                const columns = getGridColumns(gridData);
+
+                                                return (
+                                                    <table className="w-full text-sm text-left">
+                                                        <thead className="bg-gray-100">
+                                                            <tr>
+                                                                {columns.map((col, idx) => (
+                                                                    <th key={idx} className="px-2 py-1 border-b border-r whitespace-nowrap font-medium">
+                                                                        {col}
+                                                                    </th>
+                                                                ))}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {gridData.map((row, rIdx) => (
+                                                                <tr key={rIdx} className="border-b hover:bg-gray-50">
+                                                                    {columns.map((col, cIdx) => {
+                                                                        const cellValue = row[col];
+                                                                        return (
+                                                                            <td key={cIdx} className="px-2 py-1 border-r whitespace-nowrap">
+                                                                                {cellValue !== undefined && cellValue !== null
+                                                                                    ? (typeof cellValue === 'boolean' ? String(cellValue) : String(cellValue))
+                                                                                    : ''}
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                </tr>
                                                             ))}
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                        </tbody>
+                                                    </table>
+                                                );
+                                            })()}
                                         </div>
                                     ) : (
-                                        <p className="ml-4">{item.value}</p>
+                                        <p className="ml-4 break-words">{item.value}</p>
                                     )}
 
                                     {item.remark && (
-                                        <p className="ml-4 italic text-gray-600">
-                                            Remark: {item.remark}
-                                        </p>
+                                        <div className="ml-4 mt-2 bg-gray-50 p-2 rounded">
+                                            <p className="text-sm text-gray-600">Remark:</p>
+                                            <p className="italic text-gray-700 break-words">
+                                                {item.remark}
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
                             ))}

@@ -11,6 +11,7 @@ namespace productionLine.Server.DTO
         public List<KeyFieldMapping>? KeyFieldMappings { get; set; }
         public List<FieldDto> Fields { get; set; } = new();
         public List<ApproverDto> Approvers { get; set; }
+        public List<ApproverDto> allowedUsers { get; set; }
     }
 
     public class ApproverDto

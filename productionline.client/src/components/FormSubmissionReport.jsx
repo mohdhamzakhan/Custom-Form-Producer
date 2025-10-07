@@ -3,15 +3,19 @@ import { useNavigate } from "react-router-dom";
 import Layout from "./Layout";
 import { APP_CONSTANTS } from "./store";
 
+const getUrlParam = (name) => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get(name);
+};
 export default function FormSubmissionReport() {
     const [forms, setForms] = useState([]);
-    const [selectedFormId, setSelectedFormId] = useState("");
     const [formDefinition, setFormDefinition] = useState(null);
     const [submissions, setSubmissions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [user, setUser] = useState(null);
-    const [viewMode, setViewMode] = useState("byForm");
+    const [selectedFormId, setSelectedFormId] = useState(getUrlParam("formId") || "");
+    const [viewMode, setViewMode] = useState(getUrlParam("view") || "byForm");
 
     const navigate = useNavigate();
 
@@ -59,26 +63,52 @@ export default function FormSubmissionReport() {
         fetchForms();
     }, [user]);
 
+    // Add this useEffect to handle when user comes back via back button
     useEffect(() => {
-        if (!selectedFormId || viewMode !== "byForm") return;
+        if (selectedFormId && viewMode === "byForm" && user && !formDefinition) {
+            const fetchFormDefinition = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForms/${selectedFormId}`);
+                    if (!response.ok) throw new Error("Unable to retrieve form data");
 
-        const fetchFormDefinition = async () => {
-            setLoading(true);
-            try {
-                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForms/${selectedFormId}`);
-                if (!response.ok) throw new Error("Unable to retrieve form data");
+                    const data = await response.json();
+                    setFormDefinition(data);
+                    fetchSubmissions(selectedFormId);
+                } catch (err) {
+                    setError(err.message || "Failed to load form definition");
+                    setLoading(false);
+                }
+            };
 
-                const data = await response.json();
-                setFormDefinition(data);
-                fetchSubmissions(selectedFormId);
-            } catch (err) {
-                setError(err.message || "Failed to load form definition");
-                setLoading(false);
-            }
+            fetchFormDefinition();
+        }
+    }, [selectedFormId, viewMode, user, formDefinition]);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            setViewMode(getUrlParam("view") || "byForm");
+            setSelectedFormId(getUrlParam("formId") || "");
         };
 
-        fetchFormDefinition();
-    }, [selectedFormId]);
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    
+
+    const updateUrlParams = (params) => {
+        const searchParams = new URLSearchParams(window.location.search);
+        Object.entries(params).forEach(([key, value]) => {
+            if (value) {
+                searchParams.set(key, value);
+            } else {
+                searchParams.delete(key);
+            }
+        });
+        const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
+        window.history.pushState({}, '', newUrl);
+    };
 
     const fetchSubmissions = async (formId) => {
         try {
@@ -111,10 +141,18 @@ export default function FormSubmissionReport() {
     };
 
     const handleFormChange = (e) => {
-        setSelectedFormId(e.target.value);
+        const formId = e.target.value;  // You had this line
+        setSelectedFormId(formId);      // This is correct
         setFormDefinition(null);
         setSubmissions([]);
         setError(null);
+
+        // Fix: Use formId variable, not undefined formId
+        if (formId) {
+            updateUrlParams({ view: viewMode, formId: formId });
+        } else {
+            updateUrlParams({ view: viewMode });
+        }
     };
 
     const groupSubmissionsBySubmissionId = () => {
@@ -261,7 +299,21 @@ export default function FormSubmissionReport() {
         return true;
     }
 
+    const canEditSubmission = (submission) => {
+        // Can edit if:
+        // 1. No approvals yet, OR
+        // 2. Has approvals but none are approved yet (all are pending)
+        if (!submission.approvals || submission.approvals.length === 0) {
+            return true;
+        }
 
+        // Check if any approval has been given (Approved or Rejected)
+        const hasDecision = submission.approvals.some(a =>
+            a.status === "Approved" || a.status === "Rejected"
+        );
+
+        return !hasDecision;
+    };
 
     return (
         <Layout>
@@ -280,7 +332,10 @@ export default function FormSubmissionReport() {
                             ? "border-blue-500 text-blue-600"
                             : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                             }`}
-                        onClick={() => setViewMode("byForm")}
+                        onClick={() => {
+                            setViewMode("byForm");
+                            updateUrlParams({ view: "byForm", formId: selectedFormId });
+                        }}
                     >
                         View by Form
                     </button>
@@ -295,6 +350,7 @@ export default function FormSubmissionReport() {
                             setSubmissions([]);
                             setError(null);
                             setViewMode("pendingOnly");
+                            updateUrlParams({ view: "pendingOnly" });
                             fetchAllPendingSubmissions(user);
                         }}
                     >
@@ -380,6 +436,15 @@ export default function FormSubmissionReport() {
                                                     <span className="text-gray-400 font-semibold">Waiting for previous approval</span>
                                                 )}
 
+                                                {/* Add Edit button - shows only if submission can be edited */}
+                                                {canEditSubmission(submission) && (
+                                                    <button
+                                                        onClick={() => navigate(`/form/dms-motor`)}
+                                                        className="ml-2 bg-orange-500 hover:bg-orange-700 text-white font-bold py-1 px-3 rounded text-sm"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                )}
 
                                                 <button
                                                     onClick={() => viewSubmissionDetails(submission.id)}
