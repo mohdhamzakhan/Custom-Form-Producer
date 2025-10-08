@@ -54,6 +54,15 @@ function App() {
                     <Route path="/form/:formId" element={<DynamicForm />} />
 
                     <Route
+                        path="/form/:formId/:submissionId"
+                        element={
+                            <ProtectedRoute>
+                                <DynamicForm />
+                            </ProtectedRoute>
+                        }
+                    />
+
+                    <Route
                         path="/reports"
                         element={
                             <ProtectedRoute>

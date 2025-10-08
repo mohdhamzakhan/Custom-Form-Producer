@@ -134,6 +134,8 @@ export default function FormSubmissionReport() {
             if (!response.ok) throw new Error("Failed to fetch pending submissions");
 
             const data = await response.json();
+
+            console.log(data)
             setSubmissions(data);
         } catch (err) {
             setError(err.message || "Failed to fetch pending approvals");
@@ -439,7 +441,7 @@ export default function FormSubmissionReport() {
                                                 {/* Add Edit button - shows only if submission can be edited */}
                                                 {canEditSubmission(submission) && (
                                                     <button
-                                                        onClick={() => navigate(`/form/dms-motor`)}
+                                                        onClick={() => navigate(`/form/${submission.form.name}/${submission.id}`)}
                                                         className="ml-2 bg-orange-500 hover:bg-orange-700 text-white font-bold py-1 px-3 rounded text-sm"
                                                     >
                                                         Edit

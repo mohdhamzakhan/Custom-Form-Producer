@@ -146,11 +146,6 @@ export default function DynamicForm() {
             // Prevent infinite loops
             if (updatingLinkedFields.current) return;
 
-            if (isEditMode.current) {
-                console.log('⏭️ Skipping linked data load - in edit mode');
-                return;
-            }
-
             console.log('🚀 loadLinkedDataAutomatically called');
 
             if (!formData?.linkedFormId || !formData?.keyFieldMappings?.length) {
@@ -262,18 +257,6 @@ export default function DynamicForm() {
         formData?.linkedFormId,
         formData?.keyFieldMappings?.length
     ]);
-
-    const handleNewSubmission = () => {
-        isEditMode.current = false;
-        setEditingSubmissionId(null);
-        // Reset form values to initial state
-        const initialValues = {};
-        formData.fields.forEach((field) => {
-            // Your existing initialization logic
-        });
-        setFormValues(initialValues);
-        setRemarks({});
-    };
 
     const clearLinkedTextboxFields = () => {
         console.log('🧹 Attempting to clear linked textbox fields');
@@ -582,57 +565,23 @@ export default function DynamicForm() {
         }
     };
 
-    //const handleEditSubmission = async (submissionId) => {
-    //    setIsModalOpen(false);
-    //    setEditingSubmissionId(submissionId);
-
-    //    try {
-    //        const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
-    //        if (!res.ok) throw new Error("Failed to load submission");
-
-    //        const json = await res.json();
-
-    //        const submission = json.submission;
-    //        const submissionData = submission.submissionData;
-    //        const formDefinition = json.formDefinition;
-
-    //        // Optional: update form structure if needed
-    //        setFormData(formDefinition);
-
-    //        const updatedValues = {};
-    //        const updatedRemarks = {};
-
-    //        for (const item of submissionData) {
-    //            if (item.fieldLabel.endsWith("(Remark)")) {
-    //                const baseLabel = item.fieldLabel.replace(" (Remark)", "");
-    //                updatedRemarks[baseLabel] = item.fieldValue;
-    //            } else {
-    //                updatedValues[item.fieldLabel] = parseFieldValue(item.fieldLabel, item.fieldValue);
-    //            }
-    //        }
-
-    //        setFormValues(updatedValues);
-    //        setRemarks(updatedRemarks);
-    //    } catch (err) {
-    //        console.error("Error loading submission:", err);
-    //        alert("Failed to load submission for editing.");
-    //    }
-    //};
-
     const handleEditSubmission = async (submissionId) => {
         setIsModalOpen(false);
         setEditingSubmissionId(submissionId);
-        isEditMode.current = true; // Set edit mode flag
 
         try {
             const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
             if (!res.ok) throw new Error("Failed to load submission");
+
             const json = await res.json();
+
             const submission = json.submission;
             const submissionData = submission.submissionData;
             const formDefinition = json.formDefinition;
 
+            // Optional: update form structure if needed
             setFormData(formDefinition);
+
             const updatedValues = {};
             const updatedRemarks = {};
 
@@ -647,16 +596,9 @@ export default function DynamicForm() {
 
             setFormValues(updatedValues);
             setRemarks(updatedRemarks);
-
-            // Reset edit mode after values are set
-            setTimeout(() => {
-                isEditMode.current = false;
-            }, 500);
-
         } catch (err) {
             console.error("Error loading submission:", err);
             alert("Failed to load submission for editing.");
-            isEditMode.current = false;
         }
     };
 
