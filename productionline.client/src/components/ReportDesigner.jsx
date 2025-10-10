@@ -304,7 +304,10 @@ export default function EnhancedReportDesigner() {
                             col: chart.position?.Col ?? chart.position?.col ?? 0,
                             width: chart.position?.Width ?? chart.position?.width ?? 12,
                             height: chart.position?.Height ?? chart.position?.height ?? 6,
-                        }
+                        },
+                        shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ?
+                            chart.shiftConfigs :
+                            (chart.shiftConfig ? [chart.shiftConfig] : null) // Backward compatibility
                     }));
                 } else {
                     // Handle single chart object (backward compatibility)
@@ -320,7 +323,10 @@ export default function EnhancedReportDesigner() {
                             width: data.chartConfig.position?.Width ?? 12,
                             height: data.chartConfig.position?.Height ?? 6
                         },
-                        comboConfig: data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] }
+                        comboConfig: data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] },
+                        shiftConfigs: data.chartConfig.type === 'shift' && data.chartConfig.shiftConfigs ?
+                            data.chartConfig.shiftConfigs :
+                            (data.chartConfig.shiftConfig ? [data.chartConfig.shiftConfig] : null)
                     }];
                 }
             }
@@ -515,6 +521,194 @@ export default function EnhancedReportDesigner() {
         alert("Opening report preview...");
     };
 
+    //const saveTemplate = async () => {
+    //    // Validation
+    //    if (!templateName.trim()) {
+    //        setError("Please enter a template name");
+    //        return;
+    //    }
+
+    //    if (selectedFields.length === 0) {
+    //        setError("Please select at least one field");
+    //        return;
+    //    }
+
+    //    // Clear previous messages
+    //    setError(null);
+    //    setSuccess(null);
+
+    //    //console.log(filters)
+    //    // Check filter validity
+    //    const invalidFilters = filters.filter(f => !f.field || !f.condition);
+    //    if (invalidFilters.length > 0) {
+    //        setError("Please complete all filter criteria or remove incomplete filters");
+    //        return;
+    //    }
+
+    //    console.log(calculatedFields)
+    //    // Check calculated fields validity
+    //    const invalidCalcs = calculatedFields.filter(c => !c.label || !c.formula);
+    //    if (invalidCalcs.length > 0) {
+    //        setError("Please complete all calculated fields or remove incomplete ones");
+    //        return;
+    //    }
+
+    //    // Validate charts
+    //    const invalidCharts = chartConfigs.filter(chart => {
+    //        if (!chart.title || chart.metrics.length === 0) return true;
+    //        if (chart.type === "combo" && (!chart.comboConfig.barMetrics?.length && !chart.comboConfig.lineMetrics?.length)) return true;
+    //        return false;
+    //    });
+
+
+    //    console.log("Config", chartConfigs)
+
+    //    if (invalidCharts.length > 0) {
+    //        setError("Please complete all chart configurations or remove incomplete ones");
+    //        return;
+    //    }
+
+    //    const filtersToSave = filters.map(f => {
+    //        const matchedField = fields.find(field => field.id === f.field);
+    //        console.log(matchedField)
+    //        return {
+    //            fieldLabel: matchedField?.id || f.field,    // REQUIRED to match on load
+    //            operator: f.condition,
+    //            value: f.value,
+    //            type: matchedField?.type || f.type || "text"
+    //        };
+    //    });
+    //    //console.log(filtersToSave)
+    //    // Prepare payload
+    //    const payload = {
+    //        Id: reportId ? parseInt(reportId) : 0,
+    //        formId: parseInt(selectedFormId),
+    //        name: templateName,
+    //        createdBy: localStorage.getItem("user")
+    //            ? JSON.parse(localStorage.getItem("user")).username
+    //            : "system",
+    //        includeApprovals: options.includeApprovals,
+    //        includeRemarks: options.includeRemarks,
+    //        isShared: options.isShared,
+    //        sharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
+    //        fields: selectedFields.map((fieldId, index) => {
+    //            const field = fields.find(f => f.id === fieldId);
+    //            return {
+    //                fieldId: fieldId,
+    //                fieldLabel: field?.label || fieldId,
+    //                order: index
+    //            };
+    //        }),
+    //        filters: filtersToSave,
+    //        calculatedFields: calculatedFields.map(c => ({
+    //            calculationType: c.calculationType || "aggregate",
+    //            description: c.description || "",
+    //            format: c.format || "decimal",
+    //            formula: c.formula,
+    //            functionType: c.functionType || "",
+    //            id: c.id,
+    //            label: c.label,
+    //            precision: c.precision || 2,
+    //            showOneRowPerGroup: c.showOneRowPerGroup || false,
+    //            sortOrder: c.sortOrder,
+    //            sourceFields: c.sourceFields || [],
+    //            windowSize: c.windowSize || 3
+    //        })),
+    //        // UPDATED: Save multiple chart configurations
+    //        chartConfigs: chartConfigs.map(chart => ({
+    //            id: chart.id,
+    //            title: chart.title,
+    //            type: chart.type,
+    //            // Convert field IDs to field labels for storage
+    //            metrics: chart.metrics.map(metricId => {
+    //                const field = fields.find(f => f.id === metricId);
+    //                return field ? field.label : metricId;
+    //            }),
+    //            // Convert xField ID to label
+    //            xField: (() => {
+    //                if (!chart.xField) return null;
+    //                const field = fields.find(f => f.id === chart.xField);
+    //                return field ? field.label : chart.xField;
+    //            })(),
+    //            position: chart.position,
+    //            comboConfig: {
+    //                // Convert combo config IDs to labels
+    //                barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
+    //                    const field = fields.find(f => f.id === metricId);
+    //                    return field ? field.label : metricId;
+    //                }),
+    //                lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
+    //                    const field = fields.find(f => f.id === metricId);
+    //                    return field ? field.label : metricId;
+    //                })
+    //            },
+    //            // ✅ CORRECTED: Include shiftConfig properly
+    //            shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ? chart.shiftConfigs : null
+    //        }))
+    //    };
+
+    //    console.log('Charts being saved:', payload.ChartConfigs);
+
+    //    if (payload.ChartConfigs) {
+    //        const shiftCharts = payload.ChartConfigs.filter(c => c.type === 'shift');
+    //        console.log('Shift charts with configs:', shiftCharts.map(c => ({
+    //            id: c.id,
+    //            title: c.title,
+    //            shiftConfigs: c.shiftConfigs
+    //        })));
+    //    }
+    //    const shiftCharts = payload.ChartConfigs.filter(c => c.type === 'shift');
+    //    console.log('Shift charts with configs:', shiftCharts.map(c => ({
+    //        id: c.id,
+    //        title: c.title,
+    //        shiftConfigs: c.shiftConfigs
+    //    })));
+
+    //    const fixedPayload = {
+    //        Id: payload.Id,
+    //        FormId: payload.formId,
+    //        Name: payload.name,
+    //        CreatedBy: payload.createdBy,
+    //        IncludeApprovals: payload.includeApprovals,
+    //        IncludeRemarks: payload.includeRemarks,
+    //        SharedWithRole: payload.sharedWithRole,
+    //        Fields: payload.fields,
+    //        Filters: payload.filters,
+    //        CalculatedFields: payload.calculatedFields,
+    //        ChartConfigs: payload.chartConfigs
+    //    };
+    //    console.log("Payload", payload)
+    //    console.log("fixed Payload", fixedPayload)
+    //    try {
+    //        const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
+    //            method: "POST",
+    //            headers: {
+    //                "Content-Type": "application/json-patch+json"
+    //            },
+    //            body: JSON.stringify(payload)
+    //        });
+
+    //        const data = await response.json();
+
+    //        if (response.ok) {
+    //            console.log("Reported Saved Successfully")
+    //            setSuccess("Report template saved successfully!");
+    //            toast.success("Report template saved successfully!");
+    //            // Optionally: redirect to the report viewer
+    //            console.log(data)
+    //            if (data && data.id) {
+    //                setTimeout(() => {
+    //                    navigate(`/reports/view/${data.id}`);
+    //                }, 1500);
+    //            }
+    //        } else {
+    //            setError("Failed to save template: " + (data.message || "Unknown error"));
+    //        }
+    //    } catch (err) {
+    //        setError("Failed to save template: " + (err.message || "Unknown error"));
+    //    }
+    //};
+
     const saveTemplate = async () => {
         // Validation
         if (!templateName.trim()) {
@@ -530,8 +724,7 @@ export default function EnhancedReportDesigner() {
         // Clear previous messages
         setError(null);
         setSuccess(null);
-        
-        //console.log(filters)
+
         // Check filter validity
         const invalidFilters = filters.filter(f => !f.field || !f.condition);
         if (invalidFilters.length > 0) {
@@ -554,6 +747,8 @@ export default function EnhancedReportDesigner() {
             return false;
         });
 
+        console.log("Config", chartConfigs)
+
         if (invalidCharts.length > 0) {
             setError("Please complete all chart configurations or remove incomplete ones");
             return;
@@ -569,20 +764,18 @@ export default function EnhancedReportDesigner() {
                 type: matchedField?.type || f.type || "text"
             };
         });
-        //console.log(filtersToSave)
-        // Prepare payload
+
         const payload = {
             Id: reportId ? parseInt(reportId) : 0,
-            formId: parseInt(selectedFormId),
-            name: templateName,
-            createdBy: localStorage.getItem("user")
+            FormId: parseInt(selectedFormId),
+            Name: templateName,
+            CreatedBy: localStorage.getItem("user")
                 ? JSON.parse(localStorage.getItem("user")).username
                 : "system",
-            includeApprovals: options.includeApprovals,
-            includeRemarks: options.includeRemarks,
-            isShared: options.isShared,
-            sharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
-            fields: selectedFields.map((fieldId, index) => {
+            IncludeApprovals: options.includeApprovals,
+            IncludeRemarks: options.includeRemarks,
+            SharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
+            Fields: selectedFields.map((fieldId, index) => {
                 const field = fields.find(f => f.id === fieldId);
                 return {
                     fieldId: fieldId,
@@ -590,8 +783,8 @@ export default function EnhancedReportDesigner() {
                     order: index
                 };
             }),
-            filters: filtersToSave,
-            calculatedFields: calculatedFields.map(c => ({
+            Filters: filtersToSave,
+            CalculatedFields: calculatedFields.map(c => ({
                 calculationType: c.calculationType || "aggregate",
                 description: c.description || "",
                 format: c.format || "decimal",
@@ -605,17 +798,14 @@ export default function EnhancedReportDesigner() {
                 sourceFields: c.sourceFields || [],
                 windowSize: c.windowSize || 3
             })),
-            // UPDATED: Save multiple chart configurations
-            chartConfigs: chartConfigs.map(chart => ({
+            ChartConfigs: chartConfigs.map(chart => ({
                 id: chart.id,
                 title: chart.title,
                 type: chart.type,
-                // Convert field IDs to field labels for storage
                 metrics: chart.metrics.map(metricId => {
                     const field = fields.find(f => f.id === metricId);
                     return field ? field.label : metricId;
                 }),
-                // Convert xField ID to label
                 xField: (() => {
                     if (!chart.xField) return null;
                     const field = fields.find(f => f.id === chart.xField);
@@ -623,7 +813,6 @@ export default function EnhancedReportDesigner() {
                 })(),
                 position: chart.position,
                 comboConfig: {
-                    // Convert combo config IDs to labels
                     barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
                         const field = fields.find(f => f.id === metricId);
                         return field ? field.label : metricId;
@@ -632,54 +821,88 @@ export default function EnhancedReportDesigner() {
                         const field = fields.find(f => f.id === metricId);
                         return field ? field.label : metricId;
                     })
-                }
+                },
+                // ✅ PRIMARY: Multiple shift configurations (your main goal)
+                shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ? chart.shiftConfigs : null,
+
+                // ✅ COMPATIBILITY: Single shift config to satisfy backend validation
+                shiftConfig: chart.type === 'shift' && chart.shiftConfigs && chart.shiftConfigs.length > 0
+                    ? {
+                        targetParts: chart.shiftConfigs[0].targetParts,
+                        cycleTimeSeconds: chart.shiftConfigs[0].cycleTimeSeconds,
+                        shift: chart.shiftConfigs[0].shift,
+                        startTime: chart.shiftConfigs[0].startTime,
+                        endTime: chart.shiftConfigs[0].endTime,
+                        name: chart.shiftConfigs[0].name,
+                        breaks: chart.shiftConfigs[0].breaks
+                    }
+                    : null
             }))
         };
 
-        const fixedPayload = {
-            Id: payload.Id,
-            FormId: payload.formId,
-            Name: payload.name,
-            CreatedBy: payload.createdBy,
-            IncludeApprovals: payload.includeApprovals,
-            IncludeRemarks: payload.includeRemarks,
-            SharedWithRole: payload.sharedWithRole,
-            Fields: payload.fields,
-            Filters: payload.filters,
-            CalculatedFields: payload.calculatedFields,
-            ChartConfigs: payload.chartConfigs
-        };
-        console.log(payload)
-        console.log(fixedPayload)
+        // ✅ FIXED: Correct debugging - use the right property name
+        console.log('Charts being saved:', payload.ChartConfigs);
+
+        if (payload.ChartConfigs) {
+            const shiftCharts = payload.ChartConfigs.filter(c => c.type === 'shift');
+            console.log('Shift charts found:', shiftCharts.length);
+
+            shiftCharts.forEach((chart, index) => {
+                console.log(`Shift Chart ${index + 1} (${chart.title}):`, {
+                    shiftConfigs: chart.shiftConfigs,
+                    configCount: chart.shiftConfigs?.length || 0
+                });
+
+                if (chart.shiftConfigs) {
+                    chart.shiftConfigs.forEach((config, configIndex) => {
+                        console.log(`  Config ${configIndex + 1} - Shift ${config.shift}:`, {
+                            targetParts: config.targetParts,
+                            cycleTimeSeconds: config.cycleTimeSeconds,
+                            startTime: config.startTime,
+                            endTime: config.endTime,
+                            breaksCount: config.breaks?.length || 0
+                        });
+                    });
+                }
+            });
+        }
+
+        console.log("Complete Payload:", JSON.stringify(payload, null, 2));
+
+
         try {
+            // ✅ FIXED: Use the correct API constant and send the right payload
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json-patch+json"
                 },
-                body: JSON.stringify(fixedPayload)
+                body: JSON.stringify(payload) // ✅ FIXED: Send payload directly, not fixedPayload
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                console.log("Reported Saved Successfully")
+                console.log("Report Saved Successfully");
                 setSuccess("Report template saved successfully!");
                 toast.success("Report template saved successfully!");
-                // Optionally: redirect to the report viewer
-                console.log(data)
+
+                console.log("Response data:", data);
                 if (data && data.id) {
                     setTimeout(() => {
                         navigate(`/reports/view/${data.id}`);
                     }, 1500);
                 }
             } else {
+                console.error("Save failed:", data);
                 setError("Failed to save template: " + (data.message || "Unknown error"));
             }
         } catch (err) {
+            console.error("Save error:", err);
             setError("Failed to save template: " + (err.message || "Unknown error"));
         }
     };
+
 
     useEffect(() => {
         const fetchApprovedSubmissions = async () => {
@@ -1078,6 +1301,36 @@ export default function EnhancedReportDesigner() {
             };
         });
 
+        const chartConfigsToSave = chartConfigs.map(chart => ({
+            id: chart.id,
+            title: chart.title,
+            type: chart.type,
+            // Convert field IDs to field labels for storage
+            metrics: chart.metrics.map(metricId => {
+                const field = fields.find(f => f.id === metricId);
+                return field ? field.label : metricId;
+            }),
+            // Convert xField ID to label
+            xField: (() => {
+                if (!chart.xField) return null;
+                const field = fields.find(f => f.id === chart.xField);
+                return field ? field.label : chart.xField;
+            })(),
+            position: chart.position,
+            comboConfig: {
+                barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
+                    const field = fields.find(f => f.id === metricId);
+                    return field ? field.label : metricId;
+                }),
+                lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
+                    const field = fields.find(f => f.id === metricId);
+                    return field ? field.label : metricId;
+                })
+            },
+            // ✅ FIXED: Include shiftConfigs properly (plural)
+            shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ? chart.shiftConfigs : null
+        }));
+
         const payload = {
             Id: 0, // Always 0 for new copy
             FormId: parseInt(selectedFormId),
@@ -1111,31 +1364,7 @@ export default function EnhancedReportDesigner() {
                 sourceFields: c.sourceFields || [],
                 windowSize: c.windowSize || 3
             })),
-            ChartConfigs: chartConfigs.map(chart => ({
-                id: chart.id,
-                title: chart.title,
-                type: chart.type,
-                metrics: chart.metrics.map(metricId => {
-                    const field = fields.find(f => f.id === metricId);
-                    return field ? field.label : metricId;
-                }),
-                xField: (() => {
-                    if (!chart.xField) return null;
-                    const field = fields.find(f => f.id === chart.xField);
-                    return field ? field.label : chart.xField;
-                })(),
-                position: chart.position,
-                comboConfig: {
-                    barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
-                        const field = fields.find(f => f.id === metricId);
-                        return field ? field.label : metricId;
-                    }),
-                    lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
-                        const field = fields.find(f => f.id === metricId);
-                        return field ? field.label : metricId;
-                    })
-                }
-            }))
+            ChartConfigs: chartConfigsToSave // ✅ FIXED: Direct assignment
         };
 
         try {

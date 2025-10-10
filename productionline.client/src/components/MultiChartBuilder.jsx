@@ -1,7 +1,39 @@
 ﻿import React, { useState } from "react";
-import { Plus, X, BarChart3, Settings, Eye } from "lucide-react";
+import { Plus, X, BarChart3, Settings, Eye, Users, Clock, Target, Timer, Trash2 } from "lucide-react";
 import { CHART_TYPES } from "./ReportCharts";
 import ReportCharts from "./ReportCharts";
+
+const SHIFT_CONFIG = {
+    A: {
+        name: "Shift A",
+        startTime: "06:00",
+        endTime: "14:30",
+        defaultBreaks: [
+            { id: 1, startTime: "08:00", endTime: "08:10", name: "Tea Break" },
+            { id: 2, startTime: "11:30", endTime: "12:00", name: "Lunch Break" },
+            { id: 3, startTime: "13:00", endTime: "13:10", name: "Afternoon Break" },
+        ]
+    },
+    B: {
+        name: "Shift B",
+        startTime: "14:30",
+        endTime: "23:00",
+        defaultBreaks: [
+            { id: 1, startTime: "16:30", endTime: "16:40", name: "Evening Break" },
+            { id: 2, startTime: "20:00", endTime: "20:30", name: "Dinner Break" },
+            { id: 3, startTime: "21:30", endTime: "21:40", name: "Night Break" }
+        ]
+    },
+    C: {
+        name: "Shift C",
+        startTime: "23:00",
+        endTime: "06:00",
+        defaultBreaks: [
+            { id: 1, startTime: "01:00", endTime: "01:30", name: "Midnight Break" },
+            { id: 2, startTime: "04:00", endTime: "04:10", name: "Early Morning Break" },
+        ]
+    }
+};
 
 const MultiChartBuilder = ({
     chartConfigs,
@@ -14,6 +46,69 @@ const MultiChartBuilder = ({
     // CHANGED: Start expanded by default to make configuration visible
     const [isExpanded, setIsExpanded] = useState(true);
     const [previewMode, setPreviewMode] = useState(false);
+    const [showConfig, setShowConfig] = useState(true);
+
+    const initializeShiftConfigs = () => {
+        return Object.keys(SHIFT_CONFIG).map(shiftKey => ({
+            shift: shiftKey,
+            name: SHIFT_CONFIG[shiftKey].name,
+            startTime: SHIFT_CONFIG[shiftKey].startTime,
+            endTime: SHIFT_CONFIG[shiftKey].endTime,
+            targetParts: 100, // Default target
+            cycleTimeSeconds: 30, // Default cycle time
+            breaks: SHIFT_CONFIG[shiftKey].defaultBreaks.map(breakItem => ({
+                ...breakItem,
+                id: Date.now() + Math.random() // Ensure unique IDs
+            }))
+        }));
+    };
+
+    React.useEffect(() => {
+        let hasChanges = false;
+        const updatedCharts = chartConfigs.map(chart => {
+            if (chart.type === 'shift' && !chart.shiftConfigs) {
+                hasChanges = true;
+                return {
+                    ...chart,
+                    shiftConfigs: initializeShiftConfigs()
+                };
+            }
+            return chart;
+        });
+
+        if (hasChanges) {
+            setChartConfigs(updatedCharts);
+        }
+    }, [chartConfigs.length, chartConfigs.map(c => `${c.id}-${c.type}-${!!c.shiftConfigs}`).join(',')]);
+
+
+    // Ensure shift charts have shiftConfig initialized
+    React.useEffect(() => {
+        const updatedCharts = chartConfigs.map(chart => {
+            if (chart.type === 'shift' && !chart.shiftConfig) {
+                return {
+                    ...chart,
+                    shiftConfig: {
+                        targetParts: 100,
+                        cycleTimeSeconds: 30,
+                        shift: 'A',
+                        startTime: '06:00',
+                        endTime: '14:30',
+                        breaks: [
+                            { id: Date.now(), startTime: "08:00", endTime: "08:10", name: "Tea Break" },
+                            { id: Date.now() + 1, startTime: "11:30", endTime: "12:00", name: "Lunch Break" }
+                        ]
+                    }
+                };
+            }
+            return chart;
+        });
+
+        // Only update if something actually changed
+        if (JSON.stringify(updatedCharts) !== JSON.stringify(chartConfigs)) {
+            setChartConfigs(updatedCharts);
+        }
+    }, [chartConfigs]);
 
     const addChart = () => {
         const availableFields = getAvailableFields();
@@ -21,13 +116,21 @@ const MultiChartBuilder = ({
             id: Date.now(),
             title: `Chart ${chartConfigs.length + 1}`,
             type: "bar",
-            xField: availableFields[0]?.id || "",
-            metrics: availableFields.slice(0, 2).map(f => f.id),
-            position: { row: 0, col: 0, width: 12, height: 6 },
-            comboConfig: { barMetrics: [], lineMetrics: [] }
+            metrics: [],
+            xField: null,
+            position: {
+                row: chartConfigs.length * 6,
+                col: 0,
+                width: 12,
+                height: 6
+            },
+            comboConfig: {
+                barMetrics: [],
+                lineMetrics: []
+            }
+            // Don't initialize shiftConfig here - it will be added when type changes to 'shift'
         };
         setChartConfigs([...chartConfigs, newChart]);
-        // CHANGED: Auto-expand and show configuration when adding a chart
         setIsExpanded(true);
         setPreviewMode(false);
     };
@@ -38,6 +141,43 @@ const MultiChartBuilder = ({
                 chart.id === id ? { ...chart, ...updates } : chart
             )
         );
+    };
+
+    const handleChartTypeChange = (id, newType) => {
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== id) return chart;
+
+            if (newType === 'shift' && !chart.shiftConfigs) {
+                return {
+                    ...chart,
+                    type: newType,
+                    shiftConfigs: initializeShiftConfigs()
+                };
+            } else if (newType !== 'shift') {
+                const { shiftConfigs, ...rest } = chart;
+                return {
+                    ...rest,
+                    type: newType
+                };
+            }
+
+            return {
+                ...chart,
+                type: newType
+            };
+        }));
+    };
+
+    const updateShiftConfig = (chartId, shiftKey, updates) => {
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== chartId) return chart;
+
+            const newShiftConfigs = chart.shiftConfigs.map(config =>
+                config.shift === shiftKey ? { ...config, ...updates } : config
+            );
+
+            return { ...chart, shiftConfigs: newShiftConfigs };
+        }));
     };
 
     const removeChart = (id) => {
@@ -108,9 +248,268 @@ const MultiChartBuilder = ({
         }
 
         return null;
-    }; 
+    };
 
-    
+    const addBreak = (chartId, shiftKey) => {
+        const newBreak = {
+            id: Date.now(),
+            name: "New Break",
+            startTime: "10:00",
+            endTime: "10:10"
+        };
+
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== chartId) return chart;
+
+            const newShiftConfigs = chart.shiftConfigs.map(config =>
+                config.shift === shiftKey
+                    ? { ...config, breaks: [...config.breaks, newBreak] }
+                    : config
+            );
+
+            return { ...chart, shiftConfigs: newShiftConfigs };
+        }));
+    };
+
+    const removeBreak = (chartId, shiftKey, breakId) => {
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== chartId) return chart;
+
+            const newShiftConfigs = chart.shiftConfigs.map(config =>
+                config.shift === shiftKey
+                    ? { ...config, breaks: config.breaks.filter(b => b.id !== breakId) }
+                    : config
+            );
+
+            return { ...chart, shiftConfigs: newShiftConfigs };
+        }));
+    };
+
+    const updateBreak = (chartId, shiftKey, breakId, field, value) => {
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== chartId) return chart;
+
+            const newShiftConfigs = chart.shiftConfigs.map(config =>
+                config.shift === shiftKey
+                    ? {
+                        ...config,
+                        breaks: config.breaks.map(breakItem =>
+                            breakItem.id === breakId
+                                ? { ...breakItem, [field]: value }
+                                : breakItem
+                        )
+                    }
+                    : config
+            );
+
+            return { ...chart, shiftConfigs: newShiftConfigs };
+        }));
+    };
+
+    const resetToDefaults = (chartId) => {
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== chartId) return chart;
+            return {
+                ...chart,
+                shiftConfigs: initializeShiftConfigs()
+            };
+        }));
+    };
+
+    const handleShiftChange = (chartId, shiftKey, newShiftKey) => {
+        if (newShiftKey === shiftKey) return;
+
+        setChartConfigs(prev => prev.map(chart => {
+            if (chart.id !== chartId) return chart;
+
+            const newShiftConfigs = chart.shiftConfigs.map(config => {
+                if (config.shift === shiftKey) {
+                    return {
+                        ...config,
+                        shift: newShiftKey,
+                        name: SHIFT_CONFIG[newShiftKey].name,
+                        startTime: SHIFT_CONFIG[newShiftKey].startTime,
+                        endTime: SHIFT_CONFIG[newShiftKey].endTime,
+                        breaks: SHIFT_CONFIG[newShiftKey].defaultBreaks.map(breakItem => ({
+                            ...breakItem,
+                            id: Date.now() + Math.random()
+                        }))
+                    };
+                }
+                return config;
+            });
+
+            return { ...chart, shiftConfigs: newShiftConfigs };
+        }));
+    };
+
+    const renderShiftConfiguration = (chart) => {
+        if (chart.type !== 'shift' || !chart.shiftConfigs) return null;
+
+        return (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-semibold text-blue-800">
+                        ⚙️ Shift Configuration
+                    </h4>
+                    <div className="flex items-center space-x-2">
+                        <button
+                            onClick={() => resetToDefaults(chart.id)}
+                            className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                        >
+                            Reset to Defaults
+                        </button>
+                        <button
+                            onClick={() => setShowConfig(!showConfig)}
+                            className="px-3 py-1 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300"
+                        >
+                            {showConfig ? 'Hide Config' : 'Show Config'}
+                        </button>
+                    </div>
+                </div>
+
+                {showConfig && (
+                    <div className="space-y-6">
+                        {chart.shiftConfigs.map((shiftConfig) => (
+                            <div key={shiftConfig.shift} className="p-4 bg-white border border-blue-300 rounded-lg">
+                                <h5 className="font-semibold text-blue-700 mb-4">
+                                    🕒 {shiftConfig.name} Configuration
+                                </h5>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    {/* Shift Selection */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <Users className="inline w-4 h-4 mr-1" />
+                                            Select Shift
+                                        </label>
+                                        <select
+                                            value={shiftConfig.shift}
+                                            onChange={(e) => handleShiftChange(chart.id, shiftConfig.shift, e.target.value)}
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="A">Shift A (06:00 - 14:30)</option>
+                                            <option value="B">Shift B (14:30 - 23:00)</option>
+                                            <option value="C">Shift C (23:00 - 06:00)</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Shift Timing */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <Clock className="inline w-4 h-4 mr-1" />
+                                            Shift Start Time
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={shiftConfig.startTime}
+                                            onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, { startTime: e.target.value })}
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <label className="block text-sm font-medium text-gray-700 mt-2 mb-2">Shift End Time</label>
+                                        <input
+                                            type="time"
+                                            value={shiftConfig.endTime}
+                                            onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, { endTime: e.target.value })}
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* Production Settings */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <Target className="inline w-4 h-4 mr-1" />
+                                            Target Parts per Shift
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={shiftConfig.targetParts}
+                                            onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, { targetParts: parseInt(e.target.value) })}
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <label className="block text-sm font-medium text-gray-700 mt-2 mb-2">
+                                            <Timer className="inline w-4 h-4 mr-1" />
+                                            Cycle Time (seconds)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            step="0.01"
+                                            value={shiftConfig.cycleTimeSeconds}
+                                            onChange={(e) =>
+                                                updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                    cycleTimeSeconds: parseFloat(e.target.value) || 0
+                                                })
+                                            }
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* Break Management */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="text-sm font-medium text-gray-700">Breaks</label>
+                                            <button
+                                                onClick={() => addBreak(chart.id, shiftConfig.shift)}
+                                                className="p-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                                            >
+                                                <Plus size={16} />
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {shiftConfig.breaks.map((breakItem) => (
+                                                <div key={breakItem.id} className="p-2 bg-gray-50 rounded border">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <input
+                                                            type="text"
+                                                            value={breakItem.name}
+                                                            onChange={(e) => updateBreak(chart.id, shiftConfig.shift, breakItem.id, 'name', e.target.value)}
+                                                            className="text-xs font-medium bg-transparent border-none p-0 focus:outline-none flex-1"
+                                                        />
+                                                        <button
+                                                            onClick={() => removeBreak(chart.id, shiftConfig.shift, breakItem.id)}
+                                                            className="text-red-500 hover:text-red-700 ml-2"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-1">
+                                                        <input
+                                                            type="time"
+                                                            value={breakItem.startTime}
+                                                            onChange={(e) => updateBreak(chart.id, shiftConfig.shift, breakItem.id, 'startTime', e.target.value)}
+                                                            className="text-xs p-1 border rounded"
+                                                        />
+                                                        <input
+                                                            type="time"
+                                                            value={breakItem.endTime}
+                                                            onChange={(e) => updateBreak(chart.id, shiftConfig.shift, breakItem.id, 'endTime', e.target.value)}
+                                                            className="text-xs p-1 border rounded"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Production Rate Display */}
+                                <div className="mt-4 p-3 bg-blue-50 rounded border">
+                                    <div className="text-sm text-gray-600">Production Rate for {shiftConfig.name}</div>
+                                    <div className="text-lg font-bold text-blue-600">
+                                        {shiftConfig.cycleTimeSeconds > 0
+                                            ? Math.round(3600 / shiftConfig.cycleTimeSeconds)
+                                            : 0} parts/hour
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const renderChartConfiguration = (chart) => {
         const chartType = CHART_TYPES[chart.type];
@@ -181,7 +580,7 @@ const MultiChartBuilder = ({
                         </label>
                         <select
                             value={chart.type}
-                            onChange={(e) => updateChart(chart.id, { type: e.target.value })}
+                            onChange={(e) => handleChartTypeChange(chart.id, e.target.value)}
                             className="w-full border-2 border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
                             {Object.entries(CHART_TYPES).map(([key, config]) => (
@@ -367,6 +766,8 @@ const MultiChartBuilder = ({
                     </div>
                 )}
 
+                {renderShiftConfiguration(chart)}
+
                 {/* Chart Preview */}
                 {previewMode && !validation && (
                     <div className="border-t-2 pt-4">
@@ -386,8 +787,10 @@ const MultiChartBuilder = ({
                             xField={chart.xField}
                             title={chart.title}
                             comboConfig={chart.comboConfig}
-                            fields={fields}
                             calculatedFields={calculatedFields}
+                            showConfiguration={true} // Allow configuration in designer
+                            shiftConfig={chart.shiftConfig} // Pass existing config
+                            onConfigChange={(config) => updateChart(index, config)} // Handle changes
                         />
                     </div>
                 )}

@@ -78,15 +78,21 @@ const getCurrentShift = () => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
-    const currentTime = currentHour * 60 + currentMinute; // Convert to minutes from midnight
+    const currentTime = currentHour * 60 + currentMinute;
 
     // Shift A: 6:00 AM to 2:30 PM (360 to 870 minutes)
-    if (currentTime >= 360 && currentTime < 870) return 'A';
-    // Shift B: 2:30 PM to 11:00 PM (870 to 1380 minutes)
-    if (currentTime >= 870 && currentTime < 1380) return 'B';
+    if (currentTime >= 360 && currentTime < 870) {
+        return 'A';
+    }
+    // Shift B: 2:30 PM to 11:00 PM (870 to 1380 minutes) 
+    if (currentTime >= 870 && currentTime < 1380) {
+        return 'B';
+    }
     // Shift C: 11:00 PM to 6:00 AM next day
     return 'C';
-};
+}
+
+
 
 // Update the calculateTargetLine function to better handle 06:00 to 06:00 overnight
 const calculateTargetLine = (shiftStart, shiftEnd, targetParts, cycleTimeSeconds, breaks) => {
@@ -243,38 +249,170 @@ const ReportCharts = ({
     calculatedFields = [],
     selectedShiftPeriod = "current",
     currentShift1 = "A",
-    showConfiguration
+    showConfiguration = true,
+    shiftConfigs: passedShiftConfig = null,
+    isFullscreenMode = false,
+    lastUpdate = new Date()
 }) => {
-    console.log('ReportCharts rendering with:', {
-        data: data?.length,
-        metrics,
-        type,
-        xField,
-        title
-    });
+    console.log('=== ReportCharts Debug ===');
+    console.log('selectedShiftPeriod:', selectedShiftPeriod);
+    console.log('currentShift1:', currentShift1);
+    console.log('passedShiftConfig:', passedShiftConfig);
+    console.log('passedShiftConfig type:', typeof passedShiftConfig);
+    console.log('passedShiftConfig isArray:', Array.isArray(passedShiftConfig));
+
+    if (passedShiftConfig && Array.isArray(passedShiftConfig)) {
+        console.log('Shift configs details:');
+        passedShiftConfig.forEach((config, index) => {
+            console.log(`  Shift ${index}: ${config.shift} - Target: ${config.targetParts}`);
+        });
+    }
+
+    const getActiveShiftConfig = () => {
+        console.log('=== getActiveShiftConfig Debug ===');
+        console.log('selectedShiftPeriod:', selectedShiftPeriod);
+        console.log('currentShift1:', currentShift1);
+
+        if (!passedShiftConfig || !Array.isArray(passedShiftConfig)) {
+            console.log('❌ No shift configs available');
+            return null;
+        }
+
+        if (selectedShiftPeriod === 'current') {
+            const actualCurrentShift = getCurrentShift();
+            console.log('🕐 Actual current shift (from time):', actualCurrentShift);
+            console.log('📥 Passed currentShift1 prop:', currentShift1);
+
+            // Use the actual current shift from time, not the prop
+            const shiftToUse = actualCurrentShift; // or currentShift1 - depends on what you want
+            console.log('🎯 Using shift:', shiftToUse);
+
+            const currentConfig = passedShiftConfig.find(config => {
+                console.log(`Comparing config.shift "${config.shift}" === "${shiftToUse}"`);
+                return config.shift === shiftToUse;
+            });
+
+            console.log('✅ Found current config:', currentConfig);
+            return currentConfig || passedShiftConfig[0];
+        }
+
+        // If selectedShiftPeriod is 'fullday', combine all shifts
+        if (selectedShiftPeriod === 'fullday') {
+            console.log('Calculating fullday config');
+            const totalTarget = passedShiftConfig.reduce((sum, config) => {
+                console.log(`Adding ${config.targetParts} from shift ${config.shift}`);
+                return sum + (config.targetParts || 0);
+            }, 0);
+            console.log('Total target parts:', totalTarget);
+
+            const fullDayConfig = {
+                shift: 'Full Day',
+                name: 'Full Day (24h)',
+                targetParts: totalTarget,
+                cycleTimeSeconds: passedShiftConfig[0]?.cycleTimeSeconds || 30,
+                startTime: '06:00',
+                endTime: '05:59',
+                breaks: passedShiftConfig.flatMap(config => config.breaks || [])
+            };
+            console.log('Full day config:', fullDayConfig);
+            return fullDayConfig;
+        }
+
+        // Otherwise, find the specific shift (A, B, C)
+        console.log('Looking for specific shift:', selectedShiftPeriod);
+        const specificConfig = passedShiftConfig.find(config => config.shift === selectedShiftPeriod);
+        console.log('Found specific config:', specificConfig);
+        const result = specificConfig || passedShiftConfig[0];
+        console.log('Returning specific config:', result);
+        return result;
+    };
+
+    const activeShiftConfig = getActiveShiftConfig();
+    console.log('Final activeShiftConfig:', activeShiftConfig);
+
+    // ✅ DEBUG: Check what values are being used for display
+    if (type === 'shift') {
+        console.log('=== Shift Chart Display Values ===');
+        console.log('Title:', title);
+        console.log('Shift Name:', activeShiftConfig?.name || activeShiftConfig?.shift || 'Unknown');
+        console.log('Start Time:', activeShiftConfig?.startTime || 'Unknown');
+        console.log('End Time:', activeShiftConfig?.endTime || 'Unknown');
+        console.log('Target Parts:', activeShiftConfig?.targetParts || 'Unknown');
+        console.log('Cycle Time:', activeShiftConfig?.cycleTimeSeconds || 'Unknown');
+        console.log('Breaks Count:', activeShiftConfig?.breaks?.length || 0);
+    }
+
+
+
+    console.log('Active shift config:', activeShiftConfig);
+
 
     console.log('=== DEBUG REPORT CHARTS ===');
     console.log('xField:', xField);
     console.log('Raw data passed to charts:', data);
     console.log('Sample data item:', data[0]);
     console.log('Date field value:', data[0]?.[xField]);
+
     // State for shift chart configuration
     const [currentShift, setCurrentShift] = useState(getCurrentShift());
-    const [shiftConfig, setShiftConfig] = useState({
-        shift: currentShift,
-        startTime: SHIFT_CONFIG[currentShift].startTime,
-        endTime: SHIFT_CONFIG[currentShift].endTime,
-        targetParts: 100,
-        cycleTimeSeconds: 30,
-        breaks: SHIFT_CONFIG[currentShift].defaultBreaks.map(b => ({ ...b }))
+
+    // ✅ FIXED: Remove the problematic initialization and add useEffect
+    const [shiftConfig, setShiftConfig] = useState(() => {
+        // Simple fallback initialization - will be updated by useEffect
+        const shift = getCurrentShift();
+        return {
+            shift: shift,
+            startTime: SHIFT_CONFIG[shift].startTime,
+            endTime: SHIFT_CONFIG[shift].endTime,
+            targetParts: 100,
+            cycleTimeSeconds: 30,
+            breaks: SHIFT_CONFIG[shift].defaultBreaks.map(b => ({ ...b }))
+        };
     });
+
+    // ✅ ADD: Sync shiftConfig state with activeShiftConfig whenever it changes
+    useEffect(() => {
+        const currentActiveConfig = getActiveShiftConfig();
+
+        if (currentActiveConfig) {
+            console.log('🔄 Syncing shiftConfig state with activeShiftConfig:', currentActiveConfig);
+            setShiftConfig({
+                shift: currentActiveConfig.shift || getCurrentShift(),
+                name: currentActiveConfig.name || `Shift ${currentActiveConfig.shift}`,
+                startTime: currentActiveConfig.startTime || SHIFT_CONFIG[getCurrentShift()].startTime,
+                endTime: currentActiveConfig.endTime || SHIFT_CONFIG[getCurrentShift()].endTime,
+                targetParts: currentActiveConfig.targetParts || 100,
+                cycleTimeSeconds: currentActiveConfig.cycleTimeSeconds || 30,
+                breaks: currentActiveConfig.breaks || SHIFT_CONFIG[getCurrentShift()].defaultBreaks.map(b => ({ ...b }))
+            });
+        }
+    }, [passedShiftConfig, selectedShiftPeriod, currentShift1]); // Re-run when any of these change
+
+
+
     const [realTimeData, setRealTimeData] = useState([]);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [showConfig, setShowConfig] = useState(true);
-    const [lastUpdate, setLastUpdate] = useState(new Date());
+
+    const [configVisible, setConfigVisible] = useState(showConfiguration !== false);
+    const [configTimer, setConfigTimer] = useState(null);
 
     // Auto-refresh effect for shift charts
     // In ReportCharts.jsx, update the shift case useEffect:
+
+    useEffect(() => {
+        if (passedShiftConfig && type === 'shift') {
+            console.log('Syncing with passed config:', passedShiftConfig);
+            setShiftConfig({
+                shift: passedShiftConfig.shift || shiftConfig.shift,
+                startTime: passedShiftConfig.startTime || shiftConfig.startTime,
+                endTime: passedShiftConfig.endTime || shiftConfig.endTime,
+                targetParts: passedShiftConfig.targetParts || shiftConfig.targetParts,
+                cycleTimeSeconds: passedShiftConfig.cycleTimeSeconds || shiftConfig.cycleTimeSeconds,
+                breaks: passedShiftConfig.breaks || shiftConfig.breaks
+            });
+        }
+    }, [passedShiftConfig, type]);
 
     useEffect(() => {
         if (selectedShiftPeriod === "current") {
@@ -282,18 +420,17 @@ const ReportCharts = ({
             setShiftConfig(prev => ({
                 ...prev,
                 shift: currentShift1,
-                startTime: SHIFT_CONFIG[currentShift].startTime,
-                endTime: SHIFT_CONFIG[currentShift].endTime,
-                breaks: SHIFT_CONFIG[currentShift].defaultBreaks.map(b => ({ ...b }))
+                startTime: SHIFT_CONFIG[currentShift1].startTime,
+                endTime: SHIFT_CONFIG[currentShift1].endTime,
+                breaks: SHIFT_CONFIG[currentShift1].defaultBreaks.map(b => ({ ...b }))
             }));
         } else if (selectedShiftPeriod === "fullday") {
-            // Set full day configuration (06:00 to 06:00 next day - 24 hours)
             setShiftConfig(prev => ({
                 ...prev,
                 shift: "FULLDAY",
                 startTime: "06:00",
-                endTime: "06:00", // This represents 06:00 next day
-                targetParts: shiftConfig.targetParts * 3, // 3x target for full day (3 shifts)
+                endTime: "06:00",
+                targetParts: prev.targetParts * 3,
                 breaks: [
                     ...SHIFT_CONFIG.A.defaultBreaks,
                     ...SHIFT_CONFIG.B.defaultBreaks,
@@ -301,7 +438,6 @@ const ReportCharts = ({
                 ]
             }));
         } else {
-            // Specific shift selected
             setCurrentShift(selectedShiftPeriod);
             setShiftConfig(prev => ({
                 ...prev,
@@ -311,7 +447,19 @@ const ReportCharts = ({
                 breaks: SHIFT_CONFIG[selectedShiftPeriod].defaultBreaks.map(b => ({ ...b }))
             }));
         }
-    }, [selectedShiftPeriod, currentShift]);
+    }, [selectedShiftPeriod, currentShift1]);
+
+    useEffect(() => {
+        if (type === 'shift' && configVisible && showConfiguration === false) {
+            const timer = setTimeout(() => {
+                setConfigVisible(false);
+            }, 120000);
+
+            setConfigTimer(timer);
+
+            return () => clearTimeout(timer);
+        }
+    }, [configVisible, type, showConfiguration]);
 
     const generateSimulatedData = () => {
         const targetData = calculateTargetLine(
@@ -1159,67 +1307,210 @@ const ReportCharts = ({
 
 
         case 'shift':
-            // Calculate chart data for shift production
-            const targetLineData = calculateTargetLine(
-                shiftConfig.startTime,
-                shiftConfig.endTime,
-                shiftConfig.targetParts,
-                shiftConfig.cycleTimeSeconds,
-                shiftConfig.breaks
+            const [configVisible, setConfigVisible] = useState(showConfiguration !== false); // Start visible only if showConfiguration is not false
+            const [configTimer, setConfigTimer] = useState(null);
+
+            // Auto-hide configuration after 2 minutes ONLY on viewer page
+            useEffect(() => {
+                if (type === 'shift' && configVisible && showConfiguration === false) {
+                    const timer = setTimeout(() => {
+                        setConfigVisible(false);
+                    }, 120000); // 2 minutes = 120000ms
+
+                    setConfigTimer(timer);
+
+                    return () => clearTimeout(timer);
+                }
+            }, [configVisible, type, showConfiguration]);
+
+
+            // Filter data based on shift time range
+            const filterDataByShiftTime = (data, shiftStart, shiftEnd) => {
+                const parseTime = (timeStr) => {
+                    const [hours, minutes] = timeStr.split(':').map(Number);
+                    return hours * 60 + minutes;
+                };
+
+                const startMinutes = parseTime(shiftStart);
+                let endMinutes = parseTime(shiftEnd);
+
+                // Handle overnight shifts
+                if (endMinutes <= startMinutes) {
+                    endMinutes += 24 * 60;
+                }
+
+                return data.filter(item => {
+                    const submissionDate = item[xField] || item.Date || item.submissionDate;
+                    if (!submissionDate) return false;
+
+                    const date = new Date(submissionDate);
+                    if (isNaN(date.getTime())) return false;
+
+                    let itemMinutes = date.getHours() * 60 + date.getMinutes();
+
+                    // Handle overnight comparison
+                    if (endMinutes > 24 * 60 && itemMinutes < startMinutes) {
+                        itemMinutes += 24 * 60;
+                    }
+
+                    return itemMinutes >= startMinutes && itemMinutes <= endMinutes;
+                });
+            };
+
+            // Filter data by shift time
+            const filteredShiftData = filterDataByShiftTime(
+                data,
+                activeShiftConfig.startTime,
+                activeShiftConfig.endTime
             );
 
-            // Merge target data with real-time data
+            // Calculate distributed target based on parts and cycle time
+            const calculateDistributedTarget = (targetParts, cycleTimeSeconds, shiftStart, shiftEnd, breaks) => {
+                const targetData = [];
+                const shiftStartTime = new Date();
+                const [startHour, startMinute] = shiftStart.split(':');
+                shiftStartTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
+
+                const shiftEndTime = new Date();
+                const [endHour, endMinute] = shiftEnd.split(':');
+                shiftEndTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
+
+                if (shiftEndTime <= shiftStartTime) {
+                    shiftEndTime.setDate(shiftEndTime.getDate() + 1);
+                }
+
+                // Calculate parts per time interval
+                const partsPerSecond = 1 / cycleTimeSeconds;
+                const partsPerInterval = partsPerSecond * 300; // 5-minute intervals
+
+                const currentTime = new Date(shiftStartTime);
+                let cumulativeParts = 0;
+
+                while (currentTime <= shiftEndTime) {
+                    const timeLabel = currentTime.toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+                    const isDuringBreak = breaks.some(breakItem => {
+                        const [startH, startM] = breakItem.startTime.split(':');
+                        const [endH, endM] = breakItem.endTime.split(':');
+                        let breakStart = parseInt(startH) * 60 + parseInt(startM);
+                        let breakEnd = parseInt(endH) * 60 + parseInt(endM);
+
+                        if (breakEnd < breakStart) breakEnd += 24 * 60;
+
+                        let checkTime = currentMinutes;
+                        if (currentTime.getDate() > shiftStartTime.getDate()) {
+                            checkTime += 24 * 60;
+                        }
+
+                        return checkTime >= breakStart && checkTime <= breakEnd;
+                    });
+
+                    if (!isDuringBreak) {
+                        cumulativeParts += partsPerInterval;
+                    }
+
+                    targetData.push({
+                        time: timeLabel,
+                        targetParts: Math.round(Math.min(cumulativeParts, targetParts)),
+                        actualParts: 0,
+                        isBreak: isDuringBreak
+                    });
+
+                    currentTime.setMinutes(currentTime.getMinutes() + 5);
+                }
+
+                return targetData;
+            };
+
+
+            const targetLineData = calculateDistributedTarget(
+                activeShiftConfig.targetParts,
+                activeShiftConfig.cycleTimeSeconds,
+                activeShiftConfig.startTime,
+                activeShiftConfig.endTime,
+                activeShiftConfig.breaks
+            );
+
             const combinedData = targetLineData.map((targetPoint, index) => {
-                const realTimePoint = realTimeData[index] || {};
+                // Find matching actual data by time
+                const matchingActual = filteredShiftData.find(item => {
+                    const submissionDate = item[xField] || item.Date || item.submissionDate;
+                    if (!submissionDate) return false;
+
+                    const date = new Date(submissionDate);
+                    const timeLabel = date.toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    return timeLabel === targetPoint.time;
+                });
+
+                // Get actual parts from the first metric if data exists
+                let actualParts = 0;
+                if (matchingActual && metrics && metrics.length > 0) {
+                    const metricValue = matchingActual[metrics[0]];
+                    actualParts = typeof metricValue === 'number' ? metricValue : parseFloat(metricValue) || 0;
+                }
+
                 return {
                     ...targetPoint,
-                    actualParts: realTimePoint.actualParts || 0
+                    actualParts: actualParts
                 };
             });
 
-            const shiftInfo = SHIFT_CONFIG[shiftConfig.shift];
-            const currentProduction = combinedData[combinedData.length - 1]?.actualParts || 0;
-            const efficiency = Math.round((currentProduction / shiftConfig.targetParts) * 100);
-
-            return (
-                <div className="w-full max-w-7xl mx-auto p-6 bg-white rounded-lg shadow-lg">
-                    {/* Header */}
-                    <div className="flex justify-between items-center mb-6">
-                        <div>
-                            <ChartTitle />
-                            {!title && (
-                                <>
-                                    <h1 className="text-2xl font-bold text-gray-800">Shift Production Monitor</h1>
-                                    <p className="text-gray-600">Real-time production tracking and target analysis</p>
-                                </>
-                            )}
+            if (!combinedData || combinedData.length === 0) {
+                return (
+                    <div className="w-full max-w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
+                        <div className="text-center py-12">
+                            <div className="text-6xl mb-4">📊</div>
+                            <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
+                            <p className="text-gray-500">No production data found for the selected shift period</p>
                         </div>
-                        {showConfiguration && (  // Only show controls in designer
-                            <div className="flex items-center space-x-4">
-                                <div className="flex items-center space-x-2">
-                                    <div className={`w-3 h-3 rounded-full ${autoRefresh ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                    <span className="text-sm text-gray-600">
-                                        {autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
-                                    </span>
-                                </div>
+                    </div>
+                );
+            }
+
+            const currentProduction = combinedData.reduce((sum, point) => sum + point.actualParts, 0);
+            const efficiency = Math.round((currentProduction / activeShiftConfig.targetParts) * 100);
+            const shiftInfo = SHIFT_CONFIG[activeShiftConfig.shift]; // ✅ FIXED: Use activeShiftConfig.shift
+
+            // Rest of shift chart JSX with updated configuration visibility
+            return (
+                <div className={`w-full max-w-full mx-auto ${isFullscreenMode ? 'h-screen flex flex-col' : 'p-6 bg-white rounded-lg shadow-lg'}`}>
+
+                    {!isFullscreenMode && (
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                {!title && (
+                                    <>
+                                        <h1 className="text-3xl font-bold text-gray-800">Shift Production Monitor</h1>
+                                        <p className="text-gray-600">Real-time production tracking • Filtered by shift time</p>
+                                    </>
+                                )}
+                                {title && <ChartTitle />}
+                            </div>
+
+                            {showConfiguration !== false && (
                                 <button
-                                    onClick={() => setAutoRefresh(!autoRefresh)}
-                                    className={`p-2 rounded-lg ${autoRefresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}
-                                >
-                                    {autoRefresh ? <Pause size={20} /> : <Play size={20} />}
-                                </button>
-                                <button
-                                    onClick={() => setShowConfig(!showConfig)}
-                                    className="p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200"
+                                    onClick={() => setConfigVisible(!configVisible)}
+                                    onFocus={() => {
+                                        if (configTimer) clearTimeout(configTimer);
+                                    }}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
                                 >
                                     <Settings size={20} />
+                                    {configVisible ? 'Hide' : 'Show'} Configuration
                                 </button>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
 
-                    {/* Configuration Panel */}
-                    {showConfiguration && showConfig && (
+                    {!isFullscreenMode && showConfiguration && showConfig && (
                         <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold text-gray-800">Configuration</h3>
@@ -1352,152 +1643,198 @@ const ReportCharts = ({
                             </div>
                         </div>
                     )}
-
+                   
                     {/* Current Shift Info */}
-                    <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h3 className="text-lg font-semibold text-blue-800">
-                                    {shiftInfo.name}
-                                </h3>
-                                <p className="text-blue-600">
-                                    {shiftConfig.startTime} - {shiftConfig.endTime} •
-                                    Target: {shiftConfig.targetParts} parts •
-                                    Cycle: {shiftConfig.cycleTimeSeconds}s •
-                                    Breaks: {shiftConfig.breaks.length}
-                                </p>
-                            </div>
-                            <div className="text-right">
-                                <div className="text-sm text-blue-600">Last Updated</div>
-                                <div className="text-blue-800 font-medium">
-                                    {lastUpdate.toLocaleTimeString()}
+                    {!isFullscreenMode && (
+                        <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-blue-800">
+                                        {activeShiftConfig.name}
+                                    </h3>
+                                    <p className="text-blue-600">
+                                        {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
+                                        Target: {activeShiftConfig.targetParts} parts •
+                                        Cycle: {activeShiftConfig.cycleTimeSeconds}s •
+                                        Breaks: {activeShiftConfig.breaks?.length || 0}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm text-blue-600">Last Updated</div>
+                                    <div className="text-blue-800 font-medium">
+                                        {lastUpdate.toLocaleTimeString()}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* Chart Title - Show in fullscreen with different styling */}
+                    {isFullscreenMode && (
+                        <div className="text-center mb-4">
+                            <h1 className="text-4xl font-bold text-white mb-2">{title || 'Shift Production Monitor'}</h1>
+                            <p className="text-xl text-gray-300">
+                                {activeShiftConfig?.name} • Target: {activeShiftConfig?.targetParts} parts
+                            </p>
+                        </div>
+                    )}
 
                     {/* Production Chart */}
-                    <div className="mb-6">
-                        <ResponsiveContainer width="100%" height={500}>
-                            <LineChart data={combinedData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
+                    <div className={`mb-6 ${isFullscreenMode ? 'flex-1' : ''}`}>
+                       
+                        <ResponsiveContainer width="100%"
+                            height={isFullscreenMode ? "60vh" : 500} // ✅ Use viewport height for fullscreen
+                            style={{
+                                background: isFullscreenMode ? 'rgba(255,255,255,0.05)' : 'transparent',
+                                border: isFullscreenMode ? '1px solid rgba(255,255,255,0.2)' : 'none'
+                            }}
+                        >
+                            <LineChart
+                                data={combinedData}
+                                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                                style={{ backgroundColor: isFullscreenMode ? 'transparent' : 'white' }} // ✅ Add this
+                            >
+                                <CartesianGrid
+                                    strokeDasharray="3 3"
+                                    stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"} // ✅ Make grid more visible
+                                />
                                 <XAxis
                                     dataKey="time"
-                                    tick={{ fontSize: 11 }}
+                                    tick={{ fontSize: 14, fill: isFullscreenMode ? 'white' : '#666' }} // ✅ Bigger font for fullscreen
                                     angle={-45}
                                     textAnchor="end"
                                     height={80}
+                                    axisLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add axis line color
+                                    tickLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add tick line color
                                 />
                                 <YAxis
-                                    tick={{ fontSize: 12 }}
-                                    label={{ value: 'Parts Produced', angle: -90, position: 'insideLeft' }}
+                                    tick={{ fontSize: 14, fill: isFullscreenMode ? 'white' : '#666' }} // ✅ Bigger font for fullscreen
+                                    label={{
+                                        value: 'Parts Produced',
+                                        angle: -90,
+                                        position: 'insideLeft',
+                                        style: {
+                                            textAnchor: 'middle',
+                                            fill: isFullscreenMode ? 'white' : '#666',
+                                            fontSize: 16 // ✅ Bigger label
+                                        }
+                                    }}
+                                    axisLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add axis line color
+                                    tickLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add tick line color
                                 />
                                 <Tooltip
-                                    content={({ active, payload, label }) => {
-                                        if (active && payload && payload.length) {
-                                            return (
-                                                <div className="bg-white p-3 border rounded shadow-lg">
-                                                    <p className="font-medium">{`Time: ${label}`}</p>
-                                                    {payload.map((entry, index) => (
-                                                        <p key={index} style={{ color: entry.color }}>
-                                                            {`${entry.name}: ${entry.value} parts`}
-                                                        </p>
-                                                    ))}
-                                                </div>
-                                            );
-                                        }
-                                        return null;
+                                    contentStyle={{
+                                        backgroundColor: isFullscreenMode ? 'rgba(0,0,0,0.8)' : 'white',
+                                        border: isFullscreenMode ? '1px solid rgba(255,255,255,0.3)' : '1px solid #ccc',
+                                        borderRadius: '8px',
+                                        color: isFullscreenMode ? 'white' : 'black'
                                     }}
                                 />
-                                <Legend />
+                                <Legend
+                                    wrapperStyle={{
+                                        color: isFullscreenMode ? 'white' : 'black',
+                                        fontSize: isFullscreenMode ? '16px' : '14px' // ✅ Bigger legend font
+                                    }}
+                                />
 
-                                {/* Target Line (Fixed) */}
+                                {/* ✅ CRITICAL: Make sure lines are bright and visible */}
                                 <Line
                                     type="monotone"
                                     dataKey="targetParts"
-                                    stroke="#ff7300"
-                                    strokeWidth={3}
-                                    strokeDasharray="5 5"
+                                    stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"} // ✅ Brighter orange for fullscreen
+                                    strokeWidth={isFullscreenMode ? 5 : 3} // ✅ Thicker line for fullscreen
+                                    strokeDasharray="8 8" // ✅ Bigger dashes for fullscreen
                                     name="Target Production"
                                     dot={false}
                                 />
 
-                                {/* Actual Line (Real-time) */}
                                 <Line
                                     type="monotone"
                                     dataKey="actualParts"
-                                    stroke="#82ca9d"
-                                    strokeWidth={3}
+                                    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"} // ✅ Brighter green for fullscreen
+                                    strokeWidth={isFullscreenMode ? 5 : 3} // ✅ Thicker line for fullscreen
                                     name="Actual Production"
                                     connectNulls={false}
-                                    dot={{ fill: '#82ca9d', strokeWidth: 2, r: 3 }}
+                                    dot={{
+                                        fill: isFullscreenMode ? '#4ade80' : '#82ca9d',
+                                        strokeWidth: 3,
+                                        r: isFullscreenMode ? 6 : 3 // ✅ Bigger dots for fullscreen
+                                    }}
                                 />
                             </LineChart>
                         </ResponsiveContainer>
+
                     </div>
 
                     {/* Production Summary Cards */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                            <div className="text-2xl font-bold text-blue-800">
-                                {currentProduction}
-                            </div>
-                            <div className="text-sm text-blue-600">Current Production</div>
-                        </div>
-                        <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
-                            <div className="text-2xl font-bold text-orange-800">
-                                {shiftConfig.targetParts}
-                            </div>
-                            <div className="text-sm text-orange-600">Target Parts</div>
-                        </div>
-                        <div className={`bg-gradient-to-br p-4 rounded-lg border ${efficiency >= 100
-                                ? 'from-green-50 to-green-100 border-green-200'
-                                : efficiency >= 80
-                                    ? 'from-yellow-50 to-yellow-100 border-yellow-200'
-                                    : 'from-red-50 to-red-100 border-red-200'
-                            }`}>
-                            <div className={`text-2xl font-bold ${efficiency >= 100
-                                    ? 'text-green-800'
+                    {!isFullscreenMode && (
+                        <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
+                                    <div className="text-2xl font-bold text-blue-800">
+                                        {currentProduction}
+                                    </div>
+                                    <div className="text-sm text-blue-600">Current Production</div>
+                                </div>
+                                <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
+                                    <div className="text-2xl font-bold text-orange-800">
+                                        {activeShiftConfig.targetParts}
+                                    </div>
+                                    <div className="text-sm text-orange-600">Target Parts</div>
+                                </div>
+                                <div className={`bg-gradient-to-br p-4 rounded-lg border ${efficiency >= 100
+                                    ? 'from-green-50 to-green-100 border-green-200'
                                     : efficiency >= 80
-                                        ? 'text-yellow-800'
-                                        : 'text-red-800'
-                                }`}>
-                                {efficiency}%
-                            </div>
-                            <div className={`text-sm ${efficiency >= 100
-                                    ? 'text-green-600'
-                                    : efficiency >= 80
-                                        ? 'text-yellow-600'
-                                        : 'text-red-600'
-                                }`}>
-                                Efficiency
-                            </div>
-                        </div>
-                        <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
-                            <div className="text-2xl font-bold text-purple-800">
-                                {Math.max(0, shiftConfig.targetParts - currentProduction)}
-                            </div>
-                            <div className="text-sm text-purple-600">Remaining Parts</div>
-                        </div>
-                    </div>
-
-                    {/* Break Schedule */}
-                    <div className="p-4 bg-gray-50 rounded-lg">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Break Schedule</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {shiftConfig.breaks.map((breakItem, index) => (
-                                <div key={breakItem.id} className="flex items-center p-2 bg-white rounded border">
-                                    <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
-                                    <div>
-                                        <div className="text-sm font-medium">{breakItem.name}</div>
-                                        <div className="text-xs text-gray-600">
-                                            {breakItem.startTime} - {breakItem.endTime}
-                                        </div>
+                                        ? 'from-yellow-50 to-yellow-100 border-yellow-200'
+                                        : 'from-red-50 to-red-100 border-red-200'
+                                    }`}>
+                                    <div className={`text-2xl font-bold ${efficiency >= 100
+                                        ? 'text-green-800'
+                                        : efficiency >= 80
+                                            ? 'text-yellow-800'
+                                            : 'text-red-800'
+                                        }`}>
+                                        {efficiency}%
+                                    </div>
+                                    <div className={`text-sm ${efficiency >= 100
+                                        ? 'text-green-600'
+                                        : efficiency >= 80
+                                            ? 'text-yellow-600'
+                                            : 'text-red-600'
+                                        }`}>
+                                        Efficiency
                                     </div>
                                 </div>
-                            ))}
+                                <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
+                                    <div className="text-2xl font-bold text-purple-800">
+                                        {Math.max(0, activeShiftConfig.targetParts - currentProduction)}
+                                    </div>
+                                    <div className="text-sm text-purple-600">Remaining Parts</div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Break Schedule */}
+                    {isFullscreenMode && (
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Break Schedule</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {shiftConfig.breaks.map((breakItem, index) => (
+                                    <div key={breakItem.id} className="flex items-center p-2 bg-white rounded border">
+                                        <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                                        <div>
+                                            <div className="text-sm font-medium">{breakItem.name}</div>
+                                            <div className="text-xs text-gray-600">
+                                                {breakItem.startTime} - {breakItem.endTime}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
+                    {/* Rest of your summary cards */}
                 </div>
             );
 

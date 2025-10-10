@@ -292,6 +292,7 @@ namespace productionLine.Server.Controllers
                     ImageData = f.IMAGEOPTIONS,
                     Order = f.Order,
                     
+                    
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {

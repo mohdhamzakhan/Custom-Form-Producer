@@ -538,7 +538,6 @@ const FormBuilder = () => {
             setLoading(false);
             return;
         }
-
         setOriginalFormLink(formLink);
 
         try {
@@ -605,7 +604,7 @@ const FormBuilder = () => {
             }
             console.log("Data ", data)
             // Transform the fields similar to before
-            // Around line 400-450, in the fetchFormLayout function, update the field transformation:
+
             const transformedFields = (data.fields || []).map((field, index) => {
                 const isGrid = field.type === "grid";
                 const isLinkedField = field.type === "linkedTextbox";
@@ -638,6 +637,7 @@ const FormBuilder = () => {
                             startTime: col.startTime || "",
                             endTime: col.endTime || "",
                             remarksOptions: Array.isArray(col.remarksOptions) ? col.remarksOptions : [],
+                            requireRemarks: Array.isArray(col.requireRemarks) ? col.requireRemarks : [],
                             // Handle linked textbox columns in grids
                             ...(col.type === "linkedTextbox" && {
                                 linkedFormId: col.linkedFormId || (linkedForm?.id || null),
@@ -897,7 +897,10 @@ const FormBuilder = () => {
 
                         // Handle field-specific properties safely
                         options: Array.isArray(field.options) ? field.options : [],
-                        requireRemarks: Array.isArray(field.requireRemarks) ? field.requireRemarks : [],
+                        remarksOptions: Array.isArray(field.remarksOptions) ? field.remarksOptions : [],
+                        requiresRemarks: Array.isArray(field.requireRemarks)
+                            ? [...field.requireRemarks]
+                            : (Array.isArray(field.remarksOptions) ? [...field.remarksOptions] : []),
 
                         // Handle image options safely - ensure it's a string or null
                         IMAGEOPTIONS: field.IMAGEOPTIONS && typeof field.IMAGEOPTIONS === 'string'
@@ -1106,6 +1109,13 @@ const FormBuilder = () => {
                         cleanField.maxRows = field.maxRows || 10;
                     }
 
+                    if (field.type === "calculation") {
+                        fieldObj.formula = field.formula.replace(/\{([^}]+)\}/g, (match, fieldName) => {
+                            const referencedField = formFields.find(f => f.name === fieldName);
+                            return referencedField ? referencedField.id : match;
+                        });
+                    }
+
                     return cleanField;
                 })
             };
@@ -1128,7 +1138,14 @@ const FormBuilder = () => {
                         keyFieldMappingsJson: field.keyFieldMappingsJson
                     });
                 }
-
+                if (field.type === 'dropdown' || field.type === 'checkbox') {
+                    console.log(`Field ${index} (${field.type}):`, {
+                        label: field.label,
+                        options: field.options,
+                        requireRemarks: field.requireRemarks,
+                        remarksOptions: field.remarksOptions
+                    });
+                }
                 if (field.type === 'grid' && field.columns) {
                     field.columns.forEach((column, colIndex) => {
                         if (column.type === 'linkedTextbox') {
@@ -1193,7 +1210,6 @@ const FormBuilder = () => {
         }
     };
 
-
     const addField = (type) => {
         const newField = {
             id: generateGuid(),
@@ -1203,7 +1219,8 @@ const FormBuilder = () => {
             width: "w-1/2",
             order: formFields.length, // Add explicit order tracking
             options: [],
-            requiresRemarks: [],
+            requireRemarks: [],
+            remarksOptions: [],
             ...(type === "linkedTextbox" && {
                 linkedFormId: linkedForm?.id || null,
                 linkedFieldId: null,
@@ -1366,7 +1383,7 @@ const FormBuilder = () => {
                         <div>Current form fields: {currentFormFields.length} total</div>
                         <div>- Regular fields: {currentFormFields.filter(f => !f.isGridColumn).length}</div>
                         <div>- Grid columns: {currentFormFields.filter(f => f.isGridColumn).length}</div>
-                        <div>Linked form fields: {linkedFormAllFields.length} total</div>
+                        <div>  Linked form fields: {linkedFormAllFields.length} total</div>
                         <div>- Regular fields: {linkedFormAllFields.filter(f => !f.isGridColumn).length}</div>
                         <div>- Grid columns: {linkedFormAllFields.filter(f => f.isGridColumn).length}</div>
                     </div>
@@ -1507,117 +1524,6 @@ const FormBuilder = () => {
         );
     };
 
-    const debugFetchFormLayout = async () => {
-        // ... existing fetchFormLayout code ...
-
-        // Add this after you get the data from the API
-        console.log("=== FETCH FORM LAYOUT DEBUG ===");
-        console.log("Raw API response:", data);
-
-        // When processing fields, add debugging
-        // Around line 400-450, in the fetchFormLayout function, update the field transformation:
-        const transformedFields = (data.fields || []).map((field, index) => {
-            const isGrid = field.type === "grid";
-            const isLinkedField = field.type === "linkedTextbox";
-
-            const transformedField = {
-                ...field,
-                id: field.id || generateGuid(),
-                order: field.order !== undefined ? field.order : index,
-                columns: isGrid
-                    ? (field.column || field.columns || []).map(col => ({
-                        ...col,
-                        type: col.type || "textbox",
-                        name: col.name || "",
-                        id: col.id || generateGuid(),
-                        width: col.width || "1fr",
-                        options: col.options || [],
-                        textColor: col.textColor || "#000000",
-                        backgroundColor: col.backgroundColor || "#ffffff",
-                        formula: col.formula || "",
-                        min: col.min ?? null,
-                        max: col.max ?? null,
-                        decimal: col.decimal ?? null,
-                        parentColumn: col.parentColumn || "",
-                        dependentOptions: col.dependentOptions || {},
-                        startTime: col.startTime || "",
-                        endTime: col.endTime || "",
-                        // Handle linked textbox columns in grids
-                        ...(col.type === "linkedTextbox" && {
-                            linkedFormId: col.linkedFormId || (linkedForm?.id || null),
-                            linkedFieldId: col.linkedFieldId,
-                            linkedFieldType: col.linkedFieldType || "field",
-                            linkedGridFieldId: col.linkedGridFieldId,
-                            linkedColumnId: col.linkedColumnId,
-                            linkedFieldReference: col.linkedFieldType === "gridColumn" && col.linkedGridFieldId && col.linkedColumnId
-                                ? `${col.linkedGridFieldId}.${col.linkedColumnId}`
-                                : col.linkedFieldId || "",
-                            displayMode: col.displayMode || "readonly",
-                            displayFormat: col.displayFormat || "{value}",
-                            allowManualEntry: col.allowManualEntry || false,
-                            showLookupButton: col.showLookupButton !== false,
-                            keyFieldMappings: col.keyFieldMappingsJson ?
-                                JSON.parse(col.keyFieldMappingsJson).map(mapping => ({
-                                    currentField: mapping.currentFormField,
-                                    linkedField: mapping.linkedFormField
-                                })) : []
-                        })
-                    }))
-                    : undefined,
-                column: undefined,
-                formula: field.formula || "",
-                resultDecimal: field.resultDecimal || false,
-                fieldReferences: field.fieldReferencesJson || [],
-                remarkTriggers: field.remarkTriggers || [],
-                // Preserve linked field properties
-                linkedFormId: field.linkedFormId || null,
-            };
-
-            // Handle linked field specific properties
-            if (isLinkedField) {
-                transformedField.linkedFormId = field.linkedFormId || (linkedForm?.id || null);
-                transformedField.linkedFieldId = field.linkedFieldId;
-                transformedField.linkedFieldType = field.linkedFieldType || "field";
-                transformedField.linkedGridFieldId = field.linkedGridFieldId;
-                transformedField.linkedColumnId = field.linkedColumnId;
-
-                // Set linkedFieldReference based on field type
-                transformedField.linkedFieldReference = field.linkedFieldType === "gridColumn" && field.linkedGridFieldId && field.linkedColumnId
-                    ? `${field.linkedGridFieldId}.${field.linkedColumnId}`
-                    : field.linkedFieldId || "";
-
-                transformedField.displayMode = field.displayMode || "readonly";
-                transformedField.displayFormat = field.displayFormat || "{value}";
-                transformedField.allowManualEntry = field.allowManualEntry || false;
-                transformedField.showLookupButton = field.showLookupButton !== false;
-
-                // Parse key field mappings and convert property names
-                if (field.keyFieldMappingsJson) {
-                    try {
-                        const mappings = JSON.parse(field.keyFieldMappingsJson);
-                        transformedField.keyFieldMappings = mappings.map(mapping => ({
-                            currentField: mapping.currentFormField,  // Convert from backend property name
-                            linkedField: mapping.linkedFormField    // Convert from backend property name
-                        }));
-                    } catch (e) {
-                        console.warn('Failed to parse keyFieldMappingsJson:', e);
-                        transformedField.keyFieldMappings = [];
-                    }
-                } else if (field.keyFieldMappings) {
-                    // Handle if keyFieldMappings is already parsed
-                    transformedField.keyFieldMappings = field.keyFieldMappings.map(mapping => ({
-                        currentField: mapping.currentFormField || mapping.currentField,
-                        linkedField: mapping.linkedFormField || mapping.linkedField
-                    }));
-                } else {
-                    transformedField.keyFieldMappings = [];
-                }
-            }
-
-            return transformedField;
-        });
-    };
-
     const handleImageUpload = (event, fieldId) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -1645,6 +1551,7 @@ const FormBuilder = () => {
 
     // Temporary debug component - add this to your FormBuilder component
     const GridDebugComponent = () => {
+        KeyFieldsConfigurationSection()
         return (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded">
                 <h3 className="text-lg font-semibold mb-3 text-red-800">Grid Debug Information</h3>
@@ -1772,7 +1679,6 @@ const FormBuilder = () => {
 
             <DndProvider backend={HTML5Backend}>
                 <div className="max-w-8xl mx-auto p-2">
-                    {/*                <GridDebugComponent />*/}
                     <div className="mb-6">
                         <h1 className="text-2xl font-bold mb-4">Form Builder</h1>
 
@@ -2417,19 +2323,19 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
         updateField({
             options: updatedOptions,
-            requiresRemarks: updatedRequiresRemarks,
+            requireRemarks: updatedRequiresRemarks,
         });
     };
 
     const toggleRequiresRemarks = (option) => {
-        const requiresRemarks = [...(field.requiresRemarks || [])];
-        if (requiresRemarks.includes(option)) {
+        const requireRemarks = [...(field.requireRemarks || [])];
+        if (requireRemarks.includes(option)) {
             updateField({
-                requiresRemarks: requiresRemarks.filter((item) => item !== option),
+                requireRemarks: requireRemarks.filter((item) => item !== option),
             });
         } else {
             updateField({
-                requiresRemarks: [...requiresRemarks, option],
+                requireRemarks: [...requireRemarks, option],
             });
         }
     };
@@ -3004,7 +2910,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         {console.log(column.remarksOptions)}
                                         <select
                                             multiple
-                                            value={column.remarksOptions || []}
+                                            value={column.requiresRemarks|| []}
                                             onChange={(e) => {
                                                 const selected = Array.from(
                                                     e.target.selectedOptions,
@@ -3755,7 +3661,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     <div className="flex items-center gap-1">
                                         <input
                                             type="checkbox"
-                                            checked={(field.requiresRemarks || []).includes(option)}
+                                            checked={(field.requireRemarks || []).includes(option)}
                                             onChange={() => toggleRequiresRemarks(option)}
                                             className="h-4 w-4"
                                         />

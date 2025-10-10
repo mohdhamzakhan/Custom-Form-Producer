@@ -146,12 +146,12 @@ namespace productionLine.Server.Controllers
                     .ToList();
                 return BadRequest(new { message = "Invalid model", errors });
             }
+
             try
             {
                 if (string.IsNullOrWhiteSpace(dto.Name) || dto.Fields.Count == 0)
                     return BadRequest("Template name and at least one field are required.");
 
-                // ✅ common serializer options for compact JSON
                 var jsonOptions = new JsonSerializerOptions
                 {
                     WriteIndented = false,
@@ -177,7 +177,6 @@ namespace productionLine.Server.Controllers
                     template.IncludeRemarks = dto.IncludeRemarks;
                     template.SharedWithRole = dto.SharedWithRole;
 
-                    // reset children
                     _context.ReportFields.RemoveRange(template.Fields);
                     _context.ReportFilters.RemoveRange(template.Filters);
 
@@ -206,49 +205,57 @@ namespace productionLine.Server.Controllers
                 }
                 else
                 {
-                    // Test with minimal properties first
+                    // --- CREATE NEW ---
                     template = new ReportTemplate
                     {
                         Name = dto.Name,
                         FormId = dto.FormId,
                         CreatedBy = dto.CreatedBy ?? "system",
-                        CreatedAt = DateTime.Now
-                        // Don't set any other properties initially
+                        CreatedAt = DateTime.Now,
+                        IncludeApprovals = dto.IncludeApprovals,
+                        IncludeRemarks = dto.IncludeRemarks,
+                        SharedWithRole = dto.SharedWithRole,
+
+                        // ✅ Add Fields and Filters immediately
+                        Fields = dto.Fields.Select((f, index) => new ReportField
+                        {
+                            FieldId = f.FieldId,
+                            FieldLabel = f.FieldLabel,
+                            Order = index
+                        }).ToList(),
+
+                        Filters = dto.Filters.Select(f => new ReportFilter
+                        {
+                            FieldLabel = f.FieldLabel,
+                            Operator = f.Operator,
+                            Value = f.Value,
+                            Type = f.Type
+                        }).ToList(),
+
+                        CalculatedFields = dto.CalculatedFields?.Any() == true
+                            ? JsonSerializer.Serialize(dto.CalculatedFields, jsonOptions)
+                            : null,
+
+                        ChartConfig = dto.ChartConfigs?.Any() == true
+                            ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions)
+                            : null
                     };
 
                     _context.ReportTemplates.Add(template);
-
-                    try
-                    {
-                        await _context.SaveChangesAsync(); 
-
-                        // If successful, update with remaining properties
-                        template.IncludeApprovals = dto.IncludeApprovals;
-                        template.IncludeRemarks = dto.IncludeRemarks;
-                        template.SharedWithRole = dto.SharedWithRole;
-
-                        if (dto.CalculatedFields?.Any() == true)
-                            template.CalculatedFields = JsonSerializer.Serialize(dto.CalculatedFields, jsonOptions);
-
-                        if (dto.ChartConfigs?.Any() == true)
-                            template.ChartConfig = JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions);
-
-                        await _context.SaveChangesAsync(); // Update with remaining fields
-                    }
-                    catch (Exception ex)
-                    {
-                        // Log the exact error to identify which property is causing issues
-                        throw new Exception($"Error saving template: {ex.Message}", ex);
-                    }
                 }
+
                 await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Template saved successfully.",
+                    id = template.Id
+                });
             }
             catch (Exception ex)
             {
-                return Ok(new { message = ex.Message });
+                return StatusCode(500, new { message = $"Error saving template: {ex.Message}" });
             }
-
-            return Ok(new { message = "Template saved successfully." });
         }
 
 
@@ -476,60 +483,154 @@ namespace productionLine.Server.Controllers
 
 
         private List<FormSubmission> ApplyFilters(
-     List<ReportFilter> filters,
-     List<FormSubmission> submissions,
-     Dictionary<string, string> runtimeValues)
+    List<ReportFilter> filters,
+    List<FormSubmission> submissions,
+    Dictionary<string, string> runtimeValues)
         {
             foreach (var filter in filters)
             {
                 var field = filter.FieldLabel;
 
-                // ✅ Skip if filter is not provided or value is empty/null
                 if (!runtimeValues.TryGetValue(field, out var rawValue) || string.IsNullOrWhiteSpace(rawValue))
                     continue;
 
                 var op = filter.Operator;
                 var value = rawValue;
 
+                var multipleValues = value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                          .Select(v => v.Trim())
+                                          .Where(v => !string.IsNullOrWhiteSpace(v))
+                                          .ToList();
+
                 submissions = submissions.Where(sub =>
                 {
-                    var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == field);
-                    if (match == null || string.IsNullOrWhiteSpace(match.FieldValue)) return false;
-
-                    switch (op)
+                    // Handle grid field reference (gridFieldId:columnId)
+                    if (field.Contains(':'))
                     {
-                        case "equals":
-                            return match.FieldValue == value;
+                        var parts = field.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2 &&
+                            Guid.TryParse(parts[0], out Guid gridFieldId) &&
+                            Guid.TryParse(parts[1], out Guid columnId))
+                        {
+                            // Find the grid field data
+                            var gridFieldData = sub.SubmissionData.FirstOrDefault(d =>
+                                Guid.TryParse(d.FieldLabel, out Guid fieldGuid) && fieldGuid == gridFieldId);
 
-                        case "contains":
-                            return match.FieldValue?.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+                            if (gridFieldData == null || string.IsNullOrWhiteSpace(gridFieldData.FieldValue))
+                                return false;
 
-                        case "greaterThan":
-                            return double.TryParse(match.FieldValue, out var n1) && double.TryParse(value, out var n2) && n1 > n2;
-
-                        case "lessThan":
-                            return double.TryParse(match.FieldValue, out var m1) && double.TryParse(value, out var m2) && m1 < m2;
-
-                        case "between":
-                            var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
-                            if (parts.Length == 2 &&
-                                DateTime.TryParse(parts[0], out var start) &&
-                                DateTime.TryParse(parts[1], out var end) &&
-                                DateTime.TryParse(match.FieldValue, out var actual))
+                            try
                             {
-                                return actual >= start && actual <= end;
+                                // Get the column name from the grid field definition
+                                var columnName = GetColumnNameById(gridFieldId, columnId);
+                                if (string.IsNullOrEmpty(columnName))
+                                    return false;
+
+                                // Parse the grid data as JSON array
+                                var gridRows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(gridFieldData.FieldValue);
+                                if (gridRows == null || !gridRows.Any())
+                                    return false;
+
+                                // Check if any row in the grid matches the filter condition
+                                return gridRows.Any(row =>
+                                {
+                                    if (!row.ContainsKey(columnName))
+                                        return false;
+
+                                    var cellValue = row[columnName]?.ToString();
+                                    if (string.IsNullOrWhiteSpace(cellValue))
+                                        return false;
+
+                                    return ApplyOperatorCondition(cellValue, op, multipleValues);
+                                });
                             }
+                            catch (JsonException)
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Handle regular field reference
+                        var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == field);
+                        if (match == null || string.IsNullOrWhiteSpace(match.FieldValue))
                             return false;
 
-                        default:
-                            return true;
+                        return ApplyOperatorCondition(match.FieldValue, op, multipleValues);
                     }
+
+                    return false;
                 }).ToList();
             }
 
-
             return submissions;
         }
+
+        // Helper method to get column name by ID
+        private string GetColumnNameById(Guid gridFieldId, Guid columnId)
+        {
+            var gridField = _context.FormFields
+                .FirstOrDefault(ff => ff.Id == gridFieldId && ff.Type.ToLower() == "grid");
+
+            if (gridField?.Columns != null)
+            {
+                var column = gridField.Columns.FirstOrDefault(c =>
+                    Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
+
+                return column?.Name; // This should return "Model No", "Working Hour", etc.
+            }
+
+            return null;
+        }
+
+        // Extract the operator logic into a separate method for reuse
+        private bool ApplyOperatorCondition(string fieldValue, string op, List<string> multipleValues)
+        {
+            switch (op)
+            {
+                case "equals":
+                case "in":
+                    return multipleValues.Any(val => fieldValue.Equals(val, StringComparison.OrdinalIgnoreCase));
+
+                case "notIn":
+                    return !multipleValues.Any(val => fieldValue.Equals(val, StringComparison.OrdinalIgnoreCase));
+
+                case "contains":
+                    return multipleValues.Any(val => fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                case "greaterThan":
+                    return double.TryParse(fieldValue, out var n1) &&
+                           double.TryParse(multipleValues.FirstOrDefault(), out var n2) && n1 > n2;
+
+                case "lessThan":
+                    return double.TryParse(fieldValue, out var m1) &&
+                           double.TryParse(multipleValues.FirstOrDefault(), out var m2) && m1 < m2;
+
+                case "between":
+                    if (multipleValues.Count == 2 &&
+                        DateTime.TryParse(multipleValues[0], out var start) &&
+                        DateTime.TryParse(multipleValues[1], out var end) &&
+                        DateTime.TryParse(fieldValue, out var actual))
+                    {
+                        return actual >= start && actual <= end;
+                    }
+                    return false;
+
+                case "containsAny":
+                    return multipleValues.Any(val =>
+                        fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                case "containsAll":
+                    return multipleValues.All(val =>
+                        fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                default:
+                    return true;
+            }
+        }
+
+
 
         [HttpGet("template/{reportId}")]
         public async Task<IActionResult> GetTemplate(int reportId)
@@ -541,6 +642,42 @@ namespace productionLine.Server.Controllers
 
             if (template == null)
                 return NotFound("Template not found.");
+
+            // Separate regular field IDs and grid field references
+            var regularFieldIds = new List<Guid>();
+            var gridFieldIds = new List<Guid>();
+
+            foreach (var filter in template.Filters.Where(f => !string.IsNullOrEmpty(f.FieldLabel)))
+            {
+                // Check if it's a grid field reference (contains colon)
+                if (filter.FieldLabel.Contains(':'))
+                {
+                    // Extract grid field ID (first part before colon)
+                    var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 2 && Guid.TryParse(parts[0], out Guid gridFieldId))
+                    {
+                        gridFieldIds.Add(gridFieldId);
+                    }
+                }
+                else
+                {
+                    // Regular field reference
+                    if (Guid.TryParse(filter.FieldLabel, out Guid fieldId))
+                    {
+                        regularFieldIds.Add(fieldId);
+                    }
+                }
+            }
+
+            // Get regular form fields
+            var formFields = await _context.FormFields
+                .Where(ff => regularFieldIds.Contains(ff.Id))
+                .ToDictionaryAsync(ff => ff.Id, ff => ff);
+
+            // Get grid form fields
+            var gridFormFields = await _context.FormFields
+                .Where(ff => gridFieldIds.Contains(ff.Id) && ff.Type.ToLower() == "grid")
+                .ToDictionaryAsync(ff => ff.Id, ff => ff);
 
             return Ok(new
             {
@@ -554,7 +691,73 @@ namespace productionLine.Server.Controllers
                     f.FieldLabel,
                     f.Order
                 }).ToList(),
-                filters = template.Filters,
+                filters = template.Filters.Select(filter =>
+                {
+                    FormField formField = null;
+                    List<string> options = null;
+                    string fieldType = null;
+
+                    if (!string.IsNullOrEmpty(filter.FieldLabel))
+                    {
+                        // Handle grid field reference (gridFieldId:columnId)
+                        if (filter.FieldLabel.Contains(':'))
+                        {
+                            var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length >= 2 &&
+                                Guid.TryParse(parts[0], out Guid gridFieldId) &&
+                                Guid.TryParse(parts[1], out Guid columnId))
+                            {
+                                if (gridFormFields.TryGetValue(gridFieldId, out var gridField) &&
+                                    gridField.Columns != null)
+                                {
+                                    // Find the specific column in the grid
+                                    var column = gridField.Columns.FirstOrDefault(c =>
+                                        Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
+
+                                    if (column != null)
+                                    {
+                                        fieldType = column.Type?.ToLower();
+
+                                        // Extract options for dropdown, checkbox, or radio columns
+                                        if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
+                                            column.Options != null && column.Options.Any())
+                                        {
+                                            options = column.Options;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Handle regular field reference
+                        else if (Guid.TryParse(filter.FieldLabel, out Guid fieldId))
+                        {
+                            if (formFields.TryGetValue(fieldId, out formField))
+                            {
+                                fieldType = formField.Type?.ToLower();
+
+                                // Extract options for dropdown, checkbox, or radio fields
+                                if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
+                                    !string.IsNullOrEmpty(formField.OptionsJson))
+                                {
+                                    options = JsonSerializer.Deserialize<List<string>>(formField.OptionsJson);
+                                }
+                            }
+                        }
+                    }
+
+                    return new
+                    {
+                        filter.Id,
+                        filter.FieldLabel,
+                        filter.Operator,
+                        filter.Value,
+                        filter.Type,
+                        // Add options data for dropdown, checkbox, and radio filters
+                        options = options,
+                        // Add field type information for frontend rendering
+                        fieldType = fieldType
+                    };
+                }).ToList(),
                 sharedWithRole = !string.IsNullOrEmpty(template.SharedWithRole)
                     ? JsonSerializer.Deserialize<List<SharedUser>>(template.SharedWithRole)
                     : new List<SharedUser>(),
@@ -567,9 +770,6 @@ namespace productionLine.Server.Controllers
             });
         }
 
-
-
-        // Add these new endpoints to your existing ReportsController.cs
 
         [HttpGet("list")]
         public async Task<IActionResult> GetReportsList(string username, bool includeShared = true)

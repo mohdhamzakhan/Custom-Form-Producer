@@ -486,13 +486,35 @@ const EnhancedCalculatedFieldsEditor = ({
         }]);
     };
 
-    const updateCalculatedField = (id, key, value) => {
-        if (!setCalculatedFields || !calculatedFields) return;
+    //const updateCalculatedField = (id, key, value) => {
+    //    if (!setCalculatedFields || !calculatedFields) return;
 
-        setCalculatedFields(prev => (prev || []).map(field =>
-            field.id === id ? { ...field, [key]: value } : field
-        ));
+    //    setCalculatedFields(prev => (prev || []).map(field =>
+    //        field.id === id ? { ...field, [key]: value } : field
+    //    ));
+    //};
+
+    const updateCalculatedField = (fieldId, key, value) => {
+        setCalculatedFields(prev =>
+            prev.map(field => {
+                if (field.id === fieldId) {
+                    const updatedField = { ...field, [key]: value };
+
+                    // If updating formula, also update sourceFields
+                    if (key === 'formula') {
+                        const extractedSourceFields = extractSourceFields(value, fields);
+                        updatedField.sourceFields = extractedSourceFields;
+                    }
+
+                    return updatedField;
+                }
+                return field;
+            })
+        );
     };
+
+
+
 
     const removeCalculatedField = (id) => {
         if (!setCalculatedFields || !calculatedFields) return;
@@ -1146,6 +1168,31 @@ const EnhancedCalculatedFieldsEditor = ({
             </div>
         );
     };
+
+    const getFieldReference = (fieldLabel, availableFields) => {
+        const field = availableFields.find(f => f.label === fieldLabel);
+        if (!field) return fieldLabel;
+
+        // Check if it's a grid field (contains colon in ID)
+        if (field.id.includes(':')) {
+            return field.id; // Already in gridId:fieldId format
+        }
+
+        return field.id; // Regular field
+    };
+
+    const extractSourceFields = (formula, availableFields) => {
+        if (!formula) return [];
+
+        // Extract field names from formula (text between quotes)
+        const fieldMatches = formula.match(/"([^"]+)"/g) || [];
+
+        return fieldMatches.map(match => {
+            const fieldName = match.replace(/"/g, '');
+            return getFieldReference(fieldName, availableFields);
+        }).filter(Boolean); // Remove any null/undefined values
+    };
+
 
 
     return (

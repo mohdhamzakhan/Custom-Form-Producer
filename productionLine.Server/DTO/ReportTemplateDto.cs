@@ -36,6 +36,14 @@ public class ChartConfig
     public PositionDto? Position { get; set; }
     [JsonPropertyName("comboConfig")]
     public ComboConfigDto? ComboConfig { get; set; }
+
+    [JsonPropertyName("shiftConfigs")]
+    public List<ShiftConfigDto>? ShiftConfigs { get; set; }
+
+
+    // Keep for backward compatibility
+    [JsonIgnore] // Don't serialize this anymore
+    public ShiftConfigDto ShiftConfig { get; set; }
 }
 
 public class PositionDto
@@ -80,6 +88,45 @@ public class CalculatedField
     public string sortOrder { get; set; }
     public string[] sourceFields { get; set; } // "row" or "column"
     public int windowSize { get; set; }
+}
+
+public class ShiftConfigDto
+{
+    [JsonPropertyName("targetParts")]
+    public int TargetParts { get; set; }
+
+    [JsonPropertyName("cycleTimeSeconds")]
+    public double CycleTimeSeconds { get; set; }
+
+    [JsonPropertyName("shift")]
+    public string Shift { get; set; } = string.Empty;
+
+    [JsonPropertyName("startTime")]
+    public string StartTime { get; set; } = string.Empty;
+
+    [JsonPropertyName("endTime")]
+    public string EndTime { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("breaks")]
+    public List<ShiftBreak> Breaks { get; set; } = new List<ShiftBreak>();
+}
+
+public class ShiftBreak
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("startTime")]
+    public string StartTime { get; set; } = string.Empty;
+
+    [JsonPropertyName("endTime")]
+    public string EndTime { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
 }
 //public class CalculatedField
 //{

@@ -19,7 +19,7 @@ export default function DynamicForm() {
     const [fontSize, setFontSize] = useState(16); // default 16px
     const updatingLinkedFields = useRef(false);
     const [linkedDataLoading, setLinkedDataLoading] = useState(false);
-    const { formId } = useParams();
+    const { formId, submissionID } = useParams();
     const [tableColors, setTableColors] = useState({});
     const [imageModalOpen, setImageModalOpen] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
@@ -125,6 +125,17 @@ export default function DynamicForm() {
             setFormValues(updatedValues);
         }
     }, [formData]);
+
+    // Add this new useEffect right after your existing one
+    useEffect(() => {
+        // Check if submissionID exists in the URL path and formData is loaded
+
+        console.log("Data ", submissionID, formData, editingSubmissionId)
+        if (submissionID && formData && !editingSubmissionId) {
+            // Only call if we're not already editing a submission
+            handleEditSubmission(submissionID);
+        }
+    }, [submissionID, formData]); // Depend on both submissionID and formData
 
     // Add this before the useEffect
     const keyFieldValues = useMemo(() => {
@@ -567,14 +578,15 @@ export default function DynamicForm() {
 
     const handleEditSubmission = async (submissionId) => {
         setIsModalOpen(false);
+        console.log("Submission ID is ",submissionId)
         setEditingSubmissionId(submissionId);
 
         try {
             const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}`);
             if (!res.ok) throw new Error("Failed to load submission");
-
+            console.log("Result", res)
             const json = await res.json();
-
+            console.log("Data After Loading ", json)
             const submission = json.submission;
             const submissionData = submission.submissionData;
             const formDefinition = json.formDefinition;
@@ -601,6 +613,10 @@ export default function DynamicForm() {
             alert("Failed to load submission for editing.");
         }
     };
+
+    const handleViewSubmission = (submissionId) => {
+        window.open(`/submissions/${submissionId}`, '_blank');
+    }
 
     const parseFieldValue = (fieldId, rawValue) => {
         const field = formData?.fields?.find(f => f.id === fieldId);
@@ -631,7 +647,7 @@ export default function DynamicForm() {
         if (!response.ok) throw new Error("Failed to fetch submissions");
         const submissions = await response.json();
         console.log(submissions)
-        setRecentSubmissions(submissions.slice(0, 10)); // Take only last 10
+        setRecentSubmissions(submissions.slice(0, 20)); // Take only last 10
     };
 
     // Check if a remark should be triggered based on numeric value
@@ -1692,6 +1708,28 @@ export default function DynamicForm() {
                         {formErrors[field.id] && (
                             <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
                         )}
+                        {needsRemark(field, formValues[field.id] || []) && (
+                            <div className="mt-2">
+                                <label className="block text-gray-700 text-sm font-bold mb-2">
+                                    Remarks{" "}
+                                    {field.requireRemarks && (
+                                        <span className="text-red-500">*</span>
+                                    )}
+                                </label>
+                                <textarea
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                                    value={remarks[field.id] || ""}
+                                    onChange={handleRemarkChange(field.id)}
+                                    placeholder="Enter remarks"
+                                    rows={1}
+                                />
+                                {formErrors[`${field.id}_remark`] && (
+                                    <p className="text-red-500 text-xs mt-1">
+                                        {formErrors[`${field.id}_remark`]}
+                                    </p>
+                                )}
+                            </div>
+                        )}
                     </div>
                 );
 
@@ -2570,7 +2608,7 @@ export default function DynamicForm() {
                             onClick={() => setIsModalOpen(true)}
                             className="ml-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
                         >
-                            View Last 10 Submissions
+                            View Last 20 Submissions
                         </button>
                     </div>
                 </div>
@@ -2581,7 +2619,7 @@ export default function DynamicForm() {
             {isModalOpen && (
                 <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
                     <div className="bg-white rounded-lg shadow-lg p-6 w-11/12 max-w-3xl relative">
-                        <h2 className="text-2xl font-bold mb-4">Last 10 Submissions</h2>
+                        <h2 className="text-2xl font-bold mb-4">Last 20 Submissions</h2>
 
                         {/* Table */}
                         {recentSubmissions.length > 0 ? (
@@ -2593,6 +2631,7 @@ export default function DynamicForm() {
                                             <th className="py-2 px-4 border-b">Submitted At</th>
                                             <th className="py-2 px-4 border-b">Status</th>
                                             <th className="py-2 px-4 border-b">Actions</th> {/* NEW COLUMN */}
+                                            <th className="py-2 px-4 border-b">View</th> {/* NEW COLUMN */}
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2620,6 +2659,16 @@ export default function DynamicForm() {
                                                             Edit
                                                         </button>
                                                     )}
+                                                </td>
+
+                                                <td className="py-2 px-4 border-b">
+                                                    {console.log(submission.form?.approvers?.length)}
+                                                    <button
+                                                        className="text-blue-500 hover:underline"
+                                                        onClick={() => handleViewSubmission(submission.id)}
+                                                    >
+                                                        View
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}

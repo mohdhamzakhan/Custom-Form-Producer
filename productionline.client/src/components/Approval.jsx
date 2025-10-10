@@ -98,7 +98,7 @@ export default function ApprovalPage() {
             }
 
             alert("Approval saved successfully!");
-            navigate("/reports"); // redirect to report page
+            navigate(-1);; // redirect to report page
         } catch (error) {
             console.error("Error approving submission:", error);
             alert("Error approving submission");

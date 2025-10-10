@@ -166,6 +166,13 @@ namespace productionLine.Server.Controllers
 
             foreach (FormField field in form.Fields)
             {
+                if (field.Type == "dropdown" || field.Type == "checkbox")
+                {
+                    Console.WriteLine($"Field {field.Label}:");
+                    Console.WriteLine($"  RequiresRemarksJson: {field.RequiresRemarksJson}");
+                    Console.WriteLine($"  RequiresRemarks count: {field.RequiresRemarks?.Count ?? 0}");
+                }
+
                 FormField existingField = existingForm.Fields.FirstOrDefault((FormField f) => f.Id == field.Id);
                 if (existingField != null)
                 {
@@ -189,7 +196,8 @@ namespace productionLine.Server.Controllers
                     existingField.Order = field.Order;
                     existingField.ResultDecimal = field.ResultDecimal;
                     existingField.OptionsJson = field.OptionsJson;
-                    existingField.RemarkTriggersJson = field.RemarkTriggersJson;
+                    existingField.RequiresRemarksJson = JsonSerializer.Serialize(field.RequiresRemarks);
+                    //existingField.RemarkTriggersJson = field.RemarkTriggersJson;
                     existingField.RequireRemarksOutOfRange = field.RequireRemarksOutOfRange;
                     existingField.RequiresRemarksJson = field.RequiresRemarksJson;
                     existingField.ImageValue = field.ImageValue;
@@ -542,7 +550,7 @@ namespace productionLine.Server.Controllers
                 var result = (await (from s in (from s in _context.FormSubmissions
                                                 where s.FormId == formId
                                                 orderby s.SubmittedAt descending
-                                                select s).Take(10)
+                                                select s).Take(30)
                                      select new
                                      {
                                          Id = s.Id,
