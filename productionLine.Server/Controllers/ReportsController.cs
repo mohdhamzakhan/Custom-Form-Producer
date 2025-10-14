@@ -849,5 +849,122 @@ namespace productionLine.Server.Controllers
             return Ok(distinctValues);
         }
 
+        [HttpPost("run-shift/{templateId}")]
+        public async Task<IActionResult> RunShiftReport(int templateId, [FromBody] ShiftReportRequest request)
+        {
+            var template = await _context.ReportTemplates
+                .Include(t => t.Fields)
+                .Include(t => t.Filters)
+                .FirstOrDefaultAsync(t => t.Id == templateId);
+
+            if (template == null)
+                return NotFound("Template not found.");
+
+            // Parse shift period
+            DateTime startDate, endDate;
+            string shiftLetter = request.ShiftPeriod;
+
+            if (request.ShiftPeriod == "current")
+            {
+                shiftLetter = GetCurrentShift();
+            }
+
+            if (request.ShiftPeriod == "fullday")
+            {
+                startDate = DateTime.Today;
+                endDate = DateTime.Today.AddDays(1);
+            }
+            else
+            {
+                var (start, end) = GetShiftTimeRange(shiftLetter);
+                startDate = start;
+                endDate = end;
+            }
+
+            // Fetch submissions within the shift period
+            var submissions = await _context.FormSubmissions
+                .Include(s => s.SubmissionData)
+                .Include(s => s.Approvals)
+                .Where(s => s.FormId == template.FormId &&
+                           s.SubmittedAt >= startDate &&
+                           s.SubmittedAt < endDate &&
+                           s.Approvals.Any(a => a.Status == "Approved"))
+                .OrderBy(s => s.SubmittedAt)
+                .ToListAsync();
+
+            // ✅ FIX: Return data in the same format as regular reports
+            var result = new List<object>();
+
+            foreach (var sub in submissions)
+            {
+                var rowData = template.Fields.Select(reportField =>
+                {
+                    var formField = _context.FormFields
+                        .FirstOrDefault(f => f.Label == reportField.FieldLabel);
+
+                    var match = formField != null
+                        ? sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString())
+                        : null;
+
+                    return new
+                    {
+                        fieldLabel = reportField.FieldLabel,
+                        value = match?.FieldValue ?? "-",
+                        fieldType = "text"
+                    };
+                }).ToList();
+
+                // ✅ CRITICAL: Add the submission timestamp as a field
+                rowData.Add(new
+                {
+                    fieldLabel = "Date",
+                    value = sub.SubmittedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                    fieldType = "date"
+                });
+
+                result.Add(new
+                {
+                    submissionId = sub.Id,
+                    submittedAt = sub.SubmittedAt,
+                    data = rowData
+                });
+            }
+
+            return Ok(result);
+        }
+
+        private string GetCurrentShift()
+        {
+            var now = DateTime.Now;
+            var currentTime = now.Hour * 60 + now.Minute;
+
+            if (currentTime >= 360 && currentTime < 870) return "A"; // 6:00 AM - 2:30 PM
+            if (currentTime >= 870 && currentTime < 1380) return "B"; // 2:30 PM - 11:00 PM
+            return "C"; // 11:00 PM - 6:00 AM
+        }
+
+        private (DateTime start, DateTime end) GetShiftTimeRange(string shift)
+        {
+            var today = DateTime.Today;
+
+            switch (shift)
+            {
+                case "A":
+                    return (today.AddHours(6), today.AddHours(14.5)); // 6:00 AM - 2:30 PM
+                case "B":
+                    return (today.AddHours(14.5), today.AddHours(23)); // 2:30 PM - 11:00 PM
+                case "C":
+                    var yesterday = today.AddDays(-1);
+                    return (yesterday.AddHours(23), today.AddHours(6)); // 11:00 PM - 6:00 AM next day
+                default:
+                    return (today, today.AddDays(1));
+            }
+        }
+
+        public class ShiftReportRequest
+        {
+            public string ShiftPeriod { get; set; } // "current", "A", "B", "C", or "fullday"
+        }
+
     }
 }

@@ -97,6 +97,9 @@ namespace productionLine.Server.Controllers
                         field.IMAGEOPTIONS = field.IMAGEOPTIONS;
                     }
 
+                    field.minLength = field.minLength;
+                    field.maxLength = field.maxLength;
+                    field.lengthValidationMessage = field.lengthValidationMessage;
                     // EXPAND this linkedTextbox section:
                     if (field.Type == "linkedTextbox")
                     {
@@ -274,6 +277,9 @@ namespace productionLine.Server.Controllers
                     Max = f.Max,
                     Min = f.Min,
                     RequireRemarksOutOfRange = f.RequireRemarksOutOfRange ?? false,
+                    minLength = f.minLength,
+                    maxLength = f.maxLength,
+                    lengthValidationMessage = f.lengthValidationMessage,
 
 
                     // Add these missing linked textbox properties:
@@ -291,6 +297,7 @@ namespace productionLine.Server.Controllers
                     IMAGEOPTIONS = f.IMAGEOPTIONS,
                     ImageData = f.IMAGEOPTIONS,
                     Order = f.Order,
+                    
                     
                     
 
@@ -332,7 +339,13 @@ namespace productionLine.Server.Controllers
                         DisplayFormat = ct.DisplayFormat,
                         AllowManualEntry = ct.AllowManualEntry,
                         ShowLookupButton = ct.ShowLookupButton,
-                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson
+                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson,
+                        labelStyle = ct.labelStyle,
+                        labelText = ct.labelText,
+                        textAlign = ct.textAlign,
+                        lengthValidationMessage=ct.lengthValidationMessage,
+                        maxLength=ct.maxLength,
+                        minLength = ct.minLength
 
                     }).ToList() ?? new List<GridColumnDto>()),
 

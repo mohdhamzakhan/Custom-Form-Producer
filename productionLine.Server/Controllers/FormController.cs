@@ -213,6 +213,10 @@ namespace productionLine.Server.Controllers
                     existingField.KeyFieldMappings = field.KeyFieldMappings;
                     existingField.KeyFieldMappingsJson = field.KeyFieldMappingsJson;
                     existingField.IMAGEOPTIONS = field.IMAGEOPTIONS;
+                    existingField.minLength = field.minLength;
+                    existingField.maxLength = field.maxLength;
+                    existingField.lengthValidationMessage = field.lengthValidationMessage;
+
 
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -400,6 +404,9 @@ namespace productionLine.Server.Controllers
                     IMAGEOPTIONS = f.IMAGEOPTIONS,
                     Order=f.Order,
                     ImageData=f.IMAGEOPTIONS,
+                    minLength = f.minLength,
+                    maxLength = f.maxLength,
+                    lengthValidationMessage = f.lengthValidationMessage,
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
@@ -438,7 +445,13 @@ namespace productionLine.Server.Controllers
                         DisplayFormat = ct.DisplayFormat,
                         AllowManualEntry = ct.AllowManualEntry,
                         ShowLookupButton = ct.ShowLookupButton,
-                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson
+                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson,
+                        labelStyle = ct.labelStyle,
+                        labelText = ct.labelText,
+                        textAlign = ct.textAlign,
+                        lengthValidationMessage = ct.lengthValidationMessage,
+                        maxLength = ct.maxLength,
+                        minLength = ct.minLength
 
                     }).ToList() ?? new List<GridColumnDto>()),
 
@@ -537,6 +550,24 @@ namespace productionLine.Server.Controllers
             });
         }
 
+        [HttpGet("fields")]
+        public async Task<IActionResult> GetFields([FromQuery] int formId)
+        {
+            var fields = await _context.FormFields
+                .Where(f => f.FormId == formId)
+                .Select(f => new
+                {
+                    f.Id,
+                    f.Label
+                })
+                .ToListAsync();
+
+            if (fields == null || fields.Count == 0)
+                return NotFound("No fields found for this FormId");
+
+            return Ok(fields);
+        }
+
 
         // Assuming you have a controller like [Route("api/forms")]
         [HttpGet("{form}/lastsubmissions")]
@@ -559,46 +590,26 @@ namespace productionLine.Server.Controllers
                                          ApproversRequired = _context.FormApprovers.Where((FormApprover a) => a.FormId == s.FormId).Count()
                                      }).ToListAsync()).Select(s =>
                                      {
-                                         List<string> source = s.Approvals ?? new List<string>();
-                                         if (source.Any((string a) => a == "Rejected"))
-                                         {
-                                             return new
-                                             {
-                                                 Id = s.Id,
-                                                 SubmittedAt = s.SubmittedAt,
-                                                 Status = "Rejected"
-                                             };
-                                         }
-                                         if (source.Count((string a) => a == "Approved") >= s.ApproversRequired)
-                                         {
-                                             return new
-                                             {
-                                                 Id = s.Id,
-                                                 SubmittedAt = s.SubmittedAt,
-                                                 Status = "Approved"
-                                             };
-                                         }
-                                         if (source.Count() == 0)
-                                         {
-                                             return new
-                                             {
-                                                 Id = s.Id,
-                                                 SubmittedAt = s.SubmittedAt,
-                                                 Status = "Pending"
-                                             };
-                                         }
-                                         return (source.Count((string a) => a == "Pending") < s.ApproversRequired) ? new
-                                         {
-                                             Id = s.Id,
-                                             SubmittedAt = s.SubmittedAt,
-                                             Status = "Initial Approval Done"
-                                         } : new
-                                         {
-                                             Id = s.Id,
-                                             SubmittedAt = s.SubmittedAt,
-                                             Status = "Pending"
-                                         };
+                                         var source = s.Approvals ?? new List<string>();
+                                         var approvedCount = source.Count(a => a == "Approved");
+                                         var rejectedCount = source.Count(a => a == "Rejected");
+                                         var pendingCount = source.Count(a => a == "Pending");
+
+                                         if (rejectedCount > 0)
+                                             return new { s.Id, s.SubmittedAt, Status = "Rejected" };
+
+                                         if (approvedCount >= s.ApproversRequired)
+                                             return new { s.Id, s.SubmittedAt, Status = "Approved" };
+
+                                         if (source.Count == 0 || approvedCount == 0)
+                                             return new { s.Id, s.SubmittedAt, Status = "Pending" };
+
+                                         if (approvedCount > 0 && approvedCount < s.ApproversRequired)
+                                             return new { s.Id, s.SubmittedAt, Status = "Initial Approval Done" };
+
+                                         return new { s.Id, s.SubmittedAt, Status = "Pending" };
                                      });
+
                 return Ok(result);
             }
             catch (Exception ex)

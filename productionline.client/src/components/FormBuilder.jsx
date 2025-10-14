@@ -902,6 +902,19 @@ const FormBuilder = () => {
                             ? [...field.requireRemarks]
                             : (Array.isArray(field.remarksOptions) ? [...field.remarksOptions] : []),
 
+                        ...(field.type === 'textbox' && {
+                            minLength: field.minLength || null,
+                            maxLength: field.maxLength || null,
+                            lengthValidationMessage: field.lengthValidationMessage || ''
+                        }),
+
+                        ...(field.type === 'numeric' && {
+                            min: field.min ?? null,
+                            max: field.max ?? null,
+                            decimal: field.decimal ?? false,
+                            requireRemarksOutOfRange: field.requireRemarksOutOfRange ?? false
+                        }),
+
                         // Handle image options safely - ensure it's a string or null
                         IMAGEOPTIONS: field.IMAGEOPTIONS && typeof field.IMAGEOPTIONS === 'string'
                             ? field.IMAGEOPTIONS
@@ -1028,8 +1041,14 @@ const FormBuilder = () => {
                                 width: column.width,
                                 required: column.required || false,
                                 options: Array.isArray(column.options) ? column.options : [],
+                                labelText: column.labelText || '',
+                                labelStyle: column.labelStyle || 'normal',
+                                textAlign: column.textAlign || 'left',
                                 textColor: column.textColor || "000000",
                                 backgroundColor: column.backgroundColor || "ffffff",
+                                minLength: column.minLength || null,
+                                maxLength: column.maxLength || null,
+                                lengthValidationMessage: column.lengthValidationMessage || '',
 
                                 // CRITICAL FIX: Add formula for calculation columns
                                 formula: column.formula || "",  // <-- ADD THIS LINE
@@ -1233,6 +1252,11 @@ const FormBuilder = () => {
                 allowManualEntry: false,
                 showLookupButton: true,
                 keyFieldMappings: [],
+            }),
+            ...(type === 'textbox' && {
+                minLength: null,
+                maxLength: null,
+                lengthValidationMessage: ''
             }),
             ...(type === "numeric" && {
                 min: 0,
@@ -2106,7 +2130,7 @@ const FormBuilder = () => {
                         )}
                     </div>
 
-                    
+
                     <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
                         {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image"].map(
                             (type) => (
@@ -2808,6 +2832,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <option value="date">Date</option>
                                         <option value="timecalculation">Time Calculation</option>
                                         <option value="dependentDropdown">Dependent Dropdown</option>
+                                        <option value="label">Label</option>
                                         {linkedForm && <option value="linkedTextbox">Linked Field</option>}
                                     </select>
                                 </div>
@@ -2861,6 +2886,61 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     </div>
                                 )}
 
+                                {column.type === 'label' && (
+                                    <div className="w-full space-y-2 mt-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Label Text</label>
+                                            <input
+                                                type="text"
+                                                value={column.labelText || ''}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].labelText = e.target.value;
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                                placeholder="Enter the label text to display"
+                                                className="w-full px-2 py-1 border rounded"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Text Style</label>
+                                            <select
+                                                value={column.labelStyle || 'normal'}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].labelStyle = e.target.value;
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                                className="w-full px-2 py-1 border rounded"
+                                            >
+                                                <option value="normal">Normal</option>
+                                                <option value="bold">Bold</option>
+                                                <option value="italic">Italic</option>
+                                                <option value="underline">Underline</option>
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Text Alignment</label>
+                                            <select
+                                                value={column.textAlign || 'left'}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].textAlign = e.target.value;
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                                className="w-full px-2 py-1 border rounded"
+                                            >
+                                                <option value="left">Left</option>
+                                                <option value="center">Center</option>
+                                                <option value="right">Right</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+
+
                                 {column.type === "dropdown" && (
                                     <div className="w-full mt-2">
                                         <label className="block text-xs text-gray-500 mb-1">Options (comma separated)</label>
@@ -2910,7 +2990,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         {console.log(column.remarksOptions)}
                                         <select
                                             multiple
-                                            value={column.requiresRemarks|| []}
+                                            value={column.requiresRemarks || []}
                                             onChange={(e) => {
                                                 const selected = Array.from(
                                                     e.target.selectedOptions,
@@ -3130,6 +3210,57 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     </div>
                                 )}
 
+                                {column.type === "textbox" && (
+                                    <div className="w-full space-y-2 mt-2">
+                                        <div className="flex gap-2">
+                                            <div className="w-1/2">
+                                                <label className="block text-xs text-gray-500 mb-1">Min Characters</label>
+                                                <input
+                                                    type="number"
+                                                    value={column.minLength || ''}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[colIndex].minLength = e.target.value ? parseInt(e.target.value) : null;
+                                                        updateField({ ...field, columns: updatedColumns });
+                                                    }}
+                                                    min="0"
+                                                    placeholder="0"
+                                                    className="w-full px-2 py-1 border rounded"
+                                                />
+                                            </div>
+                                            <div className="w-1/2">
+                                                <label className="block text-xs text-gray-500 mb-1">Max Characters</label>
+                                                <input
+                                                    type="number"
+                                                    value={column.maxLength || ''}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[colIndex].maxLength = e.target.value ? parseInt(e.target.value) : null;
+                                                        updateField({ ...field, columns: updatedColumns });
+                                                    }}
+                                                    min="1"
+                                                    placeholder="No limit"
+                                                    className="w-full px-2 py-1 border rounded"
+                                                />
+                                            </div>
+                                        </div>
+                                        {/* Character validation message */}
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Validation Message (Optional)</label>
+                                            <input
+                                                type="text"
+                                                value={column.lengthValidationMessage || ''}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex].lengthValidationMessage = e.target.value;
+                                                    updateField({ ...field, columns: updatedColumns });
+                                                }}
+                                                placeholder="Custom validation message"
+                                                className="w-full px-2 py-1 border rounded"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                                 {column.type === "timecalculation" && (
                                     <div className="flex space-x-2 mt-2">
                                         <div className="w-1/2">
@@ -3310,7 +3441,13 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     required: false,
                                     options: [],
                                     textColor: '#000000',
-                                    backgroundColor: '#ffffff'
+                                    backgroundColor: '#ffffff',
+                                    labelText: '',
+                                    labelStyle: 'normal',
+                                    textAlign: 'left',
+                                    minLength: null,
+                                    maxLength: null,
+                                    lengthValidationMessage: ''
                                 };
                                 updateField({ columns: [...field.columns, newColumn] });
                             }}
@@ -3374,7 +3511,21 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             {(field.columns || []).map((col, colIndex) => (
                                                 <td key={`${rowIndex}-${colIndex}`} className="border border-gray-300 p-2">
                                                     {col.type === "textbox" && (
-                                                        <input type="text" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" placeholder="Sample text" />
+                                                        <input
+                                                            type="text"
+                                                            disabled
+                                                            className="w-full bg-gray-50 border px-2 py-1 opacity-50"
+                                                            placeholder={
+                                                                col.minLength || col.maxLength
+                                                                    ? `${col.minLength || 0}-${col.maxLength || '∞'} chars`
+                                                                    : "Sample text"
+                                                            }
+                                                            title={
+                                                                col.minLength || col.maxLength
+                                                                    ? `Min: ${col.minLength || 0}, Max: ${col.maxLength || 'No limit'}`
+                                                                    : undefined
+                                                            }
+                                                        />
                                                     )}
                                                     {col.type === "numeric" && (
                                                         <input type="number" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50"
@@ -3400,6 +3551,25 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     )}
                                                     {col.type === "date" && (
                                                         <input type="date" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50" />
+                                                    )}
+                                                    {col.type === "label" && (
+                                                        <div
+                                                            className={`w-full p-2 min-h-[36px] flex items-center ${col.labelStyle === 'bold' ? 'font-bold' :
+                                                                col.labelStyle === 'italic' ? 'italic' :
+                                                                    col.labelStyle === 'underline' ? 'underline' :
+                                                                        'font-normal'
+                                                                } ${col.textAlign === 'center' ? 'justify-center' :
+                                                                    col.textAlign === 'right' ? 'justify-end' :
+                                                                        'justify-start'
+                                                                } ${col.textColor ? `text-[#${col.textColor}]` : 'text-gray-800'
+                                                                }`}
+                                                            style={{
+                                                                backgroundColor: col.backgroundColor ? `#${col.backgroundColor}` : 'transparent',
+                                                                color: col.textColor ? `#${col.textColor}` : undefined
+                                                            }}
+                                                        >
+                                                            {col.labelText || 'Label Text'}
+                                                        </div>
                                                     )}
                                                 </td>
                                             ))}
@@ -3631,6 +3801,87 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                     })()}
                 </div>
             )}
+
+            {field.type === "textbox" && (
+                <div className="mb-4 space-y-3">
+                    {/* Existing textbox configuration */}
+                    <div className="flex items-center gap-2 mb-4">
+                        <input
+                            type="checkbox"
+                            checked={field.required}
+                            onChange={(e) => updateField({ required: e.target.checked })}
+                            className="h-4 w-4"
+                        />
+                        <label className="text-sm text-gray-600">Required</label>
+                    </div>
+
+                    {/* ADD CHARACTER VALIDATION CONFIGURATION */}
+                    <div>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Character Validation</h4>
+                        <div className="flex gap-2">
+                            <div className="w-1/2">
+                                <label className="block text-xs text-gray-500 mb-1">Min Characters</label>
+                                <input
+                                    type="number"
+                                    value={field.minLength || ''}
+                                    onChange={(e) => {
+                                        const value = e.target.value ? parseInt(e.target.value) : null;
+                                        updateField({ minLength: value });
+                                    }}
+                                    min="0"
+                                    placeholder="0"
+                                    className="w-full px-2 py-1 border rounded"
+                                />
+                            </div>
+                            <div className="w-1/2">
+                                <label className="block text-xs text-gray-500 mb-1">Max Characters</label>
+                                <input
+                                    type="number"
+                                    value={field.maxLength || ''}
+                                    onChange={(e) => {
+                                        const value = e.target.value ? parseInt(e.target.value) : null;
+                                        updateField({ maxLength: value });
+                                    }}
+                                    min="1"
+                                    placeholder="No limit"
+                                    className="w-full px-2 py-1 border rounded"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Custom validation message */}
+                        <div className="mt-2">
+                            <label className="block text-xs text-gray-500 mb-1">Custom Validation Message (Optional)</label>
+                            <input
+                                type="text"
+                                value={field.lengthValidationMessage || ''}
+                                onChange={(e) => updateField({ lengthValidationMessage: e.target.value })}
+                                placeholder="Enter custom message for character validation"
+                                className="w-full px-2 py-1 border rounded"
+                            />
+                            <p className="text-xs text-gray-400 mt-1">
+                                Leave empty to use default messages like "Minimum X characters required"
+                            </p>
+                        </div>
+
+                        {/* Preview of validation */}
+                        {(field.minLength || field.maxLength) && (
+                            <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                                <p className="text-xs text-blue-800">
+                                    <strong>Validation Preview:</strong> This field will require{' '}
+                                    {field.minLength && field.maxLength
+                                        ? `between ${field.minLength} and ${field.maxLength} characters`
+                                        : field.minLength
+                                            ? `at least ${field.minLength} characters`
+                                            : `maximum ${field.maxLength} characters`
+                                    }
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
 
             {(field.type === "dropdown" ||
                 field.type === "checkbox" ||

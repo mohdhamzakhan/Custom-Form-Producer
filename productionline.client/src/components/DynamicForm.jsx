@@ -891,7 +891,9 @@ export default function DynamicForm() {
                     errors[field.id] = `${field.label} is required`;
                 } else if (field.type === "radio" && (!value || value.trim() === "")) {
                     errors[field.id] = `${field.label} is required`;
-                } else if ((field.type === "dropdown" || field.type === "textbox") && (!value || value.trim() === "")) {
+                } else if ((field.type === "dropdown") && (!value || value.trim() === "")) {
+                    errors[field.id] = `${field.label} is required`;
+                } else if (field.type === "textbox" && (!value || value.trim() === "")) {
                     errors[field.id] = `${field.label} is required`;
                 } else if (field.type === "numeric" && value === "") {
                     errors[field.id] = `${field.label} is required`;
@@ -922,6 +924,18 @@ export default function DynamicForm() {
 
                             if (!isValidDate(value)) {
                                 errors[errorKey] = `Please enter a valid date in row ${rowIndex + 1}`;
+                            }
+                        }
+
+                        if (col.type === "textbox" && value && typeof value === "string") {
+                            const errorKey = `${field.id}_${rowIndex}_${col.name}`;
+
+                            if (col.minLength && value.length < col.minLength) {
+                                errors[errorKey] = col.lengthValidationMessage ||
+                                    `Minimum ${col.minLength} characters required in row ${rowIndex + 1}`;
+                            } else if (col.maxLength && value.length > col.maxLength) {
+                                errors[errorKey] = col.lengthValidationMessage ||
+                                    `Maximum ${col.maxLength} characters allowed in row ${rowIndex + 1}`;
                             }
                         }
 
@@ -1006,7 +1020,15 @@ export default function DynamicForm() {
                     }
                 }
             }
-
+            if (field.type === "textbox" && value && typeof value === "string") {
+                if (field.minLength && value.length < field.minLength) {
+                    errors[field.id] = field.lengthValidationMessage ||
+                        `${field.label} must be at least ${field.minLength} characters`;
+                } else if (field.maxLength && value.length > field.maxLength) {
+                    errors[field.id] = field.lengthValidationMessage ||
+                        `${field.label} must not exceed ${field.maxLength} characters`;
+                }
+            }
 
             // Remarks validation (as already handled)
             if (checkRemarkTriggers(field, value) && (!remarks[field.id] || remarks[field.id].trim() === "")) {
@@ -1739,26 +1761,77 @@ export default function DynamicForm() {
                 return (
                     <div className="mb-4 w-full">
                         <label className="block text-gray-700 text-sm font-bold mb-2">
-                            {field.label}{field.required && <span className="text-red-500">*</span>}
+                            {field.label}
+                            {field.required && <span className="text-red-500">*</span>}
                         </label>
+
                         <textarea
-                            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                            className={`shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline ${formErrors[field.id] ? "border-red-500" : ""
+                                }`}
                             value={formValues[field.id] || ""}
-                            onChange={(e) => handleInputChange(field.id, e.target.value, field.type, field)}
-                            // Only add onBlur if this field is the bridge field
+                            onChange={(e) => {
+                                const value = e.target.value;
+
+                                // Handle character length validation
+                                let errorMessage = "";
+
+                                if (field.minLength && value.length < field.minLength) {
+                                    errorMessage = field.lengthValidationMessage ||
+                                        `Minimum ${field.minLength} characters required`;
+                                } else if (field.maxLength && value.length > field.maxLength) {
+                                    errorMessage = field.lengthValidationMessage ||
+                                        `Maximum ${field.maxLength} characters allowed`;
+                                }
+
+                                // Update form values
+                                handleInputChange(field.id, value, field.type, field);
+
+                                // Set or clear validation error
+                                if (errorMessage) {
+                                    setFormErrors(prev => ({ ...prev, [field.id]: errorMessage }));
+                                } else {
+                                    setFormErrors(prev => {
+                                        const newErrors = { ...prev };
+                                        delete newErrors[field.id];
+                                        return newErrors;
+                                    });
+                                }
+                            }}
+                            // Only add onBlur if this is a bridge field
                             {...(isBridgeField(field.id) && {
                                 onBlur: () => handleBridgeFieldBlur(field.id)
                             })}
-                            placeholder={`Enter ${field.label}`}
+                            placeholder={
+                                field.minLength || field.maxLength
+                                    ? `${field.minLength || 0}-${field.maxLength || '∞'} characters`
+                                    : `Enter ${field.label}`
+                            }
                             rows="1"
+                            minLength={field.minLength || undefined}
+                            maxLength={field.maxLength || undefined}
                         />
+
+                        {/* Character count display */}
+                        {(field.minLength || field.maxLength) && (
+                            <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                                <span>
+                                    Characters: {(formValues[field.id] || "").length}
+                                    {field.maxLength ? `/${field.maxLength}` : ''}
+                                </span>
+                                {field.minLength && (
+                                    <span>
+                                        Minimum: {field.minLength}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Show validation error */}
                         {formErrors[field.id] && (
                             <p className="text-red-500 text-xs mt-1">{formErrors[field.id]}</p>
                         )}
                     </div>
                 );
-
-
 
             case "time":
                 return (
@@ -1968,6 +2041,28 @@ export default function DynamicForm() {
                                                             );
                                                         }
 
+                                                        if (col.type === "label") {
+                                                            return (
+                                                                <div
+                                                                    className={`w-full p-2 min-h-[36px] flex items-center ${col.labelStyle === 'bold' ? 'font-bold' :
+                                                                            col.labelStyle === 'italic' ? 'italic' :
+                                                                                col.labelStyle === 'underline' ? 'underline' :
+                                                                                    'font-normal'
+                                                                        } ${col.textAlign === 'center' ? 'justify-center' :
+                                                                            col.textAlign === 'right' ? 'justify-end' :
+                                                                                'justify-start'
+                                                                        }`}
+                                                                    style={{
+                                                                        color: col.textColor || 'inherit',
+                                                                        backgroundColor: col.backgroundColor || 'inherit'
+                                                                    }}
+                                                                >
+                                                                    {col.labelText || 'Label Text'}
+                                                                </div>
+                                                            );
+                                                        }
+
+
                                                         if (col.type === "timecalculation") {
                                                             const formula = col.formula || "";
                                                             const matches = formula.match(/\{(.*?)\}/g);
@@ -1992,6 +2087,85 @@ export default function DynamicForm() {
                                                                 />
                                                             );
                                                         }
+
+                                                        if (col.type === "textbox") {
+                                                            return (
+                                                                <div>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={row[col.name] || ""}
+                                                                        onChange={(e) => {
+                                                                            const value = e.target.value;
+
+                                                                            // Check character length validation
+                                                                            let isValid = true;
+                                                                            let errorMessage = "";
+
+                                                                            if (col.minLength && value.length < col.minLength) {
+                                                                                isValid = false;
+                                                                                errorMessage = col.lengthValidationMessage ||
+                                                                                    `Minimum ${col.minLength} characters required`;
+                                                                            } else if (col.maxLength && value.length > col.maxLength) {
+                                                                                isValid = false;
+                                                                                errorMessage = col.lengthValidationMessage ||
+                                                                                    `Maximum ${col.maxLength} characters allowed`;
+                                                                            }
+
+                                                                            // Update the value
+                                                                            handleGridChange(field.id, rowIndex, col.name, value);
+
+                                                                            // Set validation error if needed
+                                                                            if (!isValid) {
+                                                                                setFormErrors(prev => ({
+                                                                                    ...prev,
+                                                                                    [`${field.id}_${rowIndex}_${col.name}`]: errorMessage
+                                                                                }));
+                                                                            } else {
+                                                                                // Clear validation error
+                                                                                setFormErrors(prev => {
+                                                                                    const newErrors = { ...prev };
+                                                                                    delete newErrors[`${field.id}_${rowIndex}_${col.name}`];
+                                                                                    return newErrors;
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                        className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
+                                                                            }`}
+                                                                        style={{
+                                                                            color: col.textColor || "inherit",
+                                                                            backgroundColor: col.backgroundColor || "inherit",
+                                                                        }}
+                                                                        minLength={col.minLength || undefined}
+                                                                        maxLength={col.maxLength || undefined}
+                                                                        placeholder={
+                                                                            col.minLength || col.maxLength
+                                                                                ? `${col.minLength || 0}-${col.maxLength || '∞'} chars`
+                                                                                : `Enter ${col.name}`
+                                                                        }
+                                                                    />
+
+                                                                    {/* Character count display */}
+                                                                    {(col.minLength || col.maxLength) && (
+                                                                        <div className="text-xs text-gray-500 mt-1">
+                                                                            {(row[col.name] || "").length}/{col.maxLength || '∞'} characters
+                                                                            {col.minLength && (
+                                                                                <span className="ml-2">
+                                                                                    (Min: {col.minLength})
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Show validation error */}
+                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                        <p className="text-red-500 text-xs mt-1">
+                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
+
 
                                                         if (col.type === "dependentDropdown") {
                                                             const parentValue = row[col.parentColumn] || "";
@@ -2495,6 +2669,9 @@ export default function DynamicForm() {
                 newRow[`${col.name}_remarks`] = "";
             } else if (col.type === "date") {
                 newRow[col.name] = null; // Initialize as null for date fields
+            } else if (col.type === "label") {
+                // Labels don't need initialization as they display static text
+                newRow[col.name] = "";
             } else {
                 newRow[col.name] = "";
             }

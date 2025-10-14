@@ -155,6 +155,13 @@ namespace productionLine.Server.Model
         [Column("SHOW_LOOKUP_BUTTON", TypeName = "NUMBER(1)")]
         public bool? ShowLookupButton { get; set; }
 
+        [Column("MINLENGTH")]
+        public int? minLength{get;set;}
+        [Column("MAXLENGTH")]
+        public int? maxLength { get;set;}
+        [Column("MESSAGE")]
+        public string? lengthValidationMessage { get;set;}
+
         [NotMapped]
         public List<KeyFieldMapping>? KeyFieldMappings
         {
@@ -250,6 +257,18 @@ namespace productionLine.Server.Model
 
         [JsonPropertyName("keyFieldMappingsJson")]
         public string? KeyFieldMappingsJson { get; set; }
+        [JsonPropertyName("labelText")]
+        public string? labelText { get; set; }
+        [JsonPropertyName("labelStyle")]
+        public string? labelStyle { get; set; }
+        [JsonPropertyName("textAlign")]
+        public string? textAlign { get; set; }
+        [JsonPropertyName("lengthValidationMessage")]
+        public string? lengthValidationMessage { get; set; }
+        [JsonPropertyName("maxLength")]
+        public int? maxLength { get; set; }
+        [JsonPropertyName("minLength")]
+        public int? minLength { get; set; }
 
         [NotMapped]
         [JsonPropertyName("keyFieldMappings")]

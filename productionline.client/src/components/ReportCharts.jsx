@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
     BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -239,7 +239,56 @@ const getChartSubtitle = (metrics, calculatedFields) => {
     return null;
 };
 
-const ReportCharts = ({
+const filterDataByShiftTime = (data, shiftStart, shiftEnd) => {
+    if (!data || data.length === 0) {
+        console.log('❌ No data to filter');
+        return [];
+    }
+
+    const parseTime = (timeStr) => {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        return hours * 60 + minutes;
+    };
+
+    const startMinutes = parseTime(shiftStart);
+    let endMinutes = parseTime(shiftEnd);
+
+    // Handle overnight shifts
+    if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60;
+    }
+
+    const filtered = data.filter(item => {
+        if (!item.Date) return false;
+
+        const date = new Date(item.Date);
+        if (isNaN(date.getTime())) return false;
+
+        let itemMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+
+        // Handle overnight comparison
+        if (endMinutes > 24 * 60 && itemMinutes < startMinutes) {
+            itemMinutes += 24 * 60;
+        }
+
+        return itemMinutes >= startMinutes && itemMinutes <= endMinutes;
+    });
+
+    console.log(`🔍 Filtered ${filtered.length} items from ${data.length} total`);
+    return filtered;
+};
+const parseTimeToMinutes = (timeStr) => {
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/);
+    if (!match) return 0;
+    let [_, hours, minutes, period] = match;
+    hours = parseInt(hours);
+    minutes = parseInt(minutes);
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+};
+
+const ReportCharts = React.memo(({
     data,
     metrics,
     type,
@@ -260,6 +309,13 @@ const ReportCharts = ({
     console.log('passedShiftConfig:', passedShiftConfig);
     console.log('passedShiftConfig type:', typeof passedShiftConfig);
     console.log('passedShiftConfig isArray:', Array.isArray(passedShiftConfig));
+
+    const [realTimeData, setRealTimeData] = useState([]);
+    const [autoRefresh, setAutoRefresh] = useState(true);
+    const [showConfig, setShowConfig] = useState(true);
+
+    const [configVisible, setConfigVisible] = useState(showConfiguration !== false);
+    const [configTimer, setConfigTimer] = useState(null);
 
     if (passedShiftConfig && Array.isArray(passedShiftConfig)) {
         console.log('Shift configs details:');
@@ -389,13 +445,6 @@ const ReportCharts = ({
     }, [passedShiftConfig, selectedShiftPeriod, currentShift1]); // Re-run when any of these change
 
 
-
-    const [realTimeData, setRealTimeData] = useState([]);
-    const [autoRefresh, setAutoRefresh] = useState(true);
-    const [showConfig, setShowConfig] = useState(true);
-
-    const [configVisible, setConfigVisible] = useState(showConfiguration !== false);
-    const [configTimer, setConfigTimer] = useState(null);
 
     // Auto-refresh effect for shift charts
     // In ReportCharts.jsx, update the shift case useEffect:
@@ -659,61 +708,30 @@ const ReportCharts = ({
         }
     };
 
-    const calculateColumnwiseValue = (calcField, allData) => {
-        try {
-            const { formula, functionType } = calcField;
+    const filteredShiftData = useMemo(() => {
+        const filtered = filterDataByShiftTime(
+            data,
+            activeShiftConfig.startTime,
+            activeShiftConfig.endTime
+        );
 
-            if (functionType === 'EXPRESSION') {
-                // For expression-based columnwise calculations
-                const fieldRefs = formula.match(/"([^"]+)"/g);
-                if (!fieldRefs) return 0;
+        // ✅ ADD THIS DEBUG
+        console.log('🔍 Filtered data sample:', filtered.slice(0, 5).map(item => ({
+            Date: item.Date,
+            Count: item.Count,
+            formatted: new Date(item.Date).toLocaleTimeString()
+        })));
 
-                // Calculate totals for each field referenced in the formula
-                let processedFormula = formula;
+        return filtered;
+    }, [
+        data.length,
+        activeShiftConfig.startTime,
+        activeShiftConfig.endTime,
+        // Track both last Date AND last Count to detect new submissions
+        data.length > 0 ? `${data[data.length - 1]?.Date}_${data[data.length - 1]?.Count}` : null
+    ]);
 
-                fieldRefs.forEach(match => {
-                    const fieldName = match.replace(/"/g, '');
 
-                    // Sum up all values for this field across all data
-                    const totalValue = allData.reduce((sum, item) => {
-                        const value = parseFloat(item[fieldName]) || 0;
-                        return sum + value;
-                    }, 0);
-
-                    processedFormula = processedFormula.replace(match, totalValue.toString());
-                });
-
-                // Evaluate the expression with totals
-                const result = Function('"use strict"; return (' + processedFormula + ')')();
-                return typeof result === 'number' && !isNaN(result) ? result : 0;
-            }
-
-            // Handle other function types (SUM, AVG, etc.)
-            const fieldRefs = formula.match(/"([^"]+)"/g);
-            if (!fieldRefs || fieldRefs.length === 0) return 0;
-
-            const fieldName = fieldRefs[0].replace(/"/g, '');
-            const allValues = allData.map(item => parseFloat(item[fieldName]) || 0);
-
-            switch (functionType) {
-                case 'SUM':
-                    return allValues.reduce((sum, val) => sum + val, 0);
-                case 'AVG':
-                    return allValues.length > 0 ? allValues.reduce((sum, val) => sum + val, 0) / allValues.length : 0;
-                case 'MIN':
-                    return allValues.length > 0 ? Math.min(...allValues) : 0;
-                case 'MAX':
-                    return allValues.length > 0 ? Math.max(...allValues) : 0;
-                case 'COUNT':
-                    return allValues.length;
-                default:
-                    return 0;
-            }
-        } catch (error) {
-            console.error('Error calculating columnwise value:', error);
-            return 0;
-        }
-    };
 
     // Render different chart types
     switch (type) {
@@ -1323,95 +1341,84 @@ const ReportCharts = ({
                 }
             }, [configVisible, type, showConfiguration]);
 
+            console.log('=== SHIFT CHART DATA DEBUG ===');
+            console.log('Raw data:', data);
+            console.log('Active shift config:', activeShiftConfig);
 
-            // Filter data based on shift time range
-            const filterDataByShiftTime = (data, shiftStart, shiftEnd) => {
-                const parseTime = (timeStr) => {
-                    const [hours, minutes] = timeStr.split(':').map(Number);
-                    return hours * 60 + minutes;
-                };
 
-                const startMinutes = parseTime(shiftStart);
-                let endMinutes = parseTime(shiftEnd);
+            // ✅ FIX: Filter data by shift time - Handle UTC dates correctly
 
-                // Handle overnight shifts
-                if (endMinutes <= startMinutes) {
-                    endMinutes += 24 * 60;
-                }
 
-                return data.filter(item => {
-                    const submissionDate = item[xField] || item.Date || item.submissionDate;
-                    if (!submissionDate) return false;
-
-                    const date = new Date(submissionDate);
-                    if (isNaN(date.getTime())) return false;
-
-                    let itemMinutes = date.getHours() * 60 + date.getMinutes();
-
-                    // Handle overnight comparison
-                    if (endMinutes > 24 * 60 && itemMinutes < startMinutes) {
-                        itemMinutes += 24 * 60;
-                    }
-
-                    return itemMinutes >= startMinutes && itemMinutes <= endMinutes;
-                });
-            };
-
-            // Filter data by shift time
-            const filteredShiftData = filterDataByShiftTime(
-                data,
+            // Then in your component, memoize the filtered data:
+            const filteredShiftData = useMemo(() => {
+                console.log('🔍 Filtering shift data (memoized)');
+                return filterDataByShiftTime(
+                    data,
+                    activeShiftConfig.startTime,
+                    activeShiftConfig.endTime
+                );
+            }, [
+                data.length,
                 activeShiftConfig.startTime,
-                activeShiftConfig.endTime
-            );
+                activeShiftConfig.endTime,
+                // Use a hash of the data instead of the full array
+                JSON.stringify(data.map(item => ({ Date: item.Date, submissionId: item.submissionId })))
+            ]);
 
-            // Calculate distributed target based on parts and cycle time
+
             const calculateDistributedTarget = (targetParts, cycleTimeSeconds, shiftStart, shiftEnd, breaks) => {
-                const targetData = [];
-                const shiftStartTime = new Date();
-                const [startHour, startMinute] = shiftStart.split(':');
-                shiftStartTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
+                console.log('⚡ Calculating distributed target (optimized)');
 
-                const shiftEndTime = new Date();
-                const [endHour, endMinute] = shiftEnd.split(':');
-                shiftEndTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
-
-                if (shiftEndTime <= shiftStartTime) {
-                    shiftEndTime.setDate(shiftEndTime.getDate() + 1);
-                }
-
-                // Calculate parts per time interval
+                // Pre-calculate constants
                 const partsPerSecond = 1 / cycleTimeSeconds;
                 const partsPerInterval = partsPerSecond * 300; // 5-minute intervals
 
-                const currentTime = new Date(shiftStartTime);
+                // Parse times once
+                const [startHour, startMinute] = shiftStart.split(':').map(Number);
+                const [endHour, endMinute] = shiftEnd.split(':').map(Number);
+
+                const shiftStartMinutes = startHour * 60 + startMinute;
+                let shiftEndMinutes = endHour * 60 + endMinute;
+
+                if (shiftEndMinutes <= shiftStartMinutes) {
+                    shiftEndMinutes += 24 * 60; // Handle overnight
+                }
+
+                // Pre-process breaks into minute ranges
+                const breakRanges = breaks.map(breakItem => {
+                    const [bStartH, bStartM] = breakItem.startTime.split(':').map(Number);
+                    const [bEndH, bEndM] = breakItem.endTime.split(':').map(Number);
+                    let bStart = bStartH * 60 + bStartM;
+                    let bEnd = bEndH * 60 + bEndM;
+
+                    if (bEnd < bStart) bEnd += 24 * 60;
+
+                    return { start: bStart, end: bEnd };
+                });
+
+                const targetData = [];
                 let cumulativeParts = 0;
 
-                while (currentTime <= shiftEndTime) {
-                    const timeLabel = currentTime.toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
+                // Generate data points every 5 minutes
+                for (let minutes = shiftStartMinutes; minutes <= shiftEndMinutes; minutes += 5) {
+                    // Check if current time is during a break
+                    let adjustedMinutes = minutes;
+                    if (minutes >= 24 * 60) adjustedMinutes = minutes - 24 * 60;
 
-                    const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
-                    const isDuringBreak = breaks.some(breakItem => {
-                        const [startH, startM] = breakItem.startTime.split(':');
-                        const [endH, endM] = breakItem.endTime.split(':');
-                        let breakStart = parseInt(startH) * 60 + parseInt(startM);
-                        let breakEnd = parseInt(endH) * 60 + parseInt(endM);
-
-                        if (breakEnd < breakStart) breakEnd += 24 * 60;
-
-                        let checkTime = currentMinutes;
-                        if (currentTime.getDate() > shiftStartTime.getDate()) {
-                            checkTime += 24 * 60;
-                        }
-
-                        return checkTime >= breakStart && checkTime <= breakEnd;
-                    });
+                    const isDuringBreak = breakRanges.some(range =>
+                        adjustedMinutes >= range.start && adjustedMinutes <= range.end
+                    );
 
                     if (!isDuringBreak) {
                         cumulativeParts += partsPerInterval;
                     }
+
+                    // Format time
+                    const hours = Math.floor(adjustedMinutes / 60);
+                    const mins = adjustedMinutes % 60;
+                    const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+                    const period = hours >= 12 ? 'PM' : 'AM';
+                    const timeLabel = `${displayHour}:${String(mins).padStart(2, '0')} ${period}`;
 
                     targetData.push({
                         time: timeLabel,
@@ -1419,49 +1426,141 @@ const ReportCharts = ({
                         actualParts: 0,
                         isBreak: isDuringBreak
                     });
-
-                    currentTime.setMinutes(currentTime.getMinutes() + 5);
                 }
 
+                console.log('⚡ Target data computed with', targetData.length, 'points');
                 return targetData;
             };
 
 
-            const targetLineData = calculateDistributedTarget(
+
+            // First, memoize the target line data separately (add this BEFORE combinedData)
+            const targetLineData = useMemo(() => {
+                console.log('🎯 Computing target line data (memoized)');
+                return calculateDistributedTarget(
+                    activeShiftConfig.targetParts,
+                    activeShiftConfig.cycleTimeSeconds,
+                    activeShiftConfig.startTime,
+                    activeShiftConfig.endTime,
+                    activeShiftConfig.breaks
+                );
+            }, [
                 activeShiftConfig.targetParts,
                 activeShiftConfig.cycleTimeSeconds,
                 activeShiftConfig.startTime,
                 activeShiftConfig.endTime,
-                activeShiftConfig.breaks
-            );
+                JSON.stringify(activeShiftConfig.breaks)
+            ]);
 
-            const combinedData = targetLineData.map((targetPoint, index) => {
-                // Find matching actual data by time
-                const matchingActual = filteredShiftData.find(item => {
-                    const submissionDate = item[xField] || item.Date || item.submissionDate;
-                    if (!submissionDate) return false;
+            const combinedData = useMemo(() => {
+                if (!targetLineData || !filteredShiftData) return [];
 
-                    const date = new Date(submissionDate);
-                    const timeLabel = date.toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
+                console.log('🚀 Computing combinedData (fixed version)');
+                console.log('🔍 Total filtered records:', filteredShiftData.length);
+                console.log('🔍 First data item:', filteredShiftData[0]);
 
-                    return timeLabel === targetPoint.time;
+                // ✅ Create a time-to-submissions map
+                const timeToSubmissionsMap = new Map();
+
+                filteredShiftData.forEach((item, index) => {
+                    const date = new Date(item.Date);
+                    const hours = date.getUTCHours();
+                    const minutes = date.getUTCMinutes();
+
+                    // ✅ Round UP to nearest 5 minutes
+                    const roundedMinutes = Math.ceil(minutes / 5) * 5;
+                    let adjustedHours = hours;
+                    let finalMinutes = roundedMinutes;
+
+                    // Handle minute overflow
+                    if (roundedMinutes === 60) {
+                        adjustedHours = hours + 1;
+                        finalMinutes = 0;
+                    }
+
+                    // Convert to 12-hour format
+                    const hours12 = adjustedHours === 0 ? 12 : adjustedHours > 12 ? adjustedHours - 12 : adjustedHours;
+                    const period = adjustedHours >= 12 ? 'PM' : 'AM';
+                    const timeKey = `${hours12}:${String(finalMinutes).padStart(2, '0')} ${period}`;
+
+                    // ✅ Count submissions per time bucket
+                    const currentCount = timeToSubmissionsMap.get(timeKey) || 0;
+                    timeToSubmissionsMap.set(timeKey, currentCount + 1);
+
+                    // Debug first few items
+                    if (index < 5) {
+                        console.log(`📍 Item ${index}: Date=${item.Date}, Time bucket=${timeKey}, Count=${currentCount + 1}`);
+                    }
                 });
 
-                // Get actual parts from the first metric if data exists
-                let actualParts = 0;
-                if (matchingActual && metrics && metrics.length > 0) {
-                    const metricValue = matchingActual[metrics[0]];
-                    actualParts = typeof metricValue === 'number' ? metricValue : parseFloat(metricValue) || 0;
-                }
+                console.log('🗺️ Time to Submissions Map size:', timeToSubmissionsMap.size);
+                console.log('🗺️ Sample entries:', Array.from(timeToSubmissionsMap.entries()).slice(0, 10));
 
-                return {
-                    ...targetPoint,
-                    actualParts: actualParts
-                };
-            });
+                // ✅ Build cumulative totals
+                let cumulativeTotal = 0;
+                const result = targetLineData.map((targetPoint, index) => {
+                    const submissionsInThisBucket = timeToSubmissionsMap.get(targetPoint.time) || 0;
+
+                    // Add this bucket's submissions to the cumulative total
+                    cumulativeTotal += submissionsInThisBucket;
+
+                    const resultPoint = {
+                        ...targetPoint,
+                        actualParts: cumulativeTotal,
+                        newPartsInBucket: submissionsInThisBucket
+                    };
+
+                    // Debug first few and last few points
+                    if (index < 5 || index >= targetLineData.length - 5) {
+                        console.log(`📈 Point ${index}: time=${targetPoint.time}, newParts=${submissionsInThisBucket}, cumulative=${cumulativeTotal}`);
+                    }
+
+                    return resultPoint;
+                });
+
+                console.log('✅ Final cumulative total:', cumulativeTotal);
+                console.log('✅ Expected total:', filteredShiftData.length);
+
+                return result;
+            }, [
+                targetLineData,
+                filteredShiftData.length,
+                filteredShiftData.length > 0 ? filteredShiftData[filteredShiftData.length - 1]?.Date : null
+            ]);
+
+            console.log('📈 Combined chart data:', combinedData);
+
+
+            //let cumulativeActual = 0;
+            //const cumulativeData = combinedData.map(point => {
+            //    cumulativeActual += point.actualParts;
+            //    return {
+            //        ...point,
+            //        actualParts: cumulativeActual
+            //    };
+            //});
+
+            const cumulativeData = combinedData; // No additional processing needed!
+
+            console.log('📈 Using combinedData directly (no double processing):', cumulativeData.slice(0, 5));
+
+            console.log('📈 Cumulative chart data (with running totals):', cumulativeData);
+
+            // Find data points with actual production for debugging
+            const pointsWithProduction = cumulativeData.filter(p => p.actualParts > 0);
+            console.log('📊 Time points with production:', pointsWithProduction);
+
+            if (!cumulativeData || cumulativeData.length === 0) {
+                return (
+                    <div className="w-full max-w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
+                        <div className="text-center py-12">
+                            <div className="text-6xl mb-4">📊</div>
+                            <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
+                            <p className="text-gray-500">No production data found for the selected shift period</p>
+                        </div>
+                    </div>
+                );
+            }
 
             if (!combinedData || combinedData.length === 0) {
                 return (
@@ -1475,8 +1574,24 @@ const ReportCharts = ({
                 );
             }
 
-            const currentProduction = combinedData.reduce((sum, point) => sum + point.actualParts, 0);
+            console.log('📈 Cumulative chart data:', cumulativeData);
+
+            // Validation
+            if (!cumulativeData || cumulativeData.length === 0) {
+                return (
+                    <div className="w-full max-w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
+                        <div className="text-center py-12">
+                            <div className="text-6xl mb-4">📊</div>
+                            <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
+                            <p className="text-gray-500">No production data found for the selected shift period</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            const currentProduction = filteredShiftData.length; // This should be 1308
             const efficiency = Math.round((currentProduction / activeShiftConfig.targetParts) * 100);
+
             const shiftInfo = SHIFT_CONFIG[activeShiftConfig.shift]; // ✅ FIXED: Use activeShiftConfig.shift
 
             // Rest of shift chart JSX with updated configuration visibility
@@ -1643,7 +1758,7 @@ const ReportCharts = ({
                             </div>
                         </div>
                     )}
-                   
+
                     {/* Current Shift Info */}
                     {!isFullscreenMode && (
                         <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
@@ -1681,89 +1796,73 @@ const ReportCharts = ({
 
                     {/* Production Chart */}
                     <div className={`mb-6 ${isFullscreenMode ? 'flex-1' : ''}`}>
-                       
-                        <ResponsiveContainer width="100%"
-                            height={isFullscreenMode ? "60vh" : 500} // ✅ Use viewport height for fullscreen
-                            style={{
-                                background: isFullscreenMode ? 'rgba(255,255,255,0.05)' : 'transparent',
-                                border: isFullscreenMode ? '1px solid rgba(255,255,255,0.2)' : 'none'
-                            }}
+                        <ResponsiveContainer
+                            width="100%"
+                            height={isFullscreenMode ? "60vh" : 500}
                         >
                             <LineChart
-                                data={combinedData}
+                                data={cumulativeData}
                                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                                style={{ backgroundColor: isFullscreenMode ? 'transparent' : 'white' }} // ✅ Add this
                             >
                                 <CartesianGrid
                                     strokeDasharray="3 3"
-                                    stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"} // ✅ Make grid more visible
+                                    stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"}
                                 />
                                 <XAxis
                                     dataKey="time"
-                                    tick={{ fontSize: 14, fill: isFullscreenMode ? 'white' : '#666' }} // ✅ Bigger font for fullscreen
+                                    tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
                                     angle={-45}
                                     textAnchor="end"
                                     height={80}
-                                    axisLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add axis line color
-                                    tickLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add tick line color
                                 />
                                 <YAxis
-                                    tick={{ fontSize: 14, fill: isFullscreenMode ? 'white' : '#666' }} // ✅ Bigger font for fullscreen
+                                    tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
                                     label={{
-                                        value: 'Parts Produced',
+                                        value: 'Cumulative Parts Produced',
                                         angle: -90,
                                         position: 'insideLeft',
                                         style: {
-                                            textAnchor: 'middle',
                                             fill: isFullscreenMode ? 'white' : '#666',
-                                            fontSize: 16 // ✅ Bigger label
+                                            fontSize: 14
                                         }
                                     }}
-                                    axisLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add axis line color
-                                    tickLine={{ stroke: isFullscreenMode ? 'white' : '#666' }} // ✅ Add tick line color
                                 />
                                 <Tooltip
                                     contentStyle={{
                                         backgroundColor: isFullscreenMode ? 'rgba(0,0,0,0.8)' : 'white',
-                                        border: isFullscreenMode ? '1px solid rgba(255,255,255,0.3)' : '1px solid #ccc',
-                                        borderRadius: '8px',
-                                        color: isFullscreenMode ? 'white' : 'black'
+                                        border: '1px solid #ccc',
+                                        borderRadius: '8px'
                                     }}
                                 />
-                                <Legend
-                                    wrapperStyle={{
-                                        color: isFullscreenMode ? 'white' : 'black',
-                                        fontSize: isFullscreenMode ? '16px' : '14px' // ✅ Bigger legend font
-                                    }}
-                                />
+                                <Legend />
 
-                                {/* ✅ CRITICAL: Make sure lines are bright and visible */}
+                                {/* Target Line */}
                                 <Line
                                     type="monotone"
                                     dataKey="targetParts"
-                                    stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"} // ✅ Brighter orange for fullscreen
-                                    strokeWidth={isFullscreenMode ? 5 : 3} // ✅ Thicker line for fullscreen
-                                    strokeDasharray="8 8" // ✅ Bigger dashes for fullscreen
+                                    stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
+                                    strokeWidth={isFullscreenMode ? 5 : 3}
+                                    strokeDasharray="8 8"
                                     name="Target Production"
                                     dot={false}
                                 />
 
+                                {/* Actual Production Line */}
                                 <Line
                                     type="monotone"
                                     dataKey="actualParts"
-                                    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"} // ✅ Brighter green for fullscreen
-                                    strokeWidth={isFullscreenMode ? 5 : 3} // ✅ Thicker line for fullscreen
-                                    name="Actual Production"
+                                    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"}
+                                    strokeWidth={isFullscreenMode ? 5 : 3}
+                                    name="Actual Production (Cumulative)"
                                     connectNulls={false}
                                     dot={{
                                         fill: isFullscreenMode ? '#4ade80' : '#82ca9d',
                                         strokeWidth: 3,
-                                        r: isFullscreenMode ? 6 : 3 // ✅ Bigger dots for fullscreen
+                                        r: isFullscreenMode ? 6 : 3
                                     }}
                                 />
                             </LineChart>
                         </ResponsiveContainer>
-
                     </div>
 
                     {/* Production Summary Cards */}
@@ -1847,6 +1946,19 @@ const ReportCharts = ({
                 </div>
             );
     }
-};
+}, (prevProps, nextProps) => {
+    // Return TRUE to PREVENT re-render, FALSE to ALLOW re-render
+    const shouldSkipRender = (
+        prevProps.type === nextProps.type &&
+        prevProps.data.length === nextProps.data.length &&
+        prevProps.selectedShiftPeriod === nextProps.selectedShiftPeriod &&
+        prevProps.refreshTrigger === nextProps.refreshTrigger && // ✅ ADD THIS
+        prevProps.shiftConfigs?.[0]?.targetParts === nextProps.shiftConfigs?.[0]?.targetParts &&
+        // CRITICAL: Check if the last data point changed
+        prevProps.data[prevProps.data.length - 1]?.Date === nextProps.data[nextProps.data.length - 1]?.Date &&
+        prevProps.data[prevProps.data.length - 1]?.Count === nextProps.data[nextProps.data.length - 1]?.Count
+    );
 
+    return shouldSkipRender;
+});
 export default ReportCharts;

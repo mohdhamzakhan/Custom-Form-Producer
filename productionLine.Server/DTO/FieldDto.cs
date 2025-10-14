@@ -42,5 +42,8 @@ namespace productionLine.Server.DTO
         public bool? ShowLookupButton { get; set; }
         public string? KeyFieldMappingsJson { get; set; }
         public bool? RequireRemarksOutOfRange { get; set; }
+        public int? minLength { get; set; }
+        public int? maxLength { get; set; }
+        public string? lengthValidationMessage { get; set; }
     }
 }

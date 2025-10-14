@@ -22,11 +22,11 @@ export default function EnhancedReportViewer() {
     const [chartConfigs, setChartConfigs] = useState([]);
     const [calculatedFields, setCalculatedFields] = useState([]);
     const [summaryRows, setSummaryRows] = useState([]);
-
-    const [isFullscreenMode, setIsFullscreenMode] = useState(false);
-    const [fullscreenTimer, setFullscreenTimer] = useState(null);
     const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current");
     const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
+    const [maximizedChart, setMaximizedChart] = useState(null);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [isRefreshing, setIsRefreshing] = useState(false); // Add this state
 
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -164,103 +164,119 @@ export default function EnhancedReportViewer() {
         fetchTemplate();
     }, [templateId]);
 
+    // Add this effect to refetch data when shift period changes
     useEffect(() => {
         const hasShiftChart = chartConfigs.some(chart => chart.type === 'shift');
-
-        if (hasShiftChart && displayMode === 'charts') {
-            console.log('🔄 Starting fullscreen timer for shift charts');
-
-            // Clear any existing timer
-            if (fullscreenTimer) {
-                clearTimeout(fullscreenTimer);
-            }
-
-            // Set timer for 2 minutes (120000 ms)
-            const timerId = setTimeout(() => {
-                console.log('⏰ 2 minutes passed - switching to fullscreen mode');
-                setIsFullscreenMode(true);
-            }, 120); // 2 minutes
-
-            setFullscreenTimer(timerId);
-
-            // Cleanup timer on unmount or when dependencies change
-            return () => {
-                if (timerId) {
-                    clearTimeout(timerId);
-                }
-            };
-        } else {
-            // Reset fullscreen mode if no shift charts
-            setIsFullscreenMode(false);
-            if (fullscreenTimer) {
-                clearTimeout(fullscreenTimer);
-                setFullscreenTimer(null);
-            }
+        if (hasShiftChart && chartConfigs.length > 0) {
+            fetchFilteredReport(true);
         }
-    }, [chartConfigs, displayMode]);
+    }, [selectedShiftPeriod]);
 
-    // Auto-refresh every 5 minutes for shift charts
+
     useEffect(() => {
         const hasShiftChart = chartConfigs.some(chart => chart.type === 'shift');
 
-        if (hasShiftChart) {
-            console.log('🔄 Setting up auto-refresh for shift charts (5 minutes)');
+        if (hasShiftChart && chartConfigs.length > 0) {
+            console.log('🔄 Setting up optimized auto-refresh for shift charts');
 
-            const refreshInterval = setInterval(() => {
+            let intervalId;
+
+            // Immediate fetch when dependencies change
+            fetchFilteredReport(true);
+
+            // Set up auto-refresh interval  
+            intervalId = setInterval(() => {
                 console.log('🔄 Auto-refreshing shift chart data...');
                 fetchFilteredReport(true);
-            }, 3000); // 5 minutes = 300000 milliseconds
+            }, 100000); // Reduced to 10 seconds for better performance
 
-            // Cleanup interval on unmount
             return () => {
                 console.log('🛑 Clearing auto-refresh interval');
-                clearInterval(refreshInterval);
+                if (intervalId) {
+                    clearInterval(intervalId);
+                }
             };
         }
-    }, [chartConfigs, runtimeFilters]); // Re-setup interval if charts or filters change
+    }, [chartConfigs.length, selectedShiftPeriod]); // Only essential dependencies
 
-    // Add click handler to exit fullscreen mode
-    const handleExitFullscreen = () => {
-        console.log('🖱️ Exiting fullscreen mode');
-        setIsFullscreenMode(false);
+    useEffect(() => {
+        const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
 
-        // Restart the timer
-        const hasShiftChart = chartConfigs.some(chart => chart.type === 'shift');
-        if (hasShiftChart && displayMode === 'charts') {
-            const timerId = setTimeout(() => {
-                setIsFullscreenMode(true);
-            }, 120000); // 2 minutes
-            setFullscreenTimer(timerId);
+        if (shiftCharts.length > 0 && !maximizedChart) {
+            console.log('🔍 Auto-maximizing first shift chart');
+            // Auto-maximize the first shift chart
+            setMaximizedChart(shiftCharts[0].id);
         }
-    };
+    }, [chartConfigs]);
 
     const fetchFilteredReport = async (silent = false) => {
+        // Prevent overlapping calls
+        if (isRefreshing) {
+            console.log('⏭️ Skipping fetch - already refreshing');
+            return;
+        }
+
         try {
+            setIsRefreshing(true);
+
             if (!silent) {
                 setLoading(true);
             }
+
             console.log('=== FETCH FILTERED REPORT DEBUG ===');
             console.log('calculatedFields state:', calculatedFields);
             console.log('fields state:', fields);
 
-            const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
+            // Check if we have shift charts
+            const hasShiftChart = chartConfigs.some(chart => chart.type === 'shift');
 
-            console.log('=== PROCESSING FILTERED REPORT ===');
-            console.log('reportData:', res.data);
+            let res;
+            if (hasShiftChart) {
+                res = await axios.post(
+                    `${APP_CONSTANTS.API_BASE_URL}/api/reports/run-shift/${templateId}`,
+                    { shiftPeriod: selectedShiftPeriod }
+                );
 
-            const { processedData, summaryRows } = processCalculatedFields(res.data, calculatedFields, fields);
+                console.log('📊 RAW Shift report data length:', res.data.length); // ✅ ADD THIS
+                console.log('📊 Sample data:', res.data.slice(0, 3)); // ✅ ADD THIS
 
-            console.log('processedData:', processedData);
-            console.log('summaryRows:', summaryRows);
+                const { processedData, summaryRows } = processCalculatedFields(
+                    res.data,
+                    calculatedFields,
+                    fields
+                );
 
-            setReportData(processedData);
-            setSummaryRows(summaryRows);
-            setLastRefreshTime(new Date()); // Add this line
-            if (!silent) {
-                setLoading(false);
+                console.log('✅ PROCESSED data length:', processedData.length); // ✅ ADD THIS
+
+                setReportData(processedData);
+                setSummaryRows(summaryRows);
+                setLastRefreshTime(new Date());
+                setRefreshTrigger(prev => prev + 1); // ✅ ADD THIS LINE
             }
+
+            else {
+                // Use regular endpoint
+                res = await axios.post(
+                    `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
+                    runtimeFilters
+                );
+
+                const { processedData, summaryRows } = processCalculatedFields(
+                    res.data,
+                    calculatedFields,
+                    fields
+                );
+
+                setReportData(processedData);
+                setSummaryRows(summaryRows);
+
+            }
+
         } catch (err) {
+            console.error('❌ Failed to run filtered report:', err);
             setError("Failed to run filtered report: " + (err.message || "Unknown error"));
+        } finally {
+            setIsRefreshing(false);
             if (!silent) {
                 setLoading(false);
             }
@@ -296,8 +312,29 @@ export default function EnhancedReportViewer() {
 
     const chartData = useMemo(() => {
         if (!reportData || reportData.length === 0) return [];
+        console.log('=== CHART DATA TRANSFORMATION DEBUG ===');
+        console.log('reportData:', reportData)
 
-        console.log(...reportData)
+        const hasShiftChart = chartConfigs.some(chart => chart.type === 'shift');
+
+        if (hasShiftChart && reportData[0]?.Count !== undefined && reportData[0]?.Date !== undefined) {
+            console.log('✅ Processing shift chart data');
+
+            // For shift charts, use the data directly with Count and Date
+            const transformedData = reportData.map((row, index) => ({
+                submissionId: row.submissionId || index,
+                Date: row.Date,
+                Count: row.Count,
+                time: new Date(row.Date).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                })
+            }));
+
+            console.log('📊 Transformed shift data:', transformedData);
+            return transformedData;
+        }
+
         const transformedData = reportData.map((row, index) => {
             const chartPoint = { submissionId: row.submissionId || index };
 
@@ -384,7 +421,13 @@ export default function EnhancedReportViewer() {
         console.log('Date field value:', transformedData[0]?.Date);
 
         return transformedData;
-    }, [reportData, calculatedFields]);
+    }, [
+        reportData.length,
+        calculatedFields.length,
+        chartConfigs.length,
+        // Track the actual last data point changes
+        reportData.length > 0 ? `${reportData[reportData.length - 1]?.submissionId}_${JSON.stringify(reportData[reportData.length - 1]?.data)}` : null
+    ]);
 
     useEffect(() => {
         // Auto-switch to charts view if shift charts are detected
@@ -539,343 +582,11 @@ export default function EnhancedReportViewer() {
         );
     };
 
-    const fullscreenStyles = `
-    .shift-charts-container.fullscreen-mode {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        z-index: 9999;
-        overflow: hidden;
-        padding: 0;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-    }
-    
-    .chart-fullscreen {
-        width: 95vw;
-        height: 85vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255, 255, 255, 0.03);
-        border: 2px solid rgba(100, 200, 255, 0.3);
-        border-radius: 20px;
-        padding: 30px;
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-        backdrop-filter: blur(10px);
-    }
-    
-    /* Responsive container styling */
-    .fullscreen-mode .recharts-responsive-container {
-        width: 100% !important;
-        height: 100% !important;
-        min-height: 500px !important;
-        position: relative !important;
-        display: block !important;
-    }
-    
-    .fullscreen-mode .recharts-wrapper {
-        width: 100% !important;
-        height: 100% !important;
-        position: relative !important;
-        display: block !important;
-    }
-    
-    .fullscreen-mode .recharts-surface {
-        width: 100% !important;
-        height: 100% !important;
-        overflow: visible !important;
-    }
-    
-    /* Chart lines - bright and thick */
-    .fullscreen-mode .recharts-line .recharts-curve {
-        stroke-width: 5px !important;
-        opacity: 1 !important;
-        filter: drop-shadow(0 0 8px currentColor);
-    }
-    
-    /* Target line - bright orange/red */
-    .fullscreen-mode .recharts-line[stroke*="ff"] .recharts-curve,
-    .fullscreen-mode path[stroke*="ff6b35"],
-    .fullscreen-mode path[stroke*="ff7300"] {
-        stroke: #ff6b35 !important;
-        stroke-width: 6px !important;
-        filter: drop-shadow(0 0 12px #ff6b35);
-    }
-    
-    /* Actual production line - bright green */
-    .fullscreen-mode .recharts-line[stroke*="4ade80"] .recharts-curve,
-    .fullscreen-mode .recharts-line[stroke*="82ca9d"] .recharts-curve,
-    .fullscreen-mode path[stroke*="4ade80"],
-    .fullscreen-mode path[stroke*="82ca9d"] {
-        stroke: #4ade80 !important;
-        stroke-width: 6px !important;
-        filter: drop-shadow(0 0 12px #4ade80);
-    }
-    
-    /* Dots on lines */
-    .fullscreen-mode .recharts-dot {
-        r: 8 !important;
-        stroke-width: 3 !important;
-        filter: drop-shadow(0 0 8px currentColor);
-    }
-    
-    /* Chart text - white and larger */
-    .fullscreen-mode .recharts-text,
-    .fullscreen-mode .recharts-cartesian-axis-tick-value,
-    .fullscreen-mode text {
-        fill: #ffffff !important;
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-    }
-    
-    /* Axis labels */
-    .fullscreen-mode .recharts-label {
-        fill: #ffffff !important;
-        font-size: 18px !important;
-        font-weight: 700 !important;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-    }
-    
-    /* Grid lines - subtle but visible */
-    .fullscreen-mode .recharts-cartesian-grid line {
-        stroke: rgba(100, 200, 255, 0.15) !important;
-        stroke-width: 1px !important;
-    }
-    
-    /* Legend styling */
-    .fullscreen-mode .recharts-legend-wrapper {
-        position: relative !important;
-        margin: 20px 0 !important;
-    }
-    
-    .fullscreen-mode .recharts-legend-item {
-        margin: 0 20px !important;
-    }
-    
-    .fullscreen-mode .recharts-legend-item-text {
-        fill: #ffffff !important;
-        color: #ffffff !important;
-        font-size: 18px !important;
-        font-weight: 600 !important;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-    }
-    
-    /* Tooltip styling */
-    .fullscreen-mode .recharts-tooltip-wrapper {
-        z-index: 10000 !important;
-    }
-    
-    .fullscreen-mode .recharts-default-tooltip {
-        background: rgba(0, 0, 0, 0.95) !important;
-        border: 2px solid rgba(100, 200, 255, 0.5) !important;
-        border-radius: 12px !important;
-        padding: 15px 20px !important;
-        color: white !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(10px);
-    }
-    
-    .fullscreen-mode .recharts-tooltip-label {
-        color: #64c8ff !important;
-        font-size: 16px !important;
-        font-weight: 700 !important;
-        margin-bottom: 8px !important;
-    }
-    
-    .fullscreen-mode .recharts-tooltip-item {
-        color: white !important;
-        font-size: 15px !important;
-        font-weight: 500 !important;
-        padding: 4px 0 !important;
-    }
-    
-    /* Exit button overlay */
-    .fullscreen-exit-overlay {
-        position: fixed;
-        top: 30px;
-        right: 30px;
-        z-index: 10001;
-        animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-        0%, 100% {
-            opacity: 0.8;
-            transform: scale(1);
-        }
-        50% {
-            opacity: 1;
-            transform: scale(1.05);
-        }
-    }
-    
-    .exit-fullscreen-btn {
-        background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
-        color: white;
-        border: 2px solid rgba(255, 255, 255, 0.3);
-        padding: 15px 25px;
-        border-radius: 12px;
-        cursor: pointer;
-        font-size: 16px;
-        font-weight: bold;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(255, 65, 108, 0.4);
-    }
-    
-    .exit-fullscreen-btn:hover {
-        background: linear-gradient(135deg, #ff4b2b 0%, #ff416c 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(255, 65, 108, 0.6);
-    }
-    
-    .exit-fullscreen-btn svg {
-        width: 20px;
-        height: 20px;
-        stroke-width: 3;
-    }
-    
-    /* Title styling in fullscreen */
-    .fullscreen-mode .fullscreen-title {
-        text-align: center;
-        margin-bottom: 20px;
-        animation: fadeInDown 0.6s ease-out;
-    }
-    
-    .fullscreen-mode .fullscreen-title h1 {
-        font-size: 3rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #64c8ff 0%, #4ade80 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin-bottom: 10px;
-        text-shadow: 0 0 30px rgba(100, 200, 255, 0.5);
-    }
-    
-    .fullscreen-mode .fullscreen-title p {
-        font-size: 1.5rem;
-        color: rgba(255, 255, 255, 0.8);
-        font-weight: 500;
-    }
-    
-    @keyframes fadeInDown {
-        from {
-            opacity: 0;
-            transform: translateY(-30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    /* Stats overlay in fullscreen */
-    .fullscreen-stats-overlay {
-        position: fixed;
-        bottom: 30px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 30px;
-        z-index: 10000;
-        animation: fadeInUp 0.6s ease-out 0.3s backwards;
-    }
-    
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateX(-50%) translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-        }
-    }
-    
-    .fullscreen-stat-card {
-        background: rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(10px);
-        border: 2px solid rgba(100, 200, 255, 0.3);
-        border-radius: 16px;
-        padding: 20px 30px;
-        text-align: center;
-        min-width: 150px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-    
-    .fullscreen-stat-card .stat-value {
-        font-size: 2.5rem;
-        font-weight: 800;
-        margin-bottom: 5px;
-    }
-    
-    .fullscreen-stat-card .stat-label {
-        font-size: 1rem;
-        color: rgba(255, 255, 255, 0.7);
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    .stat-current {
-        background: linear-gradient(135deg, rgba(100, 200, 255, 0.2) 0%, rgba(74, 222, 128, 0.2) 100%);
-    }
-    
-    .stat-current .stat-value {
-        color: #64c8ff;
-    }
-    
-    .stat-target {
-        background: linear-gradient(135deg, rgba(255, 107, 53, 0.2) 0%, rgba(255, 115, 0, 0.2) 100%);
-    }
-    
-    .stat-target .stat-value {
-        color: #ff6b35;
-    }
-    
-    .stat-efficiency {
-        background: linear-gradient(135deg, rgba(74, 222, 128, 0.2) 0%, rgba(34, 197, 94, 0.2) 100%);
-    }
-    
-    .stat-efficiency .stat-value {
-        color: #4ade80;
-    }
-    
-    .stat-efficiency.warning {
-        background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%);
-    }
-    
-    .stat-efficiency.warning .stat-value {
-        color: #fbbf24;
-    }
-    
-    .stat-efficiency.danger {
-        background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
-    }
-    
-    .stat-efficiency.danger .stat-value {
-        color: #ef4444;
-    }
-`;
+
     const renderChartsView = () => {
         const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
         const regularCharts = chartConfigs.filter(chart => chart.type !== 'shift');
 
-        // Calculate stats for fullscreen overlay
-       
-        
         if (chartConfigs.length === 0) {
             return (
                 <div className="text-center py-12 bg-gray-50 rounded">
@@ -886,138 +597,117 @@ export default function EnhancedReportViewer() {
             );
         }
 
-        // If there are shift charts, render them with fullscreen capability
+        // If there are shift charts, render them with maximize functionality
         if (shiftCharts.length > 0) {
             return (
-                <div className={`shift-charts-container ${isFullscreenMode ? 'fullscreen-mode' : ''}`}>
-                    {/* ✅ FULLSCREEN EXIT BUTTON - Only show in fullscreen mode */}
-                    {isFullscreenMode && (
-                        <div className="fullscreen-exit-overlay">
-                            <button
-                                onClick={handleExitFullscreen}
-                                className="exit-fullscreen-btn"
-                                title="Click to exit fullscreen"
-                            >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                    <path d="M18 6L6 18M6 6l12 12" />
-                                </svg>
-                                Exit Fullscreen
-                            </button>
+                <div className={`shift-charts-container ${maximizedChart ? 'maximized-mode' : ''}`}>
+                    {/* Show controls when maximized */}
+                    {maximizedChart && (
+                        <div className="maximize-controls-overlay">
+                            <div className="maximize-controls">
+                                {/* Manual Refresh Button */}
+                                <button
+                                    onClick={handleManualRefresh}
+                                    className="refresh-btn"
+                                    title="Refresh data"
+                                >
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Refresh
+                                </button>
+
+                                {/* Exit Maximized Button */}
+                                <button
+                                    onClick={handleMinimizeChart}
+                                    className="minimize-btn"
+                                    title="Exit maximized view"
+                                >
+                                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                    Exit
+                                </button>
+                            </div>
                         </div>
                     )}
 
-                    {/* ✅ SHIFT CONTROLS - Hide in fullscreen mode */}
-                    {!isFullscreenMode && (
-                        <>
-                            {/* Shift Period Selector */}
-                            <div className="mb-6 flex justify-center items-center gap-4 bg-white p-4 rounded-lg shadow">
-                                <label className="font-medium text-gray-700">View Period:</label>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setSelectedShiftPeriod('current')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'current'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Current Shift ({getCurrentShift()})
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedShiftPeriod('A')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'A'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Shift A
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedShiftPeriod('B')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'B'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Shift B
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedShiftPeriod('C')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'C'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Shift C
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedShiftPeriod('fullday')}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'fullday'
-                                                ? 'bg-green-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Full Day (24h)
-                                    </button>
-                                </div>
+                    {/* Shift Period Selector - Show when not maximized */}
+                    {!maximizedChart && (
+                        <div className="mb-6 flex justify-center items-center gap-4 bg-white p-4 rounded-lg shadow">
+                            <label className="font-medium text-gray-700">View Period:</label>
+                            <div className="flex gap-2">
+                                <button onClick={() => setSelectedShiftPeriod('current')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'current' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                    Current Shift ({getCurrentShift()})
+                                </button>
+                                <button onClick={() => setSelectedShiftPeriod('A')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'A' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                    Shift A
+                                </button>
+                                <button onClick={() => setSelectedShiftPeriod('B')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'B' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                    Shift B
+                                </button>
+                                <button onClick={() => setSelectedShiftPeriod('C')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'C' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                    Shift C
+                                </button>
+                                <button onClick={() => setSelectedShiftPeriod('fullday')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'fullday' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                    Full Day (24h)
+                                </button>
                             </div>
-
-                            {/* Timer Indicator */}
-                            <div className="mb-4 text-center">
-                                <div className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                                    🕐 Switching to fullscreen in 2 minutes
-                                </div>
-                            </div>
-                        </>
-                    )}
-                    
-
-
-
-                    {/* Render shift charts */}
-                    {shiftCharts.map((chart, index) => (
-                        <div key={`${chart.id}-${index}`} className={`shift-chart-container ${isFullscreenMode ? 'chart-fullscreen' : 'mb-8'}`}>
-                            <ReportCharts
-                                data={chartData}
-                                metrics={chart.metrics}
-                                type={chart.type}
-                                xField={chart.xField}
-                                submissionId="submissionId"
-                                title={chart.title || `Shift Production Chart ${index + 1}`}
-                                comboConfig={chart.comboConfig}
-                                calculatedFields={calculatedFields}
-                                selectedShiftPeriod={selectedShiftPeriod}
-                                currentShift1={getCurrentShift()}
-                                showConfiguration={false}
-                                shiftConfigs={chart.shiftConfigs}
-                                isFullscreenMode={isFullscreenMode}
-                                // ✅ Pass fullscreen state to chart
-                            />
                         </div>
-                    ))}
+                    )}
 
-                    {/* Regular charts - Hide in fullscreen mode */}
-                    {!isFullscreenMode && regularCharts.length > 0 && (
-                        <div className="mt-12 pt-8 border-t-2">
-                            <h3 className="text-xl font-semibold mb-4 text-gray-800">Additional Charts</h3>
-                            <div className="charts-grid space-y-6">
-                                {regularCharts.map((chart, index) => (
-                                    <div key={`${chart.id}-${index}`} className="chart-container">
-                                        <ReportCharts
-                                            data={chartData}
-                                            metrics={chart.metrics}
-                                            type={chart.type}
-                                            xField={chart.xField}
-                                            submissionId="submissionId"
-                                            title={chart.title || `Chart ${index + 1}`}
-                                            comboConfig={chart.comboConfig}
-                                            calculatedFields={calculatedFields}
-                                            shiftConfigs={chart.shiftConfigs}
-                                        />
+                    {/* Render shift charts with maximize button */}
+                    {shiftCharts
+                        .filter(chart => !maximizedChart || chart.id === maximizedChart)
+                        .map((chart, index) => (
+                            <div key={`${chart.id}-${index}`}
+                                className={`shift-chart-container ${maximizedChart === chart.id ? 'chart-maximized' : ''} ${maximizedChart ? 'mt-16' : 'mb-8'}`}>
+                                {/* Maximize button - only show when not maximized */}
+                                {!maximizedChart && (
+                                    <div className="chart-header-controls">
+                                        <button
+                                            onClick={() => handleMaximizeChart(chart.id)}
+                                            className="maximize-chart-btn"
+                                            title="Maximize chart"
+                                        >
+                                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                            </svg>
+                                        </button>
                                     </div>
-                                ))}
+                                )}
+                                {console.log('=== ENHANCED REPORT VIEWER DATA DEBUG ===')}
+                                {console.log('reportData length:', reportData.length)}
+                                {console.log('chartData length:', chartData.length)}
+                                {console.log('chartData sample:', chartData.slice(0, 2))}
+                                {console.log('Is shift chart?', chart.type === 'shift')}
+                                {console.log('Data being passed to ReportCharts:', chartData)}
+
+                                <ReportCharts
+                                    data={chartData}
+                                    metrics={chart.metrics}
+                                    type={chart.type}
+                                    xField={chart.xField}
+                                    submissionId="submissionId"
+                                    title={chart.title || `Shift Production Chart ${index + 1}`}
+                                    comboConfig={chart.comboConfig}
+                                    calculatedFields={calculatedFields}
+                                    selectedShiftPeriod={selectedShiftPeriod}
+                                    currentShift={getCurrentShift()}
+                                    showConfiguration={false}
+                                    shiftConfigs={chart.shiftConfigs}
+                                    isMaximized={maximizedChart === chart.id}
+                                    refreshTrigger={refreshTrigger}
+                                />
                             </div>
-                        </div>
-                    )}
+                        ))}
                 </div>
             );
         }
@@ -1043,6 +733,215 @@ export default function EnhancedReportViewer() {
             </div>
         );
     };
+    const maximizeStyles1 = `
+.maximized-mode {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: white;
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+.chart-maximized {
+    width: calc(100vw - 40px) !important;
+    height: calc(100vh - 120px) !important;
+    min-height: 85vh !important;
+}
+
+.chart-header-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.maximize-chart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    color: #4b5563;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.maximize-chart-btn:hover {
+    background: #e5e7eb;
+    color: #374151;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.maximize-controls-overlay {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1001;
+}
+
+.maximize-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+    background: #2563eb;
+}
+
+.minimize-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.minimize-btn:hover {
+    background: #dc2626;
+}
+`;
+
+    // Update your style block to include both styles
+
+    // Add this before your return statement (around line 720)
+    const maximizeStyles = `
+.maximized-mode {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: white;
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 10px; /* Reduced padding */
+}
+
+.chart-maximized {
+    width: calc(100vw - 20px) !important;  /* Almost full width */
+    height: calc(100vh - 80px) !important; /* Almost full height */
+    min-height: 90vh !important;           /* Even more height */
+}
+
+/* Make the shift period controls compact in maximized mode */
+.maximized-shift-controls {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1002;
+    background: white !important;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 16px !important; /* Compact padding */
+}
+
+.maximize-controls-overlay {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1001;
+}
+
+/* Rest of your existing maximize styles... */
+.chart-header-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.maximize-chart-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    color: #4b5563;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.maximize-chart-btn:hover {
+    background: #e5e7eb;
+    color: #374151;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.maximize-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+    background: #2563eb;
+}
+
+.minimize-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.minimize-btn:hover {
+    background: #dc2626;
+}
+`;
+
 
 
     const shiftChartStyles = `
@@ -1066,6 +965,7 @@ export default function EnhancedReportViewer() {
     }
 }
 `;
+
 
     const DataInspector = ({ data, title = "Data Inspector" }) => {
         const [isExpanded, setIsExpanded] = useState(false);
@@ -1820,6 +1720,21 @@ export default function EnhancedReportViewer() {
         }
     };
 
+    const handleMaximizeChart = (chartId) => {
+        setMaximizedChart(chartId);
+        // Immediate refresh when maximizing
+        fetchFilteredReport(true);
+    };
+
+    const handleMinimizeChart = () => {
+        console.log('🔻 Minimizing chart'); // Add debug log
+        setMaximizedChart(null);
+    };
+
+    const handleManualRefresh = async () => {
+        console.log('🔄 Manual refresh triggered');
+        await fetchFilteredReport(false); // Don't use silent mode for manual refresh
+    };
 
     const formatCalculatedValue = (value, calcField) => {
         if (value === null || value === undefined || isNaN(value)) {
@@ -1848,133 +1763,140 @@ export default function EnhancedReportViewer() {
 
     return (
         <>
-            <style>{shiftChartStyles}</style>
-            <style>{fullscreenStyles}</style>
+            <style>{shiftChartStyles + maximizeStyles}</style>
             <div className="report-viewer-wrapper">
-                {!isFullscreenMode && (
-                    <>
-                        <h2 className="viewer-heading">📊 Enhanced Report Viewer</h2>
+                {isRefreshing && !loading && (
+                    <div className="refresh-indicator">
+                        <div className="flex items-center gap-2 text-blue-600 text-sm">
+                            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Updating data...
+                        </div>
+                    </div>
+                )}
+                <h2 className="viewer-heading">📊 Enhanced Report Viewer</h2>
 
-                        {filters.length > 0 && (
-                            <div className="filter-section mb-6 bg-white p-4 rounded shadow">
-                                <h3 className="font-semibold mb-3 text-gray-800">🔍 Apply Filters</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {filters.map((filter, idx) => {
-                                        const field = fields.find(f => f.id === filter.fieldLabel || f.label === filter.fieldLabel);
+                {filters.length > 0 && (
+                    <div className="filter-section mb-6 bg-white p-4 rounded shadow">
+                        <h3 className="font-semibold mb-3 text-gray-800">🔍 Apply Filters</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {filters.map((filter, idx) => {
+                                const field = fields.find(f => f.id === filter.fieldLabel || f.label === filter.fieldLabel);
 
-                                        if (filter.operator === "between" && filter.type === "date") {
-                                            const [start, end] = (runtimeFilters[filter.fieldLabel] || "").split(",") || ["", ""];
-                                            return (
-                                                <div key={idx} className="flex flex-col">
-                                                    <label className="text-sm font-medium text-gray-700 mb-1">
-                                                        {field?.label || filter.fieldLabel} (From - To)
-                                                    </label>
-                                                    <div className="flex gap-2">
-                                                        <input
-                                                            type="date"
-                                                            value={start || ""}
-                                                            onChange={(e) => {
-                                                                const newStart = e.target.value;
-                                                                setRuntimeFilters(prev => ({
-                                                                    ...prev,
-                                                                    [filter.fieldLabel]: `${newStart},${end || ""}`
-                                                                }));
-                                                            }}
-                                                            className="border px-2 py-1 rounded flex-1"
-                                                        />
-                                                        <input
-                                                            type="date"
-                                                            value={end || ""}
-                                                            onChange={(e) => {
-                                                                const newEnd = e.target.value;
-                                                                setRuntimeFilters(prev => ({
-                                                                    ...prev,
-                                                                    [filter.fieldLabel]: `${start || ""},${newEnd}`
-                                                                }));
-                                                            }}
-                                                            className="border px-2 py-1 rounded flex-1"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            );
-                                        }
-
-                                        // Check if filter has options (dropdown field)
-                                        if (filter.options && filter.options.length > 0) {
-                                            return (
-                                                <div key={idx} className="flex flex-col">
-                                                    <label className="text-sm font-medium text-gray-700 mb-1">
-                                                        {field?.label || filter.fieldLabel}
-                                                    </label>
-                                                    <select
-                                                        value={runtimeFilters[filter.fieldLabel] || ""}
-                                                        onChange={(e) =>
-                                                            setRuntimeFilters(prev => ({
-                                                                ...prev,
-                                                                [filter.fieldLabel]: e.target.value
-                                                            }))
-                                                        }
-                                                        className="border px-2 py-1 rounded bg-white"
-                                                    >
-                                                        <option value="">-- Select an option --</option>
-                                                        {filter.options.map((option, optionIdx) => (
-                                                            <option key={optionIdx} value={option}>
-                                                                {option}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                            );
-                                        }
-
-                                        // Default text input for other filter types
-                                        return (
-                                            <div key={idx} className="flex flex-col">
-                                                <label className="text-sm font-medium text-gray-700 mb-1">
-                                                    {field?.label || filter.fieldLabel}
-                                                </label>
+                                if (filter.operator === "between" && filter.type === "date") {
+                                    const [start, end] = (runtimeFilters[filter.fieldLabel] || "").split(",") || ["", ""];
+                                    return (
+                                        <div key={idx} className="flex flex-col">
+                                            <label className="text-sm font-medium text-gray-700 mb-1">
+                                                {field?.label || filter.fieldLabel} (From - To)
+                                            </label>
+                                            <div className="flex gap-2">
                                                 <input
-                                                    type="text"
-                                                    value={runtimeFilters[filter.fieldLabel] || ""}
-                                                    onChange={(e) =>
+                                                    type="date"
+                                                    value={start || ""}
+                                                    onChange={(e) => {
+                                                        const newStart = e.target.value;
                                                         setRuntimeFilters(prev => ({
                                                             ...prev,
-                                                            [filter.fieldLabel]: e.target.value
-                                                        }))
-                                                    }
-                                                    className="border px-2 py-1 rounded"
+                                                            [filter.fieldLabel]: `${newStart},${end || ""}`
+                                                        }));
+                                                    }}
+                                                    className="border px-2 py-1 rounded flex-1"
+                                                />
+                                                <input
+                                                    type="date"
+                                                    value={end || ""}
+                                                    onChange={(e) => {
+                                                        const newEnd = e.target.value;
+                                                        setRuntimeFilters(prev => ({
+                                                            ...prev,
+                                                            [filter.fieldLabel]: `${start || ""},${newEnd}`
+                                                        }));
+                                                    }}
+                                                    className="border px-2 py-1 rounded flex-1"
                                                 />
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                                <div className="mt-4 text-right">
-                                    <button
-                                        onClick={fetchFilteredReport}
-                                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                                    >
-                                        ▶️ Run Report
-                                    </button>
-                                    {Object.keys(runtimeFilters).length > 0 && (
-                                        <button
-                                            onClick={() => {
-                                                setRuntimeFilters({});
-                                                fetchFilteredReport();
-                                            }}
-                                            className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-medium mb-4 ml-2"
-                                        >
-                                            🧹 Clear All Filters
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                                        </div>
+                                    );
+                                }
 
-                        {renderActiveFilters()}
-                        {renderSummaryStats()}
-                        {renderViewControls()}
-                    </>
+                                // Check if filter has options (dropdown field)
+                                if (filter.options && filter.options.length > 0) {
+                                    return (
+                                        <div key={idx} className="flex flex-col">
+                                            <label className="text-sm font-medium text-gray-700 mb-1">
+                                                {field?.label || filter.fieldLabel}
+                                            </label>
+                                            <select
+                                                value={runtimeFilters[filter.fieldLabel] || ""}
+                                                onChange={(e) =>
+                                                    setRuntimeFilters(prev => ({
+                                                        ...prev,
+                                                        [filter.fieldLabel]: e.target.value
+                                                    }))
+                                                }
+                                                className="border px-2 py-1 rounded bg-white"
+                                            >
+                                                <option value="">-- Select an option --</option>
+                                                {filter.options.map((option, optionIdx) => (
+                                                    <option key={optionIdx} value={option}>
+                                                        {option}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                }
+
+                                // Default text input for other filter types
+                                return (
+                                    <div key={idx} className="flex flex-col">
+                                        <label className="text-sm font-medium text-gray-700 mb-1">
+                                            {field?.label || filter.fieldLabel}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={runtimeFilters[filter.fieldLabel] || ""}
+                                            onChange={(e) =>
+                                                setRuntimeFilters(prev => ({
+                                                    ...prev,
+                                                    [filter.fieldLabel]: e.target.value
+                                                }))
+                                            }
+                                            className="border px-2 py-1 rounded"
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="mt-4 text-right">
+                            <button
+                                onClick={fetchFilteredReport}
+                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                            >
+                                ▶️ Run Report
+                            </button>
+                            {Object.keys(runtimeFilters).length > 0 && (
+                                <button
+                                    onClick={() => {
+                                        setRuntimeFilters({});
+                                        fetchFilteredReport();
+                                    }}
+                                    className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-medium mb-4 ml-2"
+                                >
+                                    🧹 Clear All Filters
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 )}
+
+                {renderActiveFilters()}
+                {renderSummaryStats()}
+                {renderViewControls()}
+
                 <div className="main-content">
                     {displayMode === "table" ? (
                         viewMode === "expanded" ? renderExpandedTable() : renderGroupedTable()

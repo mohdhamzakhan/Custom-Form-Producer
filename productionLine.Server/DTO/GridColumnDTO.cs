@@ -46,5 +46,11 @@ namespace productionLine.Server.DTO
         public bool? AllowManualEntry { get; set; }
         public bool? ShowLookupButton { get; set; }
         public string? KeyFieldMappingsJson { get; set; }
+        public string? labelText { get; set; }
+        public string? labelStyle { get; set; }
+        public string? textAlign { get; set; }
+        public string? lengthValidationMessage { get; set; }
+        public int? maxLength { get; set; }
+        public int? minLength { get; set; }
     }
 }
