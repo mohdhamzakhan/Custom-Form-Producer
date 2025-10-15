@@ -27,6 +27,8 @@ export default function EnhancedReportViewer() {
     const [maximizedChart, setMaximizedChart] = useState(null);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false); // Add this state
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -170,7 +172,7 @@ export default function EnhancedReportViewer() {
         if (hasShiftChart && chartConfigs.length > 0) {
             fetchFilteredReport(true);
         }
-    }, [selectedShiftPeriod]);
+    }, [selectedShiftPeriod, selectedDate]);
 
 
     useEffect(() => {
@@ -234,7 +236,10 @@ export default function EnhancedReportViewer() {
             if (hasShiftChart) {
                 res = await axios.post(
                     `${APP_CONSTANTS.API_BASE_URL}/api/reports/run-shift/${templateId}`,
-                    { shiftPeriod: selectedShiftPeriod }
+                    {
+                        shiftPeriod: selectedShiftPeriod,
+                        date: selectedDate 
+                    }
                 );
 
                 console.log('📊 RAW Shift report data length:', res.data.length); // ✅ ADD THIS
@@ -705,6 +710,10 @@ export default function EnhancedReportViewer() {
                                     shiftConfigs={chart.shiftConfigs}
                                     isMaximized={maximizedChart === chart.id}
                                     refreshTrigger={refreshTrigger}
+                                    selectedDate={selectedDate}  // ✅ ADD THIS
+                                    showDatePicker={showDatePicker && !maximizedChart}  // ✅ CHANGE THIS LINE
+                                    onDateChange={handleDateChange}  // ✅ ADD THIS
+                                    onToggleDatePicker={() => setShowDatePicker(!showDatePicker)}  // ✅ ADD THIS
                                 />
                             </div>
                         ))}
@@ -1735,6 +1744,13 @@ export default function EnhancedReportViewer() {
         console.log('🔄 Manual refresh triggered');
         await fetchFilteredReport(false); // Don't use silent mode for manual refresh
     };
+
+    const handleDateChange = (newDate) => {
+        setSelectedDate(newDate);
+        fetchFilteredReport(true);
+    };
+
+
 
     const formatCalculatedValue = (value, calcField) => {
         if (value === null || value === undefined || isNaN(value)) {

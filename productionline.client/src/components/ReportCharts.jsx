@@ -301,7 +301,12 @@ const ReportCharts = React.memo(({
     showConfiguration = true,
     shiftConfigs: passedShiftConfig = null,
     isFullscreenMode = false,
-    lastUpdate = new Date()
+    isMaximized= false,
+    lastUpdate = new Date(),
+    selectedDate = new Date().toISOString().split('T')[0],  // ✅ ADD THIS
+    showDatePicker = false,  // ✅ ADD THIS
+    onDateChange = () => { },  // ✅ ADD THIS
+    onToggleDatePicker = () => { }  // ✅ ADD THIS
 }) => {
     console.log('=== ReportCharts Debug ===');
     console.log('selectedShiftPeriod:', selectedShiftPeriod);
@@ -1352,16 +1357,40 @@ const ReportCharts = React.memo(({
             // Then in your component, memoize the filtered data:
             const filteredShiftData = useMemo(() => {
                 console.log('🔍 Filtering shift data (memoized)');
-                return filterDataByShiftTime(
-                    data,
+                console.log('📅 Selected date:', selectedDate);
+                console.log('📊 Total data records:', data.length);
+
+                // First filter by selected date
+                const dateFilteredData = data.filter(item => {
+                    const itemDate = new Date(item.Date);
+                    const selectedDateObj = new Date(selectedDate);
+
+                    // Compare only the date parts (ignore time)
+                    const isSameDate =
+                        itemDate.getFullYear() === selectedDateObj.getFullYear() &&
+                        itemDate.getMonth() === selectedDateObj.getMonth() &&
+                        itemDate.getDate() === selectedDateObj.getDate();
+
+                    return isSameDate;
+                });
+
+                console.log('📊 After date filter:', dateFilteredData.length);
+
+                // Then filter by shift time
+                const shiftFilteredData = filterDataByShiftTime(
+                    dateFilteredData,
                     activeShiftConfig.startTime,
                     activeShiftConfig.endTime
                 );
+
+                console.log('📊 After shift time filter:', shiftFilteredData.length);
+
+                return shiftFilteredData;
             }, [
                 data.length,
+                selectedDate,
                 activeShiftConfig.startTime,
                 activeShiftConfig.endTime,
-                // Use a hash of the data instead of the full array
                 JSON.stringify(data.map(item => ({ Date: item.Date, submissionId: item.submissionId })))
             ]);
 
@@ -1596,10 +1625,49 @@ const ReportCharts = React.memo(({
 
             // Rest of shift chart JSX with updated configuration visibility
             return (
-                <div className={`w-full max-w-full mx-auto ${isFullscreenMode ? 'h-screen flex flex-col' : 'p-6 bg-white rounded-lg shadow-lg'}`}>
+                <div className={`w-full max-w-full mx-auto ${isMaximized ? 'h-screen flex flex-col' : 'p-6 bg-white rounded-lg shadow-lg'}`}>
 
-                    {!isFullscreenMode && (
+                    {!isMaximized && (
                         <div className="flex justify-between items-center mb-6">
+                            {!isMaximized && (
+                                <button
+                                    onClick={onToggleDatePicker}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${showDatePicker
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
+                                    📅 {showDatePicker ? 'Hide' : 'Show'} Date Picker
+                                </button>
+                            )}
+                            {showDatePicker && (
+                                <div className="flex items-center gap-2">
+                                    <label className="font-medium text-gray-700">Select Date:</label>
+                                    <input
+                                        type="date"
+                                        value={selectedDate}
+                                        onChange={(e) => onDateChange(e.target.value)}
+                                        max={new Date().toISOString().split('T')[0]}
+                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button
+                                        onClick={() => onDateChange(new Date().toISOString().split('T')[0])}
+                                        className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium text-sm"
+                                    >
+                                        Today
+                                    </button>
+                                </div>
+                            )}
+                            <div className="text-center text-sm text-gray-600">
+                                Showing data for: <span className="font-semibold">
+                                    {new Date(selectedDate).toLocaleDateString('en-US', {
+                                        weekday: 'long',
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    })}
+                                </span>
+                            </div>
                             <div>
                                 {!title && (
                                     <>
@@ -1915,7 +1983,7 @@ const ReportCharts = React.memo(({
                     )}
 
                     {/* Break Schedule */}
-                    {isFullscreenMode && (
+                    {isMaximized && (
                         <div className="p-4 bg-gray-50 rounded-lg">
                             <h4 className="text-sm font-semibold text-gray-700 mb-3">Break Schedule</h4>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

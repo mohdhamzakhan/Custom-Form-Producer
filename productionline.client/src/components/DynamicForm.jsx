@@ -26,6 +26,20 @@ export default function DynamicForm() {
     const [selectedImageName, setSelectedImageName] = useState('');
     const isEditMode = useRef(false); // Add this new ref
 
+    const keyFieldValues = useMemo(() => {
+        if (!formData?.keyFieldMappings?.length) return {};
+
+        const values = {};
+        formData.keyFieldMappings.forEach(mapping => {
+            values[mapping.currentFormField] = formValues[mapping.currentFormField];
+        });
+        return values;
+    }, [formData?.keyFieldMappings, formValues]);
+
+    const keyFieldValuesString = useMemo(() => {
+        return JSON.stringify(keyFieldValues);
+    }, [keyFieldValues]);
+
     useEffect(() => {
         // In a real application, this would be an actual API call
         const fetchFormData = async () => {
@@ -108,6 +122,7 @@ export default function DynamicForm() {
     useEffect(() => {
         if (!formData) return;
 
+        console.log("Formula calculation useEffect triggered");
         const updatedValues = { ...formValues };
         let changed = false;
 
@@ -119,12 +134,38 @@ export default function DynamicForm() {
                     changed = true;
                 }
             }
+            // Handle grid calculations
+            else if (field.type === "grid" && Array.isArray(formValues[field.id])) {
+                const gridRows = [...formValues[field.id]];
+                let gridChanged = false;
+
+                gridRows.forEach((row, rowIndex) => {
+                    field.columns.forEach((col) => {
+                        if (col.type === "calculation" && col.formula) {
+                            const calculatedValue = evaluateRowFormula(col.formula, row);
+                            if (row[col.name] !== calculatedValue) {
+                                console.log(`Updating grid calculation: ${col.name} = ${calculatedValue}`);
+                                row[col.name] = calculatedValue;
+                                gridChanged = true;
+                            }
+                        }
+                    });
+                });
+
+                if (gridChanged) {
+                    updatedValues[field.id] = gridRows;
+                    changed = true;
+                }
+            }
         });
 
         if (changed) {
+            console.log("Updating form values with calculations");
             setFormValues(updatedValues);
         }
-    }, [formData]);
+    }, [formData, formValues]);
+
+
 
     // Add this new useEffect right after your existing one
     useEffect(() => {
@@ -136,21 +177,6 @@ export default function DynamicForm() {
             handleEditSubmission(submissionID);
         }
     }, [submissionID, formData]); // Depend on both submissionID and formData
-
-    // Add this before the useEffect
-    const keyFieldValues = useMemo(() => {
-        if (!formData?.keyFieldMappings?.length) return {};
-
-        const values = {};
-        formData.keyFieldMappings.forEach(mapping => {
-            values[mapping.currentFormField] = formValues[mapping.currentFormField];
-        });
-        return values;
-    }, [formData?.keyFieldMappings, formValues]);
-
-    const keyFieldValuesString = useMemo(() => {
-        return JSON.stringify(keyFieldValues);
-    }, [keyFieldValues]);
 
     useEffect(() => {
         const loadLinkedDataAutomatically = async () => {
@@ -268,6 +294,54 @@ export default function DynamicForm() {
         formData?.linkedFormId,
         formData?.keyFieldMappings?.length
     ]);
+
+    useEffect(() => {
+        if (!formData) return;
+
+        const updatedValues = { ...formValues };
+        let changed = false;
+
+        formData.fields.forEach((field) => {
+            if (field.type === "calculation") {
+                const result = evaluateFormula(field.formula);
+                if (formValues[field.id] !== result) {
+                    updatedValues[field.id] = result;
+                    changed = true;
+                }
+            }
+            // Add grid calculation handling
+            else if (field.type === "grid" && Array.isArray(formValues[field.id])) {
+                const gridRows = [...formValues[field.id]];
+                let gridChanged = false;
+
+                gridRows.forEach((row, rowIndex) => {
+                    field.columns.forEach((col) => {
+                        if (col.type === "calculation" && col.formula) {
+                            const calculatedValue = evaluateRowFormula(col.formula, row);
+                            if (row[col.name] !== calculatedValue) {
+                                row[col.name] = calculatedValue;
+                                gridChanged = true;
+                            }
+                        }
+                    });
+                });
+
+                if (gridChanged) {
+                    updatedValues[field.id] = gridRows;
+                    changed = true;
+                }
+            }
+        });
+
+        if (changed) {
+            setFormValues(updatedValues);
+        }
+    }, [formData, formValues]); // Depend on both formData and formValues
+
+
+    // Add this before the useEffect
+
+
 
     const clearLinkedTextboxFields = () => {
         console.log('🧹 Attempting to clear linked textbox fields');
@@ -555,6 +629,7 @@ export default function DynamicForm() {
                 }
             }
 
+
             return { ...prev, [fieldId]: updatedRows };
         });
     };
@@ -578,7 +653,7 @@ export default function DynamicForm() {
 
     const handleEditSubmission = async (submissionId) => {
         setIsModalOpen(false);
-        console.log("Submission ID is ",submissionId)
+        console.log("Submission ID is ", submissionId)
         setEditingSubmissionId(submissionId);
 
         try {
@@ -858,21 +933,67 @@ export default function DynamicForm() {
 
 
     const evaluateFormula = (formula) => {
-        console.log(formula)
+        console.log(formula);
         if (!formula) return "";
         try {
             let expression = formula;
             formData.fields.forEach((field) => {
-                const value = parseFloat(formValues[field.id]) || 0;
+                const fieldValue = formValues[field.id];
+                // Better handling of empty/null values
+                let value = 0;
+                if (fieldValue !== null && fieldValue !== undefined && fieldValue !== "") {
+                    const parsedValue = parseFloat(fieldValue);
+                    value = isNaN(parsedValue) ? 0 : parsedValue;
+                }
 
-                // Replace by both ID and label (label fallback is optional)
+                // Replace by both ID and label (your current approach)
                 expression = expression.replaceAll(`{${field.id}}`, value);
                 expression = expression.replaceAll(`{${field.label}}`, value);
             });
 
-            return eval(expression); // ⚠️ evaluated as JavaScript math
+            return eval(expression);
         } catch (error) {
             console.error("Formula evaluation error:", error);
+            return "";
+        }
+    };
+
+    const evaluateRowFormula = (formula, row) => {
+        console.log("evaluateRowFormula called with:", { formula, row });
+
+        if (!formula) return "";
+
+        try {
+            let expression = formula;
+
+            // Extract all placeholders from the formula
+            const placeholders = formula.match(/\{[^}]+\}/g) || [];
+            console.log("Found placeholders:", placeholders);
+
+            // Replace each placeholder
+            placeholders.forEach(placeholder => {
+                const columnName = placeholder.slice(1, -1); // Remove { and }
+                console.log(`Processing placeholder: ${placeholder}, column: ${columnName}`);
+
+                const fieldValue = row[columnName];
+                console.log(`Column value:`, fieldValue);
+
+                let value = 0;
+                if (fieldValue !== null && fieldValue !== undefined && fieldValue !== "") {
+                    const parsedValue = parseFloat(fieldValue);
+                    value = isNaN(parsedValue) ? 0 : parsedValue;
+                }
+
+                console.log(`Replacing ${placeholder} with ${value}`);
+                expression = expression.replaceAll(placeholder, value);
+            });
+
+            console.log(`Final expression: ${expression}`);
+            const result = eval(expression);
+            console.log(`Result: ${result}`);
+            return result;
+        } catch (error) {
+            console.error("Row formula evaluation error:", error);
             return "";
         }
     };
@@ -2012,6 +2133,9 @@ export default function DynamicForm() {
                                                         };
 
                                                         if (col.type === "calculation") {
+                                                            console.log(`Calculating field: ${col.name}`);
+                                                            console.log(`Formula: ${col.formula}`);
+                                                            console.log(`Row data:`, row);
                                                             const calculatedValue = evaluateRowFormula(col.formula, row);
                                                             if (row[col.name] !== calculatedValue) {
                                                                 row[col.name] = calculatedValue;
@@ -2045,9 +2169,9 @@ export default function DynamicForm() {
                                                             return (
                                                                 <div
                                                                     className={`w-full p-2 min-h-[36px] flex items-center ${col.labelStyle === 'bold' ? 'font-bold' :
-                                                                            col.labelStyle === 'italic' ? 'italic' :
-                                                                                col.labelStyle === 'underline' ? 'underline' :
-                                                                                    'font-normal'
+                                                                        col.labelStyle === 'italic' ? 'italic' :
+                                                                            col.labelStyle === 'underline' ? 'underline' :
+                                                                                'font-normal'
                                                                         } ${col.textAlign === 'center' ? 'justify-center' :
                                                                             col.textAlign === 'right' ? 'justify-end' :
                                                                                 'justify-start'
@@ -2631,21 +2755,31 @@ export default function DynamicForm() {
     };
 
     // Add this function next to your evaluateFormula function
-    const evaluateRowFormula = (formula, row) => {
-        if (!formula) return "";
-        try {
-            let expression = formula;
-            Object.keys(row).forEach((colName) => {
-                const value = parseFloat(row[colName]) || 0;
-                expression = expression.replaceAll(`{${colName}}`, value);
-                expression = expression.replaceAll(colName, value);
-            });
-            return eval(expression);
-        } catch (error) {
-            console.error("Row formula evaluation error:", error);
-            return "";
-        }
-    };
+    //const evaluateRowFormula = (formula, row) => {
+    //    if (!formula) return "";
+    //    try {
+    //        let expression = formula;
+    //        Object.keys(row).forEach((colName) => {
+    //            const fieldValue = row[colName];
+    //            // Better handling for grid cell values
+    //            let value = 0;
+    //            if (fieldValue !== null && fieldValue !== undefined && fieldValue !== "") {
+    //                const parsedValue = parseFloat(fieldValue);
+    //                value = isNaN(parsedValue) ? 0 : parsedValue;
+    //            }
+
+    //            // Replace both with and without braces
+    //            expression = expression.replaceAll(`{${colName}}`, value);
+    //            expression = expression.replaceAll(colName, value);
+    //        });
+
+    //        return eval(expression);
+    //    } catch (error) {
+    //        console.error("Row formula evaluation error:", error);
+    //        return "";
+    //    }
+    //};
+
 
     const addGridRow = (fieldId, columns) => {
         const field = formData.fields.find(f => f.id === fieldId);

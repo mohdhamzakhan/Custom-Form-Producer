@@ -742,6 +742,8 @@ const FormBuilder = () => {
             console.log('=== DEBUGGING IMAGE UPLOAD ===');
             console.log('Total formFields:', formFields.length);
 
+           
+
             for (let i = 0; i < formFields.length; i++) {
                 const field = formFields[i];
 
@@ -1054,9 +1056,9 @@ const FormBuilder = () => {
                                 formula: column.formula || "",  // <-- ADD THIS LINE
 
                                 // Also add other numeric and calculation-related fields
-                                min: column.min ?? null,
-                                max: column.max ?? null,
-                                decimal: column.decimal ?? null,
+                                min: column.min !== undefined && column.min !== null && column.min !== "" ? parseFloat(column.min) : 0,
+                                max: column.max !== undefined && column.max !== null && column.max !== "" ? parseFloat(column.max) : null,
+                                decimal: column.decimal !== undefined ? column.decimal : null,
                                 parentColumn: column.parentColumn || "",
                                 dependentOptions: column.dependentOptions || {},
                                 startTime: column.startTime || "",
@@ -3170,10 +3172,12 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             <label className="block text-xs text-gray-500 mb-1">Min</label>
                                             <input
                                                 type="number"
-                                                value={column.min || 0}
+                                                value={column.min !== null ? column.min : 0} // Fix this line
                                                 onChange={(e) => {
-                                                    const updatedColumns = [...(field.columns || [])];
-                                                    updatedColumns[colIndex].min = parseFloat(e.target.value) || 0;
+                                                    const updatedColumns = [...field.columns];
+                                                    // Properly handle 0 values
+                                                    const value = e.target.value === "" ? null : parseFloat(e.target.value);
+                                                    updatedColumns[colIndex].min = isNaN(value) ? null : value;
                                                     updateField({ ...field, columns: updatedColumns });
                                                 }}
                                                 className="w-full px-2 py-1 border rounded"

@@ -860,6 +860,16 @@ namespace productionLine.Server.Controllers
             if (template == null)
                 return NotFound("Template not found.");
 
+            // ✅ Parse the date from request or use today
+            DateTime targetDate = DateTime.Today;
+            if (!string.IsNullOrEmpty(request.Date))
+            {
+                if (DateTime.TryParse(request.Date, out DateTime parsedDate))
+                {
+                    targetDate = parsedDate.Date; // Ensure we only use the date part
+                }
+            }
+
             // Parse shift period
             DateTime startDate, endDate;
             string shiftLetter = request.ShiftPeriod;
@@ -871,14 +881,24 @@ namespace productionLine.Server.Controllers
 
             if (request.ShiftPeriod == "fullday")
             {
-                startDate = DateTime.Today;
-                endDate = DateTime.Today.AddDays(1);
+                // ✅ Use the selected date for full day
+                startDate = targetDate;
+                endDate = targetDate.AddDays(1);
             }
             else
             {
-                var (start, end) = GetShiftTimeRange(shiftLetter);
-                startDate = start;
-                endDate = end;
+                // ✅ FIXED: Get shift times as TimeSpan and combine with target date
+                var shiftTimes = GetShiftTimeRange(shiftLetter);
+
+                // Combine date with time
+                startDate = targetDate.Add(shiftTimes.start);
+                endDate = targetDate.Add(shiftTimes.end);
+
+                // Handle overnight shifts (e.g., Shift C: 23:00 to 06:00)
+                if (shiftTimes.end < shiftTimes.start)
+                {
+                    endDate = endDate.AddDays(1);
+                }
             }
 
             // Fetch submissions within the shift period
@@ -892,7 +912,7 @@ namespace productionLine.Server.Controllers
                 .OrderBy(s => s.SubmittedAt)
                 .ToListAsync();
 
-            // ✅ FIX: Return data in the same format as regular reports
+            // Return data in the same format as regular reports
             var result = new List<object>();
 
             foreach (var sub in submissions)
@@ -914,7 +934,7 @@ namespace productionLine.Server.Controllers
                     };
                 }).ToList();
 
-                // ✅ CRITICAL: Add the submission timestamp as a field
+                // Add the submission timestamp as a field
                 rowData.Add(new
                 {
                     fieldLabel = "Date",
@@ -933,37 +953,39 @@ namespace productionLine.Server.Controllers
             return Ok(result);
         }
 
+        // ✅ Return a named tuple with TimeSpan values
+        private (TimeSpan start, TimeSpan end) GetShiftTimeRange(string shift)
+        {
+            return shift switch
+            {
+                "A" => (new TimeSpan(6, 0, 0), new TimeSpan(14, 30, 0)),   // 06:00 - 14:30
+                "B" => (new TimeSpan(14, 30, 0), new TimeSpan(23, 0, 0)),  // 14:30 - 23:00
+                "C" => (new TimeSpan(23, 0, 0), new TimeSpan(6, 0, 0)),    // 23:00 - 06:00 (next day)
+                _ => (new TimeSpan(6, 0, 0), new TimeSpan(14, 30, 0))      // Default to Shift A
+            };
+        }
+
         private string GetCurrentShift()
         {
             var now = DateTime.Now;
-            var currentTime = now.Hour * 60 + now.Minute;
+            var currentTime = now.TimeOfDay;
 
-            if (currentTime >= 360 && currentTime < 870) return "A"; // 6:00 AM - 2:30 PM
-            if (currentTime >= 870 && currentTime < 1380) return "B"; // 2:30 PM - 11:00 PM
-            return "C"; // 11:00 PM - 6:00 AM
-        }
+            // Shift A: 6:00 AM to 2:30 PM
+            if (currentTime >= new TimeSpan(6, 0, 0) && currentTime < new TimeSpan(14, 30, 0))
+                return "A";
 
-        private (DateTime start, DateTime end) GetShiftTimeRange(string shift)
-        {
-            var today = DateTime.Today;
+            // Shift B: 2:30 PM to 11:00 PM
+            if (currentTime >= new TimeSpan(14, 30, 0) && currentTime < new TimeSpan(23, 0, 0))
+                return "B";
 
-            switch (shift)
-            {
-                case "A":
-                    return (today.AddHours(6), today.AddHours(14.5)); // 6:00 AM - 2:30 PM
-                case "B":
-                    return (today.AddHours(14.5), today.AddHours(23)); // 2:30 PM - 11:00 PM
-                case "C":
-                    var yesterday = today.AddDays(-1);
-                    return (yesterday.AddHours(23), today.AddHours(6)); // 11:00 PM - 6:00 AM next day
-                default:
-                    return (today, today.AddDays(1));
-            }
+            // Shift C: 11:00 PM to 6:00 AM
+            return "C";
         }
 
         public class ShiftReportRequest
         {
             public string ShiftPeriod { get; set; } // "current", "A", "B", "C", or "fullday"
+            public string Date { get; set; }
         }
 
     }
