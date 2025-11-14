@@ -23,6 +23,8 @@ namespace productionLine.Server.DTO
 
 
         public bool? Decimal { get; set; }
+        public bool? disabled { get; set; }
+        public bool? visible { get; set; }
 
         public string? Formula { get; set; }
 

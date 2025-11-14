@@ -280,6 +280,10 @@ namespace productionLine.Server.Controllers
                     minLength = f.minLength,
                     maxLength = f.maxLength,
                     lengthValidationMessage = f.lengthValidationMessage,
+                    AllowAddRows = f.AllowAddRows,
+                    AllowEditQuestions = f.AllowEditQuestions,
+                    DefaultRowsJson = f.DefaultRowsJson,
+                    DefaultRows = f.DefaultRows,
 
 
                     // Add these missing linked textbox properties:
@@ -345,7 +349,9 @@ namespace productionLine.Server.Controllers
                         textAlign = ct.textAlign,
                         lengthValidationMessage=ct.lengthValidationMessage,
                         maxLength=ct.maxLength,
-                        minLength = ct.minLength
+                        minLength = ct.minLength,
+                        disabled = ct.disable,
+                        visible = ct.visible
 
                     }).ToList() ?? new List<GridColumnDto>()),
 

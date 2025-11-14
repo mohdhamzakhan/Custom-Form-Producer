@@ -238,7 +238,7 @@ export default function EnhancedReportViewer() {
                     `${APP_CONSTANTS.API_BASE_URL}/api/reports/run-shift/${templateId}`,
                     {
                         shiftPeriod: selectedShiftPeriod,
-                        date: selectedDate 
+                        date: selectedDate
                     }
                 );
 

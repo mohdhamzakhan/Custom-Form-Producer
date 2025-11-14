@@ -216,6 +216,10 @@ namespace productionLine.Server.Controllers
                     existingField.minLength = field.minLength;
                     existingField.maxLength = field.maxLength;
                     existingField.lengthValidationMessage = field.lengthValidationMessage;
+                    existingField.DefaultRowsJson = field.DefaultRowsJson;
+                    existingField.AllowAddRows = field.AllowAddRows;
+                    existingField.AllowEditQuestions = field.AllowEditQuestions;
+
 
 
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
@@ -265,6 +269,9 @@ namespace productionLine.Server.Controllers
                     KeyFieldMappings = field.KeyFieldMappings,
                     KeyFieldMappingsJson = field.KeyFieldMappingsJson,
                     IMAGEOPTIONS = field.IMAGEOPTIONS,
+                    DefaultRowsJson = field.DefaultRowsJson,
+                    AllowAddRows = field.AllowAddRows,
+                    AllowEditQuestions = field.AllowEditQuestions,
 
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -407,6 +414,12 @@ namespace productionLine.Server.Controllers
                     minLength = f.minLength,
                     maxLength = f.maxLength,
                     lengthValidationMessage = f.lengthValidationMessage,
+                    AllowAddRows = f.AllowAddRows,
+                    AllowEditQuestions = f.AllowEditQuestions,
+                    DefaultRowsJson=f.DefaultRowsJson,
+                    DefaultRows=f.DefaultRows,
+
+
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
@@ -451,7 +464,10 @@ namespace productionLine.Server.Controllers
                         textAlign = ct.textAlign,
                         lengthValidationMessage = ct.lengthValidationMessage,
                         maxLength = ct.maxLength,
-                        minLength = ct.minLength
+                        minLength = ct.minLength,
+                        disabled =ct.disable,
+                        visible = ct.visible
+                        
 
                     }).ToList() ?? new List<GridColumnDto>()),
 
@@ -833,7 +849,7 @@ namespace productionLine.Server.Controllers
 
                 // Build comprehensive grid column mappings
                 var formFields = await _context.FormFields
-                    .Where(f => f.FormId == formId && f.Type == "grid" && !string.IsNullOrEmpty(f.ColumnsJson))
+                    .Where(f => f.FormId == formId && (f.Type == "grid" || f.Type == "questionGrid") && !string.IsNullOrEmpty(f.ColumnsJson))
                     .ToListAsync();
 
                 var gridColumnMappings = new Dictionary<string, Dictionary<string, string>>();

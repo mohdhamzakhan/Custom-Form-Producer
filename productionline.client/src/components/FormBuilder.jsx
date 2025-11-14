@@ -529,7 +529,7 @@ const FormBuilder = () => {
     };
 
     const fetchFormLayout = async () => {
-        console.log(formLink)
+        console.log(formLink);
         if (!formLink) {
             const savedForm = localStorage.getItem("formBuilderFields");
             if (savedForm) {
@@ -542,20 +542,11 @@ const FormBuilder = () => {
 
         try {
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/form-builder/link/${encodeURIComponent(formLink)}`);
-
-
             let data;
 
             try {
                 data = await response.json();
-
                 console.log('API Response:', data);
-                data.fields?.forEach(field => {
-                    if (field.type === 'image') {
-                        console.log(`Image field ${field.id} IMAGEOPTIONS:`, field.IMAGEOPTIONS);
-                    }
-                });
-                console.log(data)
             } catch (jsonErr) {
                 const text = await response.text();
                 console.error("Non-JSON error from API:", text);
@@ -564,20 +555,16 @@ const FormBuilder = () => {
                 return;
             }
 
-            // Store the form ID for updates
             setFormId(data.id || 0);
             setFormName(data.name || "");
 
             // Restore linked form data
-            // Around line 350-380, update the key fields restoration:
             if (data.linkedFormId) {
                 await fetchLinkedFormDetails(data.linkedFormId);
 
-                // Convert the keyFieldMappings to the expanded format expected by frontend
                 const expandedKeyFields = (data.keyFieldMappings || []).map(keyField => ({
                     currentFormField: keyField.currentFormField,
                     linkedFormField: keyField.linkedFormField,
-                    // Parse grid column references
                     currentFieldType: keyField.currentFormField?.includes('.') ? 'gridColumn' : 'field',
                     linkedFieldType: keyField.linkedFormField?.includes('.') ? 'gridColumn' : 'field',
                     linkedFieldId: keyField.linkedFieldId || null,
@@ -585,7 +572,6 @@ const FormBuilder = () => {
                     linkedFieldReference: keyField.linkedFormField?.includes('.') && keyField.linkedGridFieldId && keyField.linkedColumnId
                         ? `${keyField.linkedGridFieldId}.${keyField.linkedColumnId}`
                         : keyField.linkedFieldId || "",
-                    // Extract parent field ID and column ID for grid columns
                     currentParentFieldId: keyField.currentFormField?.includes('.')
                         ? keyField.currentFormField.split('.')[0]
                         : null,
@@ -602,12 +588,14 @@ const FormBuilder = () => {
 
                 setKeyFields(expandedKeyFields);
             }
-            console.log("Data ", data)
-            // Transform the fields similar to before
 
+            // Transform the fields
             const transformedFields = (data.fields || []).map((field, index) => {
                 const isGrid = field.type === "grid";
+                const isQuestionGrid = field.type === "questionGrid";
                 const isLinkedField = field.type === "linkedTextbox";
+
+                console.log(`Processing field ${field.id}, type: ${field.type}`);
 
                 const transformedField = {
                     ...field,
@@ -617,59 +605,128 @@ const FormBuilder = () => {
                     requireRemarksOutOfRange: field.requireRemarksOutOfRange !== undefined
                         ? field.requireRemarksOutOfRange
                         : false,
-
-                    columns: isGrid
-                        ? (field.column || field.columns || []).map(col => ({
-                            ...col,
-                            type: col.type || "textbox",
-                            name: col.name || "",
-                            id: col.id || generateGuid(),
-                            width: col.width || "1fr",
-                            options: col.options || [],
-                            textColor: col.textColor || "#000000",
-                            backgroundColor: col.backgroundColor || "#ffffff",
-                            formula: col.formula || "",
-                            min: col.min ?? null,
-                            max: col.max ?? null,
-                            decimal: col.isDecimal ?? true,
-                            parentColumn: col.parentColumn || "",
-                            dependentOptions: col.dependentOptions || {},
-                            startTime: col.startTime || "",
-                            endTime: col.endTime || "",
-                            remarksOptions: Array.isArray(col.remarksOptions) ? col.remarksOptions : [],
-                            requireRemarks: Array.isArray(col.requireRemarks) ? col.requireRemarks : [],
-                            // Handle linked textbox columns in grids
-                            ...(col.type === "linkedTextbox" && {
-                                linkedFormId: col.linkedFormId || (linkedForm?.id || null),
-                                linkedFieldId: col.linkedFieldId,
-                                linkedFieldType: col.linkedFieldType || "field",
-                                linkedGridFieldId: col.linkedGridFieldId,
-                                linkedColumnId: col.linkedColumnId,
-                                linkedFieldReference: col.linkedFieldType === "gridColumn" && col.linkedGridFieldId && col.linkedColumnId
-                                    ? `${col.linkedGridFieldId}.${col.linkedColumnId}`
-                                    : col.linkedFieldId || "",
-                                displayMode: col.displayMode || "readonly",
-                                displayFormat: col.displayFormat || "{value}",
-                                allowManualEntry: col.allowManualEntry || false,
-                                showLookupButton: col.showLookupButton !== false,
-                                keyFieldMappings: col.keyFieldMappingsJson ?
-                                    JSON.parse(col.keyFieldMappingsJson).map(mapping => ({
-                                        currentField: mapping.currentFormField,
-                                        linkedField: mapping.linkedFormField
-                                    })) : []
-                            })
-                        }))
-                        : undefined,
-                    column: undefined,
-                    formula: field.formula || "",
-                    resultDecimal: field.resultDecimal || false,
-                    fieldReferences: field.fieldReferencesJson || [],
-                    remarkTriggers: field.remarkTriggers || [],
-
-                    // Preserve linked field properties
                     linkedFormId: field.linkedFormId || null,
                     IMAGEOPTIONS: field.IMAGEOPTIONS,
                 };
+
+                // Handle GRID and QUESTIONGRID fields
+                if (isGrid || isQuestionGrid) {
+                    console.log(`Processing ${field.type} field:`, field.id);
+
+                    let columns = [];
+
+                    // Try multiple ways to get columns
+                    if (field.columnsJson) {
+                        try {
+                            if (typeof field.columnsJson === 'string') {
+                                columns = JSON.parse(field.columnsJson);
+                                console.log("Parsed columnsJson:", columns);
+                            } else if (Array.isArray(field.columnsJson)) {
+                                columns = field.columnsJson;
+                                console.log("Using columnsJson as array:", columns);
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse columnsJson:", e);
+                        }
+                    }
+
+                    // Fallback to columns property
+                    if ((!columns || columns.length === 0) && field.columns && Array.isArray(field.columns)) {
+                        columns = field.columns;
+                        console.log("Using field.columns:", columns);
+                    }
+
+                    // Fallback to column property (old format)
+                    if ((!columns || columns.length === 0) && field.column && Array.isArray(field.column)) {
+                        columns = field.column;
+                        console.log("Using field.column:", columns);
+                    }
+
+                    console.log(`Final columns for ${field.type}:`, columns);
+
+                    // Process columns
+                    transformedField.columns = (columns || []).map(col => ({
+                        ...col,
+                        type: col.type || "textbox",
+                        name: col.name || "",
+                        id: col.id || generateGuid(),
+                        width: col.width || "1fr",
+                        label: col.label || col.name || "",
+                        options: col.options || [],
+                        textColor: col.textColor || "#000000",
+                        backgroundColor: col.backgroundColor || "#ffffff",
+                        formula: col.formula || "",
+                        min: col.min ?? null,
+                        max: col.max ?? null,
+                        decimal: col.decimal ?? true,
+                        parentColumn: col.parentColumn || "",
+                        dependentOptions: col.dependentOptions || {},
+                        startTime: col.startTime || "",
+                        endTime: col.endTime || "",
+                        remarksOptions: Array.isArray(col.remarksOptions) ? col.remarksOptions : [],
+                        requireRemarks: Array.isArray(col.requireRemarks) ? col.requireRemarks : [],
+                        required: col.required || false,
+                        fixed: col.fixed || false,
+                        // Handle linked textbox columns in grids
+                        ...(col.type === "linkedTextbox" && {
+                            linkedFormId: col.linkedFormId || (linkedForm?.id || null),
+                            linkedFieldId: col.linkedFieldId,
+                            linkedFieldType: col.linkedFieldType || "field",
+                            linkedGridFieldId: col.linkedGridFieldId,
+                            linkedColumnId: col.linkedColumnId,
+                            linkedFieldReference: col.linkedFieldType === "gridColumn" && col.linkedGridFieldId && col.linkedColumnId
+                                ? `${col.linkedGridFieldId}.${col.linkedColumnId}`
+                                : col.linkedFieldId || "",
+                            displayMode: col.displayMode || "readonly",
+                            displayFormat: col.displayFormat || "{value}",
+                            allowManualEntry: col.allowManualEntry || false,
+                            showLookupButton: col.showLookupButton !== false,
+                            keyFieldMappings: col.keyFieldMappingsJson ?
+                                JSON.parse(col.keyFieldMappingsJson).map(mapping => ({
+                                    currentField: mapping.currentFormField,
+                                    linkedField: mapping.linkedFormField
+                                })) : []
+                        })
+                    }));
+
+                    // Remove the old column property
+                    delete transformedField.column;
+
+                    // Set grid properties
+                    transformedField.initialRows = field.initialRows ?? 3;
+                    transformedField.minRows = field.minRows ?? 1;
+                    transformedField.maxRows = field.maxRows ?? 10;
+
+                    // Handle questionGrid specific properties
+                    if (isQuestionGrid) {
+                        console.log("Processing questionGrid specific properties");
+
+                        // Parse defaultRows
+                        let defaultRows = [];
+                        if (field.defaultRowsJson) {
+                            try {
+                                defaultRows = typeof field.defaultRowsJson === 'string'
+                                    ? JSON.parse(field.defaultRowsJson)
+                                    : field.defaultRowsJson;
+                            } catch (e) {
+                                console.error("Failed to parse defaultRowsJson:", e);
+                            }
+                        } else if (field.defaultRows && Array.isArray(field.defaultRows)) {
+                            defaultRows = field.defaultRows;
+                        }
+
+                        transformedField.defaultRows = defaultRows;
+                        transformedField.allowAddRows = field.allowAddRows !== false;
+                        transformedField.allowEditQuestions = field.allowEditQuestions !== false;
+
+                        console.log("QuestionGrid defaultRows loaded:", defaultRows);
+                    }
+
+                    transformedField.formula = field.formula || "";
+                    transformedField.resultDecimal = field.resultDecimal || false;
+                    transformedField.fieldReferences = field.fieldReferencesJson || [];
+                    transformedField.remarkTriggers = field.remarkTriggers || [];
+                }
 
                 // Handle linked field specific properties
                 if (isLinkedField) {
@@ -679,7 +736,6 @@ const FormBuilder = () => {
                     transformedField.linkedGridFieldId = field.linkedGridFieldId;
                     transformedField.linkedColumnId = field.linkedColumnId;
 
-                    // Set linkedFieldReference based on field type
                     transformedField.linkedFieldReference = field.linkedFieldType === "gridColumn" && field.linkedGridFieldId && field.linkedColumnId
                         ? `${field.linkedGridFieldId}.${field.linkedColumnId}`
                         : field.linkedFieldId || "";
@@ -689,20 +745,18 @@ const FormBuilder = () => {
                     transformedField.allowManualEntry = field.allowManualEntry || false;
                     transformedField.showLookupButton = field.showLookupButton !== false;
 
-                    // Parse key field mappings and convert property names
                     if (field.keyFieldMappingsJson) {
                         try {
                             const mappings = JSON.parse(field.keyFieldMappingsJson);
                             transformedField.keyFieldMappings = mappings.map(mapping => ({
-                                currentField: mapping.currentFormField,  // Convert from backend property name
-                                linkedField: mapping.linkedFormField    // Convert from backend property name
+                                currentField: mapping.currentFormField || mapping.currentField,
+                                linkedField: mapping.linkedFormField || mapping.linkedField
                             }));
                         } catch (e) {
                             console.warn('Failed to parse keyFieldMappingsJson:', e);
                             transformedField.keyFieldMappings = [];
                         }
                     } else if (field.keyFieldMappings) {
-                        // Handle if keyFieldMappings is already parsed
                         transformedField.keyFieldMappings = field.keyFieldMappings.map(mapping => ({
                             currentField: mapping.currentFormField || mapping.currentField,
                             linkedField: mapping.linkedFormField || mapping.linkedField
@@ -716,6 +770,8 @@ const FormBuilder = () => {
             });
 
             const sortedFields = transformedFields.sort((a, b) => a.order - b.order);
+            console.log("Final transformed fields:", sortedFields);
+
             setFormFields(sortedFields);
             setApprovers(data.approvers || []);
             setAllowedUsers(data.allowedUsers || []);
@@ -727,6 +783,7 @@ const FormBuilder = () => {
             setLoading(false);
         }
     };
+
 
     const saveForm = async () => {
         if (!formName.trim()) {
@@ -742,7 +799,7 @@ const FormBuilder = () => {
             console.log('=== DEBUGGING IMAGE UPLOAD ===');
             console.log('Total formFields:', formFields.length);
 
-           
+
 
             for (let i = 0; i < formFields.length; i++) {
                 const field = formFields[i];
@@ -1031,104 +1088,183 @@ const FormBuilder = () => {
                         cleanField.keyFieldMappingsJson = JSON.stringify(mappings);
                     }
 
-                    // Handle grid fields
-                    if (field.type === "grid" && field.columns) {
-                        const cleanColumns = field.columns.map(column => {
-                            // In the saveForm function, update the cleanColumn creation (around line 800-900):
+                    if (field.type === "grid" || field.type === "questionGrid") {
+                        console.log(`Processing ${field.type} field:`, field.id);
 
+                        // Get columns array
+                        const columns = field.columns || [];
+                        console.log("Columns to save:", columns);
+
+                        if (!columns || columns.length === 0) {
+                            console.warn(`${field.type} has no columns!`);
+                        }
+
+                        // Clean and prepare columns
+                        const cleanColumns = columns.map(column => {
                             const cleanColumn = {
-                                id: column.id,
-                                name: column.name,
-                                type: column.type,
-                                width: column.width,
+                                id: column.id || generateGuid(),
+                                name: column.name || "",
+                                label: column.label || column.name || "",
+                                type: column.type || "textbox",
+                                width: column.width || "1fr",
                                 required: column.required || false,
-                                options: Array.isArray(column.options) ? column.options : [],
-                                labelText: column.labelText || '',
-                                labelStyle: column.labelStyle || 'normal',
-                                textAlign: column.textAlign || 'left',
-                                textColor: column.textColor || "000000",
-                                backgroundColor: column.backgroundColor || "ffffff",
-                                minLength: column.minLength || null,
-                                maxLength: column.maxLength || null,
-                                lengthValidationMessage: column.lengthValidationMessage || '',
-
-                                // CRITICAL FIX: Add formula for calculation columns
-                                formula: column.formula || "",  // <-- ADD THIS LINE
-
-                                // Also add other numeric and calculation-related fields
-                                min: column.min !== undefined && column.min !== null && column.min !== "" ? parseFloat(column.min) : 0,
-                                max: column.max !== undefined && column.max !== null && column.max !== "" ? parseFloat(column.max) : null,
-                                decimal: column.decimal !== undefined ? column.decimal : null,
+                                fixed: column.fixed || false,
+                                options: column.options || [],
+                                textColor: column.textColor || "#000000",
+                                backgroundColor: column.backgroundColor || "#ffffff",
+                                formula: column.formula || "",
+                                min: column.min ?? null,
+                                max: column.max ?? null,
+                                decimal: column.decimal ?? true,
                                 parentColumn: column.parentColumn || "",
                                 dependentOptions: column.dependentOptions || {},
                                 startTime: column.startTime || "",
                                 endTime: column.endTime || "",
-                                /*remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],*/
-                                remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],
-
-                                // Handle linkedTextbox columns in grids
-                                ...(column.type === "linkedTextbox" && {
-                                    linkedFormId: column.linkedFormId || (linkedForm?.id) || null,
-                                    linkedFieldId: column.linkedFieldId,
-                                    displayMode: column.displayMode || "readonly",
-                                    displayFormat: column.displayFormat || "value",
-                                    allowManualEntry: column.allowManualEntry || false,
-                                    showLookupButton: column.showLookupButton !== false,
-
-                                    // Clean key field mappings for columns
-                                    keyFieldMappings: (column.keyFieldMappings || []).map(mapping => ({
-                                        currentFormField: mapping.currentField,
-                                        linkedFormField: mapping.linkedField,
-                                        currentFieldType: mapping.currentField?.includes(".") ? "gridColumn" : "field",
-                                        linkedFieldType: mapping.linkedField?.includes(".") ? "gridColumn" : "field",
-                                        currentParentFieldId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[0] : null,
-                                        currentColumnId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[1] : null,
-                                        linkedParentFieldId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[0] : null,
-                                        linkedColumnId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[1] : null,
-                                    })),
-                                    keyFieldMappingsJson: JSON.stringify(columnMappings)
-                                })
+                                remarksOptions: column.remarksOptions || [],
+                                requireRemarks: column.requireRemarks || [],
                             };
 
-
-                            // Handle linkedTextbox columns in grids
+                            // Handle linked textbox columns in grids
                             if (column.type === "linkedTextbox") {
-                                cleanColumn.linkedFormId = column.linkedFormId || linkedForm?.id || null;
-                                cleanColumn.linkedFieldId = column.linkedFieldId;
+                                cleanColumn.linkedFormId = column.linkedFormId || null;
+                                cleanColumn.linkedFieldId = column.linkedFieldId || null;
+                                cleanColumn.linkedFieldType = column.linkedFieldType || "field";
+                                cleanColumn.linkedGridFieldId = column.linkedGridFieldId || null;
+                                cleanColumn.linkedColumnId = column.linkedColumnId || null;
                                 cleanColumn.displayMode = column.displayMode || "readonly";
                                 cleanColumn.displayFormat = column.displayFormat || "{value}";
                                 cleanColumn.allowManualEntry = column.allowManualEntry || false;
                                 cleanColumn.showLookupButton = column.showLookupButton !== false;
-
-                                // Clean key field mappings for columns
-                                const columnMappings = (column.keyFieldMappings || []).map(mapping => ({
-                                    currentFormField: mapping.currentField,
-                                    linkedFormField: mapping.linkedField,
-                                    currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
-                                    linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
-                                    currentParentFieldId: mapping.currentField?.includes('.')
-                                        ? mapping.currentField.split('.')[0] : null,
-                                    currentColumnId: mapping.currentField?.includes('.')
-                                        ? mapping.currentField.split('.')[1] : null,
-                                    linkedParentFieldId: mapping.linkedField?.includes('.')
-                                        ? mapping.linkedField.split('.')[0] : null,
-                                    linkedColumnId: mapping.linkedField?.includes('.')
-                                        ? mapping.linkedField.split('.')[1] : null,
-                                }));
-
-                                cleanColumn.keyFieldMappings = columnMappings;
-                                cleanColumn.keyFieldMappingsJson = JSON.stringify(columnMappings);
+                                cleanColumn.keyFieldMappingsJson = column.keyFieldMappings ?
+                                    JSON.stringify(column.keyFieldMappings) : null;
                             }
 
                             return cleanColumn;
                         });
 
+                        // Store columns in both formats for compatibility
                         cleanField.columns = cleanColumns;
                         cleanField.columnsJson = JSON.stringify(cleanColumns);
-                        cleanField.initialRows = field.initialRows || 3;
-                        cleanField.minRows = field.minRows || 1;
-                        cleanField.maxRows = field.maxRows || 10;
+
+                        // Store grid settings
+                        cleanField.initialRows = field.initialRows ?? 3;
+                        cleanField.minRows = field.minRows ?? 1;
+                        cleanField.maxRows = field.maxRows ?? 10;
+
+                        console.log("Saved columns:", cleanColumns);
+                        console.log("Saved columnsJson:", cleanField.columnsJson);
+
+                        // CRITICAL: Handle questionGrid specific properties
+                        if (field.type === "questionGrid") {
+                            cleanField.defaultRows = field.defaultRows || [];
+                            cleanField.defaultRowsJson = JSON.stringify(field.defaultRows || []);
+                            cleanField.allowAddRows = field.allowAddRows !== false;
+                            cleanField.allowEditQuestions = field.allowEditQuestions !== false;
+                        }
                     }
+
+
+                    // Handle grid fields
+                    //if (field.type === "grid" && field.columns) {
+                    //    const cleanColumns = field.columns.map(column => {
+                    //        // In the saveForm function, update the cleanColumn creation (around line 800-900):
+
+                    //        const cleanColumn = {
+                    //            id: column.id,
+                    //            name: column.name,
+                    //            type: column.type,
+                    //            width: column.width,
+                    //            required: column.required || false,
+                    //            options: Array.isArray(column.options) ? column.options : [],
+                    //            labelText: column.labelText || '',
+                    //            labelStyle: column.labelStyle || 'normal',
+                    //            textAlign: column.textAlign || 'left',
+                    //            textColor: column.textColor || "000000",
+                    //            backgroundColor: column.backgroundColor || "ffffff",
+                    //            minLength: column.minLength || null,
+                    //            maxLength: column.maxLength || null,
+                    //            lengthValidationMessage: column.lengthValidationMessage || '',
+                    //            visible: column.visible,
+                    //            disabled: column.disabled,
+
+
+                    //            // CRITICAL FIX: Add formula for calculation columns
+                    //            formula: column.formula || "",  // <-- ADD THIS LINE
+
+                    //            // Also add other numeric and calculation-related fields
+                    //            min: column.min !== undefined && column.min !== null && column.min !== "" ? parseFloat(column.min) : 0,
+                    //            max: column.max !== undefined && column.max !== null && column.max !== "" ? parseFloat(column.max) : null,
+                    //            decimal: column.decimal !== undefined ? column.decimal : null,
+                    //            parentColumn: column.parentColumn || "",
+                    //            dependentOptions: column.dependentOptions || {},
+                    //            startTime: column.startTime || "",
+                    //            endTime: column.endTime || "",
+                    //            /*remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],*/
+                    //            remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],
+
+                    //            // Handle linkedTextbox columns in grids
+                    //            ...(column.type === "linkedTextbox" && {
+                    //                linkedFormId: column.linkedFormId || (linkedForm?.id) || null,
+                    //                linkedFieldId: column.linkedFieldId,
+                    //                displayMode: column.displayMode || "readonly",
+                    //                displayFormat: column.displayFormat || "value",
+                    //                allowManualEntry: column.allowManualEntry || false,
+                    //                showLookupButton: column.showLookupButton !== false,
+
+                    //                // Clean key field mappings for columns
+                    //                keyFieldMappings: (column.keyFieldMappings || []).map(mapping => ({
+                    //                    currentFormField: mapping.currentField,
+                    //                    linkedFormField: mapping.linkedField,
+                    //                    currentFieldType: mapping.currentField?.includes(".") ? "gridColumn" : "field",
+                    //                    linkedFieldType: mapping.linkedField?.includes(".") ? "gridColumn" : "field",
+                    //                    currentParentFieldId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[0] : null,
+                    //                    currentColumnId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[1] : null,
+                    //                    linkedParentFieldId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[0] : null,
+                    //                    linkedColumnId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[1] : null,
+                    //                })),
+                    //                keyFieldMappingsJson: JSON.stringify(columnMappings)
+                    //            })
+                    //        };
+
+
+                    //        // Handle linkedTextbox columns in grids
+                    //        if (column.type === "linkedTextbox") {
+                    //            cleanColumn.linkedFormId = column.linkedFormId || linkedForm?.id || null;
+                    //            cleanColumn.linkedFieldId = column.linkedFieldId;
+                    //            cleanColumn.displayMode = column.displayMode || "readonly";
+                    //            cleanColumn.displayFormat = column.displayFormat || "{value}";
+                    //            cleanColumn.allowManualEntry = column.allowManualEntry || false;
+                    //            cleanColumn.showLookupButton = column.showLookupButton !== false;
+
+                    //            // Clean key field mappings for columns
+                    //            const columnMappings = (column.keyFieldMappings || []).map(mapping => ({
+                    //                currentFormField: mapping.currentField,
+                    //                linkedFormField: mapping.linkedField,
+                    //                currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
+                    //                linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
+                    //                currentParentFieldId: mapping.currentField?.includes('.')
+                    //                    ? mapping.currentField.split('.')[0] : null,
+                    //                currentColumnId: mapping.currentField?.includes('.')
+                    //                    ? mapping.currentField.split('.')[1] : null,
+                    //                linkedParentFieldId: mapping.linkedField?.includes('.')
+                    //                    ? mapping.linkedField.split('.')[0] : null,
+                    //                linkedColumnId: mapping.linkedField?.includes('.')
+                    //                    ? mapping.linkedField.split('.')[1] : null,
+                    //            }));
+
+                    //            cleanColumn.keyFieldMappings = columnMappings;
+                    //            cleanColumn.keyFieldMappingsJson = JSON.stringify(columnMappings);
+                    //        }
+
+                    //        return cleanColumn;
+                    //    });
+
+                    //    cleanField.columns = cleanColumns;
+                    //    cleanField.columnsJson = JSON.stringify(cleanColumns);
+                    //    cleanField.initialRows = field.initialRows || 3;
+                    //    cleanField.minRows = field.minRows || 1;
+                    //    cleanField.maxRows = field.maxRows || 10;
+                    //}
 
                     if (field.type === "calculation") {
                         fieldObj.formula = field.formula.replace(/\{([^}]+)\}/g, (match, fieldName) => {
@@ -1299,6 +1435,35 @@ const FormBuilder = () => {
                 imageFile: null,
                 maxFileSize: 5242880
             }),
+            ...(type === "questionGrid" && {
+                columns: [
+                    {
+                        id: generateGuid(),
+                        name: "question",
+                        label: "Question",
+                        type: "textbox",
+                        width: "40%",
+                        fixed: true,
+                        required: true
+                    }
+                ],
+                // NEW: Store pre-defined questions/rows
+                defaultRows: [
+                    {
+                        id: generateGuid(),
+                        question: "Question 1"
+                    },
+                    {
+                        id: generateGuid(),
+                        question: "Question 2"
+                    }
+                ],
+                allowAddRows: true,  // Allow end users to add more questions
+                allowEditQuestions: true,  // Allow end users to edit question text
+                minRows: 1,
+                maxRows: 20,
+                initialRows: 2,
+            }),
         };
         setFormFields([...formFields, newField]);
     };
@@ -1359,7 +1524,7 @@ const FormBuilder = () => {
         const allFields = [];
 
         fields.forEach(field => {
-            if (field.type === "grid" && field.columns) {
+            if ((field.type === "grid" || field.type === "questionGrid") && field.columns) {
                 // Add grid columns as selectable fields
                 field.columns.forEach(column => {
                     allFields.push({
@@ -1418,74 +1583,62 @@ const FormBuilder = () => {
                 <div className="space-y-2">
                     {keyFields.map((keyField, index) => (
                         <div key={index} className="flex items-center gap-2">
+
+                            {/* Left Select */}
                             <select
                                 value={keyField.currentFormField || ""}
                                 onChange={(e) => {
                                     const updated = [...keyFields];
                                     updated[index].currentFormField = e.target.value;
                                     setKeyFields(updated);
-                                    console.log("Selected current form field:", e.target.value);
                                 }}
                                 className="flex-1 px-2 py-1 border rounded text-sm"
                             >
                                 <option value="">Select field from current form</option>
                                 <optgroup label="Regular Fields">
-                                    {currentFormFields
-                                        .filter(f => !f.isGridColumn)
-                                        .map(field => (
-                                            <option key={field.id} value={field.id}>
-                                                {field.label}
-                                            </option>
-                                        ))}
+                                    {currentFormFields.filter(f => !f.isGridColumn).map(field => (
+                                        <option key={field.id} value={field.id}>{field.label}</option>
+                                    ))}
                                 </optgroup>
-                                {currentFormFields.filter(f => f.isGridColumn).length > 0 && (
+
+                                {currentFormFields.some(f => f.isGridColumn) && (
                                     <optgroup label="Grid Columns">
-                                        {currentFormFields
-                                            .filter(f => f.isGridColumn)
-                                            .map(field => (
-                                                <option key={field.id} value={field.id}>
-                                                    {field.label}
-                                                </option>
-                                            ))}
+                                        {currentFormFields.filter(f => f.isGridColumn).map(field => (
+                                            <option key={field.id} value={field.id}>{field.label}</option>
+                                        ))}
                                     </optgroup>
                                 )}
                             </select>
 
                             <span className="text-gray-500">=</span>
 
+                            {/* Right Select */}
                             <select
                                 value={keyField.linkedFormField || ""}
                                 onChange={(e) => {
                                     const updated = [...keyFields];
                                     updated[index].linkedFormField = e.target.value;
                                     setKeyFields(updated);
-                                    console.log("Selected linked form field:", e.target.value);
                                 }}
                                 className="flex-1 px-2 py-1 border rounded text-sm"
                             >
                                 <option value="">Select field from {linkedForm.name}</option>
                                 <optgroup label="Regular Fields">
-                                    {linkedFormAllFields
-                                        .filter(f => !f.isGridColumn)
-                                        .map(field => (
-                                            <option key={field.id} value={field.id}>
-                                                {field.label}
-                                            </option>
-                                        ))}
+                                    {linkedFormAllFields.filter(f => !f.isGridColumn).map(field => (
+                                        <option key={field.id} value={field.id}>{field.label}</option>
+                                    ))}
                                 </optgroup>
-                                {linkedFormAllFields.filter(f => f.isGridColumn).length > 0 && (
+
+                                {linkedFormAllFields.some(f => f.isGridColumn) && (
                                     <optgroup label="Grid Columns">
-                                        {linkedFormAllFields
-                                            .filter(f => f.isGridColumn)
-                                            .map(field => (
-                                                <option key={field.id} value={field.id}>
-                                                    {field.label}
-                                                </option>
-                                            ))}
+                                        {linkedFormAllFields.filter(f => f.isGridColumn).map(field => (
+                                            <option key={field.id} value={field.id}>{field.label}</option>
+                                        ))}
                                     </optgroup>
                                 )}
                             </select>
 
+                            {/* Delete button */}
                             <button
                                 onClick={() => {
                                     const updated = keyFields.filter((_, i) => i !== index);
@@ -1498,13 +1651,17 @@ const FormBuilder = () => {
                         </div>
                     ))}
 
-                    <button
-                        onClick={() => setKeyFields([...keyFields, { currentFormField: "", linkedFormField: "" }])}
-                        className="text-sm text-blue-500 hover:text-blue-600 flex items-center gap-1"
-                    >
-                        <Plus size={14} /> Add Key Field Pair
-                    </button>
+                    {/* Show only when no pair exists */}
+                    {keyFields.length === 0 && (
+                        <button
+                            onClick={() => setKeyFields([{ currentFormField: "", linkedFormField: "" }])}
+                            className="text-sm text-blue-500 hover:text-blue-600 flex items-center gap-1"
+                        >
+                            <Plus size={14} /> Add Key Field Pair
+                        </button>
+                    )}
                 </div>
+
 
                 {/* Enhanced preview */}
                 {keyFields.length > 0 && (
@@ -2134,7 +2291,7 @@ const FormBuilder = () => {
 
 
                     <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
-                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image"].map(
+                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid"].map(
                             (type) => (
                                 <button
                                     key={type}
@@ -2617,69 +2774,69 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 </div>
 
                                 {/* Key Field Mappings for this specific field */}
-                                <div className="mt-3">
-                                    <h5 className="text-xs font-semibold mb-2">Field-Specific Key Mappings (Optional)</h5>
-                                    <p className="text-xs text-gray-500 mb-2">
-                                        Configure additional key field mappings specific to this linked field.
-                                    </p>
+                                {/*<div className="mt-3">*/}
+                                {/*    <h5 className="text-xs font-semibold mb-2">Field-Specific Key Mappings (Optional)</h5>*/}
+                                {/*    <p className="text-xs text-gray-500 mb-2">*/}
+                                {/*        Configure additional key field mappings specific to this linked field.*/}
+                                {/*    </p>*/}
 
-                                    {(field.keyFieldMappings || []).map((mapping, idx) => (
-                                        <div key={idx} className="flex gap-2 mb-2 items-center">
-                                            <select
-                                                value={mapping.currentField || ""}
-                                                onChange={(e) => {
-                                                    const updated = [...(field.keyFieldMappings || [])];
-                                                    updated[idx].currentField = e.target.value;
-                                                    updateField({ keyFieldMappings: updated });
-                                                }}
-                                                className="flex-1 text-xs px-1 py-1 border rounded"
-                                            >
-                                                <option value="">Select current form field...</option>
-                                                {getAllFormFieldsWithGridColumns(allFields).map(f => (
-                                                    <option key={f.id} value={f.id}>
-                                                        {f.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <span className="text-xs">=</span>
-                                            <select
-                                                value={mapping.linkedField || ""}
-                                                onChange={(e) => {
-                                                    const updated = [...(field.keyFieldMappings || [])];
-                                                    updated[idx].linkedField = e.target.value;
-                                                    updateField({ keyFieldMappings: updated });
-                                                }}
-                                                className="flex-1 text-xs px-1 py-1 border rounded"
-                                            >
-                                                <option value="">Select linked form field...</option>
-                                                {getAllFormFieldsWithGridColumns(linkedFormFields).map(f => (
-                                                    <option key={f.id} value={f.id}>
-                                                        {f.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <button
-                                                onClick={() => {
-                                                    const updated = (field.keyFieldMappings || []).filter((_, i) => i !== idx);
-                                                    updateField({ keyFieldMappings: updated });
-                                                }}
-                                                className="text-red-500 hover:text-red-600"
-                                            >
-                                                <X size={12} />
-                                            </button>
-                                        </div>
-                                    ))}
+                                {/*    {(field.keyFieldMappings || []).map((mapping, idx) => (*/}
+                                {/*        <div key={idx} className="flex gap-2 mb-2 items-center">*/}
+                                {/*            <select*/}
+                                {/*                value={mapping.currentField || ""}*/}
+                                {/*                onChange={(e) => {*/}
+                                {/*                    const updated = [...(field.keyFieldMappings || [])];*/}
+                                {/*                    updated[idx].currentField = e.target.value;*/}
+                                {/*                    updateField({ keyFieldMappings: updated });*/}
+                                {/*                }}*/}
+                                {/*                className="flex-1 text-xs px-1 py-1 border rounded"*/}
+                                {/*            >*/}
+                                {/*                <option value="">Select current form field...</option>*/}
+                                {/*                {getAllFormFieldsWithGridColumns(allFields).map(f => (*/}
+                                {/*                    <option key={f.id} value={f.id}>*/}
+                                {/*                        {f.label}*/}
+                                {/*                    </option>*/}
+                                {/*                ))}*/}
+                                {/*            </select>*/}
+                                {/*            <span className="text-xs">=</span>*/}
+                                {/*            <select*/}
+                                {/*                value={mapping.linkedField || ""}*/}
+                                {/*                onChange={(e) => {*/}
+                                {/*                    const updated = [...(field.keyFieldMappings || [])];*/}
+                                {/*                    updated[idx].linkedField = e.target.value;*/}
+                                {/*                    updateField({ keyFieldMappings: updated });*/}
+                                {/*                }}*/}
+                                {/*                className="flex-1 text-xs px-1 py-1 border rounded"*/}
+                                {/*            >*/}
+                                {/*                <option value="">Select linked form field...</option>*/}
+                                {/*                {getAllFormFieldsWithGridColumns(linkedFormFields).map(f => (*/}
+                                {/*                    <option key={f.id} value={f.id}>*/}
+                                {/*                        {f.label}*/}
+                                {/*                    </option>*/}
+                                {/*                ))}*/}
+                                {/*            </select>*/}
+                                {/*            <button*/}
+                                {/*                onClick={() => {*/}
+                                {/*                    const updated = (field.keyFieldMappings || []).filter((_, i) => i !== idx);*/}
+                                {/*                    updateField({ keyFieldMappings: updated });*/}
+                                {/*                }}*/}
+                                {/*                className="text-red-500 hover:text-red-600"*/}
+                                {/*            >*/}
+                                {/*                <X size={12} />*/}
+                                {/*            </button>*/}
+                                {/*        </div>*/}
+                                {/*    ))}*/}
 
-                                    <button
-                                        onClick={() => {
-                                            const updated = [...(field.keyFieldMappings || []), { currentField: "", linkedField: "" }];
-                                            updateField({ keyFieldMappings: updated });
-                                        }}
-                                        className="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1"
-                                    >
-                                        <Plus size={12} /> Add Mapping
-                                    </button>
-                                </div>
+                                {/*    <button*/}
+                                {/*        onClick={() => {*/}
+                                {/*            const updated = [...(field.keyFieldMappings || []), { currentField: "", linkedField: "" }];*/}
+                                {/*            updateField({ keyFieldMappings: updated });*/}
+                                {/*        }}*/}
+                                {/*        className="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1"*/}
+                                {/*    >*/}
+                                {/*        <Plus size={12} /> Add Mapping*/}
+                                {/*    </button>*/}
+                                {/*</div>*/}
                             </div>
                         )}
                     </div>
@@ -2866,6 +3023,34 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         className="h-4 w-4"
                                     />
                                 </div>
+                                <div className="w-full md:w-1/6 mb-2">
+                                    <label className="block text-xs text-gray-500 mb-1">Visible</label>
+                                    <input
+                                        type="checkbox"
+                                        checked={column.visible !== false} // Default to true if undefined
+                                        onChange={(e) => {
+                                            const updatedColumns = [...field.columns];
+                                            updatedColumns[colIndex].visible = e.target.checked;
+                                            updateField({ ...field, columns: updatedColumns });
+                                        }}
+                                        className="h-4 w-4"
+                                    />
+                                </div>
+
+                                <div className="w-full md:w-1/6 mb-2">
+                                    <label className="block text-xs text-gray-500 mb-1">Disabled</label>
+                                    <input
+                                        type="checkbox"
+                                        checked={column.disabled || false}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...field.columns];
+                                            updatedColumns[colIndex].disabled = e.target.checked;
+                                            updateField({ ...field, columns: updatedColumns });
+                                        }}
+                                        className="h-4 w-4"
+                                    />
+                                </div>
+
 
 
                                 {column.type === "calculation" && (
@@ -3451,7 +3636,9 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                     textAlign: 'left',
                                     minLength: null,
                                     maxLength: null,
-                                    lengthValidationMessage: ''
+                                    lengthValidationMessage: '',
+                                    visible: true,      // Controls column visibility
+                                    disabled: false,    // Controls column input state
                                 };
                                 updateField({ columns: [...field.columns, newColumn] });
                             }}
@@ -3487,23 +3674,22 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 onDrop={(e) => handleHeaderDrop(e, i)}
                                                 onMouseDown={(e) => e.stopPropagation()} // Prevent grid drag on mouse down
                                                 onClick={(e) => e.stopPropagation()} // Prevent any parent click handlers
-                                                className={`border border-gray-300 bg-gray-100 p-2 text-sm text-left cursor-move select-none transition-all duration-200 relative ${draggedColumnIndex === i ? 'opacity-50 scale-95' : ''
-                                                    } ${dragOverColumnIndex === i && draggedColumnIndex !== i
-                                                        ? 'border-l-4 border-l-blue-500 bg-blue-100'
-                                                        : ''
-                                                    }`}
+                                                className={`border border-gray-300 bg-gray-100 p-2 text-sm text-left cursor-move select-none transition-all duration-200 relative ${col.disabled ? 'opacity-60 bg-gray-200' : ''
+                                                    } ${draggedColumnIndex === i ? 'opacity-50 scale-95' : ''}`}
                                                 style={{
                                                     width: col.width,
                                                     color: col.textColor,
-                                                    backgroundColor: dragOverColumnIndex === i && draggedColumnIndex !== i
-                                                        ? '#dbeafe'
-                                                        : col.backgroundColor
+                                                    backgroundColor: col.disabled ? '#f3f4f6' : (dragOverColumnIndex === i && draggedColumnIndex !== i ? '#dbeafe' : col.backgroundColor)
                                                 }}
                                                 title="Drag to reorder columns"
                                             >
                                                 <div className="flex items-center gap-2 pointer-events-none">
                                                     <GripVertical size={12} className="text-gray-500" />
-                                                    <span>{col.name} {col.required && <span className="text-red-500">*</span>}</span>
+                                                    <span>
+                                                        {col.name}
+                                                        {col.required && <span className="text-red-500">*</span>}
+                                                        {col.disabled && <span className="text-gray-400 ml-1">(Disabled)</span>}
+                                                    </span>
                                                 </div>
                                             </th>
                                         ))}
@@ -3533,11 +3719,11 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     )}
                                                     {col.type === "numeric" && (
                                                         <input type="number" disabled className="w-full bg-gray-50 border px-2 py-1 opacity-50"
-                                                            min={col.min} max={col.max} step={col.decimal ? "0.01" : "1"} placeholder="123" />
+                                                            min={col.min} max={col.max} step={col.decimal ? "0.01" : "1"} placeholder={col.disabled ? "Disabled" : "123"} />
                                                     )}
                                                     {col.type === "dropdown" && (
-                                                        <select className="w-full bg-gray-50 border px-2 py-1 opacity-50">
-                                                            <option>Select...</option>
+                                                        <select className={`w-full bg-gray-50 border px-2 py-1 ${col.disabled ? 'opacity-30' : 'opacity-50'}`} disabled={col.disabled || true}>
+                                                            <option>{col.disabled ? "Disabled" : "Select..."}</option>
                                                             {(col.options || []).map((opt, o) => (
                                                                 <option key={o}>{opt}</option>
                                                             ))}
@@ -3886,10 +4072,576 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                 </div>
             )}
 
+            {field.type === "questionGrid" && (
+                <div className="mt-4 border rounded p-4 bg-gray-50">
+                    <h4 className="text-sm font-semibold mb-3">Question Grid Configuration</h4>
 
-            {(field.type === "dropdown" ||
-                field.type === "checkbox" ||
-                field.type === "radio") && (
+                    {/* Question Column Setup */}
+                    <div className="mb-4 bg-blue-50 p-3 rounded">
+                        <label className="block text-sm font-medium mb-2">Question Column:</label>
+                        <input
+                            type="text"
+                            value={field.columns.find(c => c.fixed)?.label || "Question"}
+                            onChange={(e) => {
+                                const updatedColumns = [...field.columns];
+                                const questionColIndex = field.columns.findIndex(c => c.fixed);
+                                if (questionColIndex !== -1) {
+                                    updatedColumns[questionColIndex] = {
+                                        ...updatedColumns[questionColIndex],
+                                        label: e.target.value
+                                    };
+                                    updateField({ columns: updatedColumns });
+                                }
+                            }}
+                            placeholder="e.g., 'Question', 'Item', 'Parameter'"
+                            className="w-full px-3 py-2 border rounded text-sm"
+                        />
+
+                    </div>
+
+                    {/* Answer Columns Management */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium mb-2">Answer Columns:</label>
+
+                        {/* Display existing answer columns */}
+                        <div className="space-y-2 mb-3">
+                            {field.columns.filter(col => !col.fixed).map((col, idx) => (
+                                <div key={col.id} className="flex items-center gap-2 bg-white p-3 rounded border">
+                                    <span className="text-gray-500 text-sm font-medium w-8">{idx + 1}.</span>
+
+                                    {/* Column Label */}
+                                    <div className="flex-1">
+                                        <input
+                                            type="text"
+                                            value={col.label}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                updatedColumns[colIndex] = {
+                                                    ...col,
+                                                    label: e.target.value,
+                                                    name: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                                                };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            placeholder="Column label (e.g., 'Answer', 'Value', 'Score')"
+                                            className="w-full px-3 py-1 border rounded text-sm mb-1"
+                                        />
+
+                                        {/* Column Type Selector */}
+                                        <select
+                                            value={col.type}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                const newType = e.target.value;
+
+                                                // Reset type-specific properties
+                                                updatedColumns[colIndex] = {
+                                                    ...col,
+                                                    type: newType,
+                                                    options: newType === "dropdown" || newType === "checkbox" || newType === "radio" ? (col.options || []) : undefined,
+                                                    min: newType === "numeric" ? (col.min !== undefined ? col.min : null) : undefined,
+                                                    max: newType === "numeric" ? (col.max !== undefined ? col.max : null) : undefined,
+                                                    decimal: newType === "numeric" ? (col.decimal !== undefined ? col.decimal : true) : undefined,
+                                                };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            className="w-full px-2 py-1 border rounded text-xs bg-gray-50"
+                                        >
+                                            <option value="textbox">Text Input</option>
+                                            <option value="numeric">Numeric</option>
+                                            <option value="dropdown">Dropdown</option>
+                                            <option value="checkbox">Checkbox</option>
+                                            <option value="radio">Radio</option>
+                                            <option value="date">Date</option>
+                                            <option value="time">Time</option>
+                                            <option value="serialNumber">Serial Number</option>
+                                            <option value="fixedValue">Fixed Value</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Column Width */}
+                                    <input
+                                        type="text"
+                                        value={col.width}
+                                        onChange={(e) => {
+                                            const updatedColumns = [...field.columns];
+                                            const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                            updatedColumns[colIndex] = { ...col, width: e.target.value };
+                                            updateField({ columns: updatedColumns });
+                                        }}
+                                        placeholder="Width"
+                                        className="w-20 px-2 py-1 border rounded text-sm"
+                                    />
+
+
+
+                                    {/* Required Checkbox */}
+                                    <label className="flex items-center text-xs whitespace-nowrap">
+                                        <input
+                                            type="checkbox"
+                                            checked={col.required || false}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                updatedColumns[colIndex] = { ...col, required: e.target.checked };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            className="mr-1"
+                                        />
+                                        Required
+                                    </label>
+
+                                    {/* Configure Button for Options/Validation */}
+                                    {(col.type === "dropdown" || col.type === "checkbox" || col.type === "radio" || col.type === "numeric") && (
+                                        <button
+                                            onClick={() => {
+                                                if (col.type === "numeric") {
+                                                    const min = prompt("Minimum value (leave empty for none):", col.min || "");
+                                                    const max = prompt("Maximum value (leave empty for none):", col.max || "");
+                                                    const decimal = confirm("Allow decimal values?");
+
+                                                    const updatedColumns = [...field.columns];
+                                                    const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                    updatedColumns[colIndex] = {
+                                                        ...col,
+                                                        min: min ? parseFloat(min) : null,
+                                                        max: max ? parseFloat(max) : null,
+                                                        decimal: decimal
+                                                    };
+                                                    updateField({ columns: updatedColumns });
+                                                } else {
+                                                    // For dropdown/checkbox/radio
+                                                    const optionsStr = prompt(
+                                                        "Enter options separated by commas:",
+                                                        (col.options || []).join(", ")
+                                                    );
+                                                    if (optionsStr !== null) {
+                                                        const options = optionsStr.split(",").map(o => o.trim()).filter(o => o);
+                                                        const updatedColumns = [...field.columns];
+                                                        const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                        updatedColumns[colIndex] = { ...col, options };
+                                                        updateField({ columns: updatedColumns });
+                                                    }
+                                                }
+                                            }}
+                                            className="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 border border-blue-300 rounded hover:bg-blue-50"
+                                        >
+                                            Configure
+                                        </button>
+                                    )}
+
+                                    {col.type === "fixedValue" && (
+                                        <input
+                                            type="text"
+                                            value={col.labelText || ""}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                const colIndex = field.columns.findIndex(c => c.id === col.id);  // CORRECT - use actual index
+                                                updatedColumns[colIndex] = { ...col, labelText: e.target.value };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            placeholder="Fixed value text"
+                                            className="w-32 px-2 py-1 border rounded text-sm bg-blue-50"
+                                        />
+                                    )}
+
+
+                                    <label className="flex items-center text-xs whitespace-nowrap bg-yellow-50 px-2 py-1 rounded">
+                                        <input
+                                            type="checkbox"
+                                            checked={col.fixed || false}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                // Uncheck all other columns' fixed property first
+                                                updatedColumns.forEach((c, i) => {
+                                                    if (i !== idx) {
+                                                        c.fixed = false;
+                                                    }
+                                                });
+                                                // Set current column's fixed property
+                                                updatedColumns[idx] = { ...col, fixed: e.target.checked };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            className="mr-1"
+                                        />
+                                        Question
+                                    </label>
+
+                                    <label className="flex items-center text-xs">
+                                        <input
+                                            type="checkbox"
+                                            checked={col.disable || false}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                updatedColumns[idx] = { ...col, disable: e.target.checked };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            className="mr-1"
+                                        />
+                                        Read-only
+                                    </label>
+
+                                    {/* Remove Button */}
+                                    <button
+                                        onClick={() => {
+                                            const updatedColumns = field.columns.filter(c => c.id !== col.id);
+                                            updateField({ columns: updatedColumns });
+                                        }}
+                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                                        title="Remove column"
+                                    >
+                                        <X size={16} />
+                                    </button>
+
+                                    {/* Drag Handle */}
+                                    <button className="text-gray-400 hover:text-gray-600 cursor-move">
+                                        <GripVertical size={16} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Add New Answer Column Button */}
+                        {/* Add Column Before Question Button */}
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    const newColumn = {
+                                        id: generateGuid(),
+                                        name: `column_${field.columns.length}`,
+                                        label: `Column ${field.columns.filter(c => !c.fixed).length + 1}`,
+                                        type: "textbox",
+                                        width: "10%",
+                                        required: false,
+                                        fixed: false
+                                    };
+
+                                    // Find the index of the fixed question column
+                                    const questionIndex = field.columns.findIndex(col => col.fixed === true);
+
+                                    if (questionIndex !== -1) {
+                                        // Insert BEFORE the question column
+                                        const updatedColumns = [...field.columns];
+                                        updatedColumns.splice(questionIndex, 0, newColumn);
+                                        updateField({ columns: updatedColumns });
+                                    } else {
+                                        // If no fixed column found, add at beginning
+                                        updateField({ columns: [newColumn, ...field.columns] });
+                                    }
+                                }}
+                                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 text-sm"
+                            >
+                                + Add Column Before Question
+                            </button>
+
+                            {/* Add Answer Column After Question Button */}
+                            <button
+                                onClick={() => {
+                                    const newColumn = {
+                                        id: generateGuid(),
+                                        name: `answer_${field.columns.filter(c => !c.fixed).length}`,
+                                        label: `Answer ${field.columns.filter(c => !c.fixed).length}`,
+                                        type: "textbox",
+                                        width: "20%",
+                                        required: false,
+                                        fixed: false
+                                    };
+                                    updateField({ columns: [...field.columns, newColumn] });
+                                }}
+                                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm"
+                            >
+                                + Add Answer Column
+                            </button>
+
+                        </div>
+                    </div>
+
+                    {/* PRE-DEFINED QUESTIONS SECTION */}
+                    {/* PRE-DEFINED QUESTIONS SECTION */}
+                    <div className="mb-4 border-t pt-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-medium">Pre-defined Questions:</label>
+                            <label className="flex items-center text-xs text-gray-600">
+                                <input
+                                    type="checkbox"
+                                    checked={field.allowEditQuestions !== false}
+                                    onChange={(e) => updateField({ allowEditQuestions: e.target.checked })}
+                                    className="mr-1"
+                                />
+                                Allow users to edit question text
+                            </label>
+                        </div>
+
+                        {/* List of Pre-defined Questions */}
+                        <div className="space-y-2 mb-3">
+                            {(field.defaultRows || []).map((row, rowIdx) => (
+                                <div key={row.id} className="bg-white p-3 rounded border">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-gray-500 text-sm font-medium w-8">{rowIdx + 1}.</span>
+
+                                        {/* Editable Question Text */}
+                                        <input
+                                            type="text"
+                                            value={row.question || ""}
+                                            onChange={(e) => {
+                                                const updatedRows = [...(field.defaultRows || [])];
+                                                updatedRows[rowIdx] = { ...row, question: e.target.value };
+                                                updateField({ defaultRows: updatedRows });
+                                            }}
+                                            placeholder="Enter question text..."
+                                            className="flex-1 px-3 py-2 border rounded text-sm"
+                                        />
+
+                                        {/* Action Buttons */}
+                                        <button
+                                            onClick={() => {
+                                                if (rowIdx === 0) return;
+                                                const updatedRows = [...(field.defaultRows || [])];
+                                                [updatedRows[rowIdx - 1], updatedRows[rowIdx]] = [updatedRows[rowIdx], updatedRows[rowIdx - 1]];
+                                                updateField({ defaultRows: updatedRows });
+                                            }}
+                                            disabled={rowIdx === 0}
+                                            className={`p-1 rounded ${rowIdx === 0 ? 'text-gray-300' : 'text-blue-500 hover:bg-blue-50'}`}
+                                        >
+                                            <ChevronUp size={16} />
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                if (rowIdx === (field.defaultRows || []).length - 1) return;
+                                                const updatedRows = [...(field.defaultRows || [])];
+                                                [updatedRows[rowIdx], updatedRows[rowIdx + 1]] = [updatedRows[rowIdx + 1], updatedRows[rowIdx]];
+                                                updateField({ defaultRows: updatedRows });
+                                            }}
+                                            disabled={rowIdx === (field.defaultRows || []).length - 1}
+                                            className={`p-1 rounded ${rowIdx === (field.defaultRows || []).length - 1 ? 'text-gray-300' : 'text-blue-500 hover:bg-blue-50'}`}
+                                        >
+                                            <ChevronDown size={16} />
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                const newRow = {
+                                                    id: generateGuid(),
+                                                    question: row.question + " (copy)",
+                                                    fixedValues: { ...(row.fixedValues || {}) }
+                                                };
+                                                const updatedRows = [...(field.defaultRows || [])];
+                                                updatedRows.splice(rowIdx + 1, 0, newRow);
+                                                updateField({ defaultRows: updatedRows });
+                                            }}
+                                            className="text-green-500 hover:bg-green-50 p-1 rounded"
+                                        >
+                                            <Copy size={16} />
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                const updatedRows = (field.defaultRows || []).filter((r, i) => i !== rowIdx);
+                                                updateField({ defaultRows: updatedRows });
+                                            }}
+                                            className="text-red-500 hover:bg-red-50 p-1 rounded"
+                                        >
+                                            <Trash size={16} />
+                                        </button>
+                                    </div>
+
+                                    {/* Fixed Value Inputs for this Row */}
+                                    {field.columns.filter(col => col.type === "fixedValue").length > 0 && (
+                                        <div className="ml-10 mt-2 space-y-1">
+                                            <label className="text-xs font-medium text-gray-600">Fixed Values for this row:</label>
+                                            {field.columns.filter(col => col.type === "fixedValue").map(col => (
+                                                <div key={col.id} className="flex items-center gap-2">
+                                                    <label className="text-xs text-gray-600 w-32">{col.label || col.name}:</label>
+                                                    <input
+                                                        type="text"
+                                                        value={(row.fixedValues && row.fixedValues[col.name]) || ""}
+                                                        onChange={(e) => {
+                                                            const updatedRows = [...(field.defaultRows || [])];
+                                                            updatedRows[rowIdx] = {
+                                                                ...row,
+                                                                fixedValues: {
+                                                                    ...(row.fixedValues || {}),
+                                                                    [col.name]: e.target.value
+                                                                }
+                                                            };
+                                                            updateField({ defaultRows: updatedRows });
+                                                        }}
+                                                        placeholder={`Enter value for ${col.label || col.name}`}
+                                                        className="flex-1 px-2 py-1 border rounded text-xs bg-blue-50"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+
+                            {(!field.defaultRows || field.defaultRows.length === 0) && (
+                                <div className="text-sm text-gray-500 text-center py-3 bg-gray-50 rounded border-2 border-dashed">
+                                    No pre-defined questions. Click "Add Question" below to create them.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Add Question Button */}
+                        <button
+                            onClick={() => {
+                                const newRow = {
+                                    id: generateGuid(),
+                                    question: `Question ${(field.defaultRows || []).length + 1}`,
+                                    fixedValues: {}
+                                };
+                                updateField({
+                                    defaultRows: [...(field.defaultRows || []), newRow]
+                                });
+                            }}
+                            className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm flex items-center justify-center gap-2"
+                        >
+                            <Plus size={16} />
+                            Add Question
+                        </button>
+                    </div>
+
+
+                    {/* User Permissions */}
+                    <div className="mb-4 bg-blue-50 p-3 rounded">
+                        <label className="flex items-center text-sm mb-2">
+                            <input
+                                type="checkbox"
+                                checked={field.allowAddRows !== false}
+                                onChange={(e) => updateField({ allowAddRows: e.target.checked })}
+                                className="mr-2"
+                            />
+                            <strong>Allow users to add additional questions</strong>
+                        </label>
+
+                        {field.allowAddRows !== false && (
+                            <div className="ml-6 grid grid-cols-2 gap-4 mt-2">
+                                <div>
+                                    <label className="block text-xs text-gray-600 mb-1">Max Total Rows:</label>
+                                    <input
+                                        type="number"
+                                        value={field.maxRows || 20}
+                                        onChange={(e) => updateField({ maxRows: parseInt(e.target.value) || 20 })}
+                                        min={(field.defaultRows || []).length}
+                                        className="w-full px-2 py-1 border rounded text-sm"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Preview Section - Replace the existing preview code */}
+                    <div className="mt-4 p-3 bg-white rounded border">
+                        <h5 className="text-xs font-semibold mb-2 text-gray-700">Grid Preview:</h5>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full text-xs border">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        {field.columns.map(col => (
+                                            <th key={col.id} className="border px-2 py-1 text-left" style={{ width: col.width }}>
+                                                {col.label || col.name}
+                                                {col.required && <span className="text-red-500 ml-1">*</span>}
+                                                <div className="text-gray-500 font-normal text-xs">
+                                                    ({col.type})
+                                                    {col.fixed && <span className="text-blue-600"> [Question]</span>}
+                                                </div>
+                                            </th>
+                                        ))}
+                                        {field.allowAddRows !== false && (
+                                            <th className="border px-2 py-1 text-center w-20">Actions</th>
+                                        )}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(field.defaultRows || []).slice(0, 2).map((row, idx) => (
+                                        <tr key={row.id || idx}>
+                                            {field.columns.map(col => (
+                                                <td key={col.id} className="border px-2 py-1">
+                                                    {/* Serial Number Column */}
+                                                    {col.type === "serialNumber" && (
+                                                        <span className="text-gray-500 font-medium">{idx + 1}</span>
+                                                    )}
+
+                                                    {/* Fixed Value Column */}
+                                                    {col.type === "fixedValue" && (
+                                                        <span className="text-blue-700 font-medium bg-blue-50 px-1 rounded">
+                                                            {col.labelText || "Fixed Value"}
+                                                        </span>
+                                                    )}
+
+                                                    {/* Question Column - Identified by fixed: true */}
+                                                    {col.fixed === true && col.type !== "serialNumber" && col.type !== "fixedValue" && (
+                                                        <span className="text-gray-700 bg-yellow-50 px-1 rounded">
+                                                            {row.question || `Question ${idx + 1}`}
+                                                            {!field.allowEditQuestions && (
+                                                                <span className="text-xs text-gray-500 ml-1">(locked)</span>
+                                                            )}
+                                                        </span>
+                                                    )}
+
+                                                    {/* Answer Columns - All other columns */}
+                                                    {col.fixed !== true && col.type !== "serialNumber" && col.type !== "fixedValue" && (
+                                                        <span className="text-xs text-gray-400">
+                                                            {col.type === "textbox" && (col.disable ? "Read-only..." : "Text input...")}
+                                                            {col.type === "numeric" && "Number..."}
+                                                            {col.type === "dropdown" && "Select..."}
+                                                            {col.type === "checkbox" && "☐"}
+                                                            {col.type === "radio" && "○"}
+                                                            {col.type === "date" && "Date..."}
+                                                            {col.type === "time" && "Time..."}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            ))}
+                                            {field.allowAddRows !== false && (
+                                                <td className="border px-2 py-1 text-center text-gray-400 text-xs">Remove</td>
+                                            )}
+                                        </tr>
+                                    ))}
+                                    {(field.defaultRows || []).length === 0 && (
+                                        <tr>
+                                            <td colSpan={field.columns.length + (field.allowAddRows !== false ? 1 : 0)} className="border px-2 py-1 text-center text-gray-500 text-xs">
+                                                No pre-defined questions. Click "Add Question" to create them.
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {field.allowAddRows !== false && (
+                                        <tr className="bg-blue-50">
+                                            <td colSpan={field.columns.length + 1} className="border px-2 py-1 text-xs text-blue-600 text-center">
+                                                + Users can add more questions (up to {field.maxRows} total)
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Configuration Summary */}
+                        <div className="mt-2 text-xs text-gray-600">
+                            <strong>Column Order:</strong>
+                            {field.columns.map((col, idx) => (
+                                <span key={col.id} className="ml-2">
+                                    {idx + 1}. {col.label || col.name}
+                                    {col.fixed && <span className="text-blue-600"> (Question)</span>}
+                                    {col.type === "serialNumber" && <span className="text-green-600"> (Auto)</span>}
+                                    {col.type === "fixedValue" && <span className="text-purple-600"> (Fixed)</span>}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                </div >
+            )}
+
+
+            {
+                (field.type === "dropdown" ||
+                    field.type === "checkbox" ||
+                    field.type === "radio") && (
                     <div className="mt-4">
                         <div className="flex gap-2 mb-2">
                             <input
@@ -3950,8 +4702,9 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             </div>
                         )}
                     </div>
-                )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 

@@ -41,32 +41,51 @@ export default function DynamicForm() {
     }, [keyFieldValues]);
 
     useEffect(() => {
-        // In a real application, this would be an actual API call
         const fetchFormData = async () => {
             try {
-                // Simulating API response - replace with actual fetch in production
                 const response = await fetch(
                     `${APP_CONSTANTS.API_BASE_URL}/api/forms/link/${formId}`
                 );
                 if (!response.ok) throw new Error("Failed to fetch form data");
                 const data = await response.json();
-                console.log(data)
+                console.log("Fetched form data:", data);
 
+                // FIX: Process fields BEFORE setting formData
                 data.fields.forEach(field => {
-                    // Fix column → columns for grid fields
-                    if (field.type === "grid" && !field.columns && field.column) {
+                    // Fix column → columns for BOTH grid AND questionGrid
+                    if ((field.type === "grid" || field.type === "questionGrid") && !field.columns && field.column) {
+                        console.log(`Fixing columns for ${field.type} field:`, field.id);
                         field.columns = field.column;
+                        delete field.column; // Remove old property
                     }
-                    field.columns = (field.columns || []).map(col => ({
-                        ...col,
-                        dependentOptions: col.dependentOptions || {}
-                    }));
+                    // Ensure columns is an array with labels
+                    if (field.columns) {
+                        field.columns = (field.columns || []).map(col => ({
+                            ...col,
+                            label: col.label || col.name || "",
+                            dependentOptions: col.dependentOptions || {}
+                        }));
+                    }
+
+                    // Parse defaultRows for questionGrid
+                    if (field.type === "questionGrid") {
+                        if (field.defaultRowsJson && typeof field.defaultRowsJson === 'string') {
+                            try {
+                                field.defaultRows = JSON.parse(field.defaultRowsJson);
+                                console.log("Parsed defaultRows:", field.defaultRows);
+                            } catch (e) {
+                                console.error("Failed to parse defaultRowsJson:", e);
+                                field.defaultRows = [];
+                            }
+                        } else if (!field.defaultRows) {
+                            field.defaultRows = [];
+                        }
+                    }
                 });
-                // Using mock data for demonstration
 
                 setFormData(data);
 
-                // Initialize form values and remarks based on field types
+                // NOW initialize form values with the corrected data
                 const initialValues = {};
                 const initialRemarks = {};
 
@@ -81,27 +100,67 @@ export default function DynamicForm() {
                         initialValues[field.id] = "";
                     } else if (field.type === "dropdown") {
                         initialValues[field.id] = "";
-                    } else if (field.type === "grid") {
-                        const rowCount = field.initialRows || field.minRows || 1;
+                    } else if (field.type === "grid" || field.type === "questionGrid") {
                         const rows = [];
-                        for (let i = 0; i < rowCount; i++) {
-                            const row = {};
-                            field.columns.forEach(col => {
-                                if (col.type === "checkbox") {
-                                    row[col.name] = col.options ? [] : false;
-                                } else if (col.type === "numeric") {
-                                    row[col.name] = "";
-                                } else if (col.type === "date") {
-                                    row[col.name] = null;
-                                } else {
-                                    row[col.name] = "";
-                                }
-                            });
-                            rows.push(row);
-                        }
-                        initialValues[field.id] = rows;
-                    }
 
+                        // FOR QUESTIONGRID: Use defaultRows if available
+                        if (field.type === "questionGrid" && field.defaultRows && field.defaultRows.length > 0) {
+                            console.log("Initializing questionGrid with defaultRows:", field.defaultRows);
+
+                            field.defaultRows.forEach(defaultRow => {
+                                const row = {};
+
+                                field.columns.forEach(col => {
+                                    // Question column - use fixed:true OR name:"question" as fallback
+                                    if (col.fixed === true || col.name === "question") {
+                                        row[col.name] = defaultRow.question || "";
+                                        console.log(`Setting question column ${col.name} = "${defaultRow.question}"`);
+                                    } else if (col.type === "serialNumber") {
+                                        // Serial number (calculated dynamically)
+                                        row[col.name] = "";
+                                    } else if (col.type === "fixedValue") {
+                                        // Row-specific fixed value
+                                        row[col.name] = (defaultRow.fixedValues && defaultRow.fixedValues[col.name]) || col.labelText || "";
+                                        console.log(`Setting fixedValue column ${col.name} = "${row[col.name]}"`);
+                                    } else if (col.type === "checkbox") {
+                                        row[col.name] = false;
+                                    } else if (col.type === "numeric") {
+                                        row[col.name] = "";
+                                    } else if (col.type === "date") {
+                                        row[col.name] = null;
+                                    } else {
+                                        row[col.name] = "";
+                                    }
+                                });
+
+                                console.log("Created row:", row);
+                                rows.push(row);
+                            });
+
+                            console.log("Final initialized rows:", rows);
+                        } else {
+                            // FOR REGULAR GRID or empty questionGrid: Create empty rows
+                            const rowCount = field.initialRows || field.minRows || 1;
+                            for (let i = 0; i < rowCount; i++) {
+                                const row = {};
+                                field.columns.forEach(col => {
+                                    if (col.type === "checkbox") {
+                                        row[col.name] = col.options ? [] : false;
+                                    } else if (col.type === "numeric") {
+                                        row[col.name] = "";
+                                    } else if (col.type === "date") {
+                                        row[col.name] = null;
+                                    } else {
+                                        row[col.name] = "";
+                                    }
+                                });
+                                rows.push(row);
+                            }
+                        }
+
+                        initialValues[field.id] = rows;
+                        console.log(`Initialized ${field.type} with ${rows.length} rows:`, rows);
+                    }
                 });
 
                 setFormValues(initialValues);
@@ -119,54 +178,6 @@ export default function DynamicForm() {
         fetchFormData();
     }, []);
 
-    useEffect(() => {
-        if (!formData) return;
-
-        console.log("Formula calculation useEffect triggered");
-        const updatedValues = { ...formValues };
-        let changed = false;
-
-        formData.fields.forEach((field) => {
-            if (field.type === "calculation") {
-                const result = evaluateFormula(field.formula);
-                if (formValues[field.id] !== result) {
-                    updatedValues[field.id] = result;
-                    changed = true;
-                }
-            }
-            // Handle grid calculations
-            else if (field.type === "grid" && Array.isArray(formValues[field.id])) {
-                const gridRows = [...formValues[field.id]];
-                let gridChanged = false;
-
-                gridRows.forEach((row, rowIndex) => {
-                    field.columns.forEach((col) => {
-                        if (col.type === "calculation" && col.formula) {
-                            const calculatedValue = evaluateRowFormula(col.formula, row);
-                            if (row[col.name] !== calculatedValue) {
-                                console.log(`Updating grid calculation: ${col.name} = ${calculatedValue}`);
-                                row[col.name] = calculatedValue;
-                                gridChanged = true;
-                            }
-                        }
-                    });
-                });
-
-                if (gridChanged) {
-                    updatedValues[field.id] = gridRows;
-                    changed = true;
-                }
-            }
-        });
-
-        if (changed) {
-            console.log("Updating form values with calculations");
-            setFormValues(updatedValues);
-        }
-    }, [formData, formValues]);
-
-
-
     // Add this new useEffect right after your existing one
     useEffect(() => {
         // Check if submissionID exists in the URL path and formData is loaded
@@ -183,7 +194,7 @@ export default function DynamicForm() {
             // Prevent infinite loops
             if (updatingLinkedFields.current) return;
 
-            console.log('🚀 loadLinkedDataAutomatically called');
+            console.log('ðŸš€ loadLinkedDataAutomatically called');
 
             if (!formData?.linkedFormId || !formData?.keyFieldMappings?.length) {
                 return;
@@ -201,7 +212,7 @@ export default function DynamicForm() {
                 });
 
                 if (!hasAllKeyValues) {
-                    console.log('🧹 Not all key fields filled, clearing linked fields');
+                    console.log('ðŸ§¹ Not all key fields filled, clearing linked fields');
                     clearLinkedTextboxFields();
                     return;
                 }
@@ -213,7 +224,7 @@ export default function DynamicForm() {
                 const dataArray = linkedSubmissions.data;
 
                 if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) {
-                    console.log('🧹 No data array or empty array, clearing fields');
+                    console.log('ðŸ§¹ No data array or empty array, clearing fields');
                     clearLinkedTextboxFields();
                     return;
                 }
@@ -233,7 +244,7 @@ export default function DynamicForm() {
                 );
 
                 if (matchingSubmission) {
-                    console.log('✅ Found matching submission, populating fields');
+                    console.log('âœ… Found matching submission, populating fields');
 
                     // Set flag to prevent triggering the effect
                     updatingLinkedFields.current = true;
@@ -278,11 +289,11 @@ export default function DynamicForm() {
                         return updatedValues;
                     });
                 } else {
-                    console.log('🧹 No matching record found, clearing fields');
+                    console.log('ðŸ§¹ No matching record found, clearing fields');
                     clearLinkedTextboxFields();
                 }
             } catch (error) {
-                console.error('❌ Error in loadLinkedDataAutomatically:', error);
+                console.error('âŒ Error in loadLinkedDataAutomatically:', error);
                 clearLinkedTextboxFields();
             }
         };
@@ -298,53 +309,73 @@ export default function DynamicForm() {
     useEffect(() => {
         if (!formData) return;
 
-        const updatedValues = { ...formValues };
-        let changed = false;
+        setFormValues(prevValues => {
+            const updatedValues = { ...prevValues };
+            let changed = false;
 
-        formData.fields.forEach((field) => {
-            if (field.type === "calculation") {
-                const result = evaluateFormula(field.formula);
-                if (formValues[field.id] !== result) {
-                    updatedValues[field.id] = result;
-                    changed = true;
+            formData.fields.forEach((field) => {
+                if (field.type === "calculation") {
+                    const result = evaluateFormula(field.formula, prevValues);
+                    // CRITICAL: Only update if value actually changed
+                    if (prevValues[field.id] !== result) {
+                        updatedValues[field.id] = result;
+                        changed = true;
+                    }
                 }
-            }
-            // Add grid calculation handling
-            else if (field.type === "grid" && Array.isArray(formValues[field.id])) {
-                const gridRows = [...formValues[field.id]];
-                let gridChanged = false;
+                else if (field.type === "grid" && Array.isArray(prevValues[field.id])) {
+                    const gridRows = prevValues[field.id].map((row, rowIndex) => {
+                        let rowChanged = false;
+                        const newRow = { ...row };
 
-                gridRows.forEach((row, rowIndex) => {
-                    field.columns.forEach((col) => {
-                        if (col.type === "calculation" && col.formula) {
-                            const calculatedValue = evaluateRowFormula(col.formula, row);
-                            if (row[col.name] !== calculatedValue) {
-                                row[col.name] = calculatedValue;
-                                gridChanged = true;
+                        field.columns.forEach((col) => {
+                            if (col.type === "calculation" && col.formula) {
+                                const calculatedValue = evaluateRowFormula(col.formula, row);
+
+                                // CRITICAL FIX: Handle NaN and prevent unnecessary updates
+                                const currentValue = row[col.name];
+                                const isCurrentNaN = typeof currentValue === 'number' && isNaN(currentValue);
+                                const isCalculatedNaN = typeof calculatedValue === 'number' && isNaN(calculatedValue);
+
+                                // Only update if values differ (accounting for NaN)
+                                if (isCurrentNaN && isCalculatedNaN) {
+                                    // Both NaN - no change needed
+                                } else if (currentValue !== calculatedValue) {
+                                    console.log(`Updating grid calculation: ${col.name} = ${calculatedValue}`);
+                                    newRow[col.name] = calculatedValue;
+                                    rowChanged = true;
+                                }
                             }
-                        }
+                        });
+
+                        return rowChanged ? newRow : row; // Return original if unchanged
                     });
-                });
 
-                if (gridChanged) {
-                    updatedValues[field.id] = gridRows;
-                    changed = true;
+                    // Check if any row actually changed
+                    const gridChanged = gridRows.some((row, idx) => row !== prevValues[field.id][idx]);
+
+                    if (gridChanged) {
+                        updatedValues[field.id] = gridRows;
+                        changed = true;
+                    }
                 }
+            });
+
+            // CRITICAL: Only return new object if something changed
+            if (changed) {
+                console.log("Updating form values with calculations");
+                return updatedValues;
             }
+
+            return prevValues; // Return same reference to prevent re-render
         });
-
-        if (changed) {
-            setFormValues(updatedValues);
-        }
-    }, [formData, formValues]); // Depend on both formData and formValues
-
+    }, [formData]); // ONLY depend on formData
 
     // Add this before the useEffect
 
 
 
     const clearLinkedTextboxFields = () => {
-        console.log('🧹 Attempting to clear linked textbox fields');
+        console.log('ðŸ§¹ Attempting to clear linked textbox fields');
 
         // Set flag to prevent triggering the effect
         updatingLinkedFields.current = true;
@@ -370,10 +401,10 @@ export default function DynamicForm() {
             }, 100);
 
             if (hasChanges) {
-                console.log('✅ Cleared linked textbox fields');
+                console.log('âœ… Cleared linked textbox fields');
                 return updatedValues;
             } else {
-                console.log('ℹ️ No linked textbox fields to clear');
+                console.log('â„¹ï¸ No linked textbox fields to clear');
                 updatingLinkedFields.current = false; // Reset immediately if no changes
                 return prevValues;
             }
@@ -516,7 +547,7 @@ export default function DynamicForm() {
                             onClick={closeImageModal}
                             className="text-gray-600 hover:text-gray-900 text-2xl font-bold"
                         >
-                            ×
+                            Ã—
                         </button>
                     </div>
 
@@ -606,6 +637,34 @@ export default function DynamicForm() {
 
 
     // Update handleGridChange to clear dependent values
+    //const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
+    //    setFormValues(prev => {
+    //        const updatedRows = [...(prev[fieldId] || [])];
+    //        const field = formData.fields.find(f => f.id === fieldId);
+
+    //        if (entireRow) {
+    //            updatedRows[rowIndex] = entireRow;
+    //        } else {
+    //            updatedRows[rowIndex] = {
+    //                ...updatedRows[rowIndex],
+    //                [columnName]: value
+    //            };
+
+    //            // Clear dependent fields when parent changes
+    //            if (field) {
+    //                field.columns.forEach(col => {
+    //                    if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
+    //                        updatedRows[rowIndex][col.name] = "";
+    //                    }
+    //                });
+    //            }
+    //        }
+
+
+    //        return { ...prev, [fieldId]: updatedRows };
+    //    });
+    //};
+
     const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
         setFormValues(prev => {
             const updatedRows = [...(prev[fieldId] || [])];
@@ -614,12 +673,16 @@ export default function DynamicForm() {
             if (entireRow) {
                 updatedRows[rowIndex] = entireRow;
             } else {
+                if (!updatedRows[rowIndex]) {
+                    updatedRows[rowIndex] = {};
+                }
+
                 updatedRows[rowIndex] = {
                     ...updatedRows[rowIndex],
                     [columnName]: value
                 };
 
-                // Clear dependent fields when parent changes
+                // Handle dependent dropdowns if needed
                 if (field) {
                     field.columns.forEach(col => {
                         if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
@@ -629,10 +692,10 @@ export default function DynamicForm() {
                 }
             }
 
-
             return { ...prev, [fieldId]: updatedRows };
         });
     };
+
 
 
     // Check if a remark is required for the current field value
@@ -1199,7 +1262,7 @@ export default function DynamicForm() {
         if (Object.keys(validationErrors).length === 0) {
             const submissionData = {
                 formId: formData.id,
-                submissionId: editingSubmissionId, // 👈 include if editing
+                submissionId: editingSubmissionId, // ðŸ‘ˆ include if editing
                 submissionData: []
             };
 
@@ -1213,7 +1276,7 @@ export default function DynamicForm() {
                 let fieldValue = formValues[fieldId];
                 const fieldType = fieldTypes[fieldId];
 
-                if (fieldType === "grid" && Array.isArray(fieldValue)) {
+                if ((fieldType === 'grid' || fieldType === 'questionGrid') && Array.isArray(fieldValue)) {
                     // Clean grid data before saving
                     fieldValue = JSON.stringify(cleanGridData(fieldValue));
                 } else if (Array.isArray(fieldValue)) {
@@ -1924,7 +1987,7 @@ export default function DynamicForm() {
                             })}
                             placeholder={
                                 field.minLength || field.maxLength
-                                    ? `${field.minLength || 0}-${field.maxLength || '∞'} characters`
+                                    ? `${field.minLength || 0}-${field.maxLength || 'âˆž'} characters`
                                     : `Enter ${field.label}`
                             }
                             rows="1"
@@ -2076,7 +2139,7 @@ export default function DynamicForm() {
                         <input
                             type="text"
                             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 bg-gray-100 cursor-not-allowed"
-                            value={evaluateFormula(field.formula)}  // 👈 Result is computed here
+                            value={evaluateFormula(field.formula)}  // ðŸ‘ˆ Result is computed here
                             readOnly
                         />
                     </div>
@@ -2085,6 +2148,9 @@ export default function DynamicForm() {
             case "grid":
                 const colorScheme = getTableColor(field.id);
 
+                const visibleColumns = (field.columns || []).filter(col => col.visible === false);
+
+                console.log("Visible Columns", visibleColumns)
                 return (
                     <div className="mb-4 w-full">
                         <div className={`overflow-x-auto border-2 ${colorScheme.border} rounded-lg`}>
@@ -2092,7 +2158,7 @@ export default function DynamicForm() {
                                 <thead>
                                     <tr>
                                         <td
-                                            colSpan={(field.columns || []).length + 1}
+                                            colSpan={field.columns.length + 1}
                                             className={`${colorScheme.titleBg} py-2 px-4 border-b ${colorScheme.border}`}
                                         >
                                             <label className="block text-gray-700 text-sm font-bold">
@@ -2118,524 +2184,574 @@ export default function DynamicForm() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(formValues[field.id] || []).map((row, rowIndex) => (
-                                        <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
-                                            {(field.columns || []).map((col, colIdx) => (
-                                                <td
-                                                    key={colIdx}
-                                                    className="py-2 px-4 border-b border-gray-200"
-                                                    style={{ width: col.width || "auto" }}
-                                                >
-                                                    {(() => {
-                                                        const style = {
-                                                            color: col.textColor || "inherit",
-                                                            backgroundColor: col.backgroundColor || "inherit",
-                                                        };
 
-                                                        if (col.type === "calculation") {
-                                                            console.log(`Calculating field: ${col.name}`);
-                                                            console.log(`Formula: ${col.formula}`);
-                                                            console.log(`Row data:`, row);
-                                                            const calculatedValue = evaluateRowFormula(col.formula, row);
-                                                            if (row[col.name] !== calculatedValue) {
-                                                                row[col.name] = calculatedValue;
-                                                            }
-                                                            return (
-                                                                <input
-                                                                    type="text"
-                                                                    value={calculatedValue}
-                                                                    className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
-                                                                    readOnly
-                                                                    style={style}
-                                                                />
-                                                            );
-                                                        }
+                                    {(formValues[field.id] || []).map((row, rowIndex) => {
+                                        // Auto-populate hidden/disabled columns before rendering
+                                        (field.columns || []).forEach(col => {
+                                            if (col.visible === false || col.disabled === true) {
+                                                if (col.type === "dropdown" && (col.options || []).length > 0 && !row[col.name]) {
+                                                    row[col.name] = col.options[0];
+                                                } else if (col.type === "dependentDropdown") {
+                                                    const parentValue = row[col.parentColumn] || "";
+                                                    const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
+                                                    if (dependentOptions.length > 0 && !row[col.name]) {
+                                                        row[col.name] = dependentOptions[0];
+                                                    }
+                                                }
+                                            }
+                                        });
+                                        return (
+                                            <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
+                                                {(field.columns || []).map((col, colIdx) => (
+                                                    <td
+                                                        key={colIdx}
+                                                        className="py-2 px-4 border-b border-gray-200"
+                                                        style={{ width: col.width || "auto" }}
+                                                    >
+                                                        {(() => {
+                                                            const style = {
+                                                                color: col.textColor || "inherit",
+                                                                backgroundColor: col.backgroundColor || "inherit",
+                                                            };
 
-                                                        if (col.type === "time") {
-                                                            return (
-                                                                <input
-                                                                    type="time"
-                                                                    value={row[col.name] || ""}
-                                                                    onChange={(e) =>
-                                                                        handleGridChange(field.id, rowIndex, col.name, e.target.value)
-                                                                    }
-                                                                    className="border rounded px-2 py-1 w-full"
-                                                                    style={style}
-                                                                />
-                                                            );
-                                                        }
+                                                            const isDisabled = col.disabled === true;
 
-                                                        if (col.type === "label") {
-                                                            return (
-                                                                <div
-                                                                    className={`w-full p-2 min-h-[36px] flex items-center ${col.labelStyle === 'bold' ? 'font-bold' :
-                                                                        col.labelStyle === 'italic' ? 'italic' :
-                                                                            col.labelStyle === 'underline' ? 'underline' :
-                                                                                'font-normal'
-                                                                        } ${col.textAlign === 'center' ? 'justify-center' :
-                                                                            col.textAlign === 'right' ? 'justify-end' :
-                                                                                'justify-start'
-                                                                        }`}
-                                                                    style={{
-                                                                        color: col.textColor || 'inherit',
-                                                                        backgroundColor: col.backgroundColor || 'inherit'
-                                                                    }}
-                                                                >
-                                                                    {col.labelText || 'Label Text'}
-                                                                </div>
-                                                            );
-                                                        }
-
-
-                                                        if (col.type === "timecalculation") {
-                                                            const formula = col.formula || "";
-                                                            const matches = formula.match(/\{(.*?)\}/g);
-                                                            let time1 = "", time2 = "", diff = "";
-
-                                                            if (matches && matches.length === 2) {
-                                                                time1 = row[matches[0].replace(/[{}]/g, "")] || "";
-                                                                time2 = row[matches[1].replace(/[{}]/g, "")] || "";
-                                                                diff = calculateTimeDifference(time1, time2);
-                                                            }
-                                                            if (row[col.name] !== diff) {
-                                                                row[col.name] = diff;
-                                                            }
-
-                                                            return (
-                                                                <input
-                                                                    type="text"
-                                                                    value={diff}
-                                                                    readOnly
-                                                                    className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
-                                                                    style={style}
-                                                                />
-                                                            );
-                                                        }
-
-                                                        if (col.type === "textbox") {
-                                                            return (
-                                                                <div>
+                                                            if (col.type === "calculation") {
+                                                                console.log(`Calculating field: ${col.name}`);
+                                                                console.log(`Formula: ${col.formula}`);
+                                                                console.log(`Row data:`, row);
+                                                                const calculatedValue = evaluateRowFormula(col.formula, row);
+                                                                if (row[col.name] !== calculatedValue) {
+                                                                    row[col.name] = calculatedValue;
+                                                                }
+                                                                return (
                                                                     <input
                                                                         type="text"
+                                                                        value={calculatedValue}
+                                                                        className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
+                                                                        readOnly
+                                                                        style={style}
+                                                                    />
+                                                                );
+                                                            }
+
+                                                            if (col.type === "time") {
+                                                                return (
+                                                                    <input
+                                                                        type="time"
                                                                         value={row[col.name] || ""}
-                                                                        onChange={(e) => {
-                                                                            const value = e.target.value;
+                                                                        onChange={(e) =>
+                                                                            handleGridChange(field.id, rowIndex, col.name, e.target.value)
+                                                                        }
+                                                                        className="border rounded px-2 py-1 w-full"
+                                                                        style={style}
+                                                                    />
+                                                                );
+                                                            }
 
-                                                                            // Check character length validation
-                                                                            let isValid = true;
-                                                                            let errorMessage = "";
-
-                                                                            if (col.minLength && value.length < col.minLength) {
-                                                                                isValid = false;
-                                                                                errorMessage = col.lengthValidationMessage ||
-                                                                                    `Minimum ${col.minLength} characters required`;
-                                                                            } else if (col.maxLength && value.length > col.maxLength) {
-                                                                                isValid = false;
-                                                                                errorMessage = col.lengthValidationMessage ||
-                                                                                    `Maximum ${col.maxLength} characters allowed`;
-                                                                            }
-
-                                                                            // Update the value
-                                                                            handleGridChange(field.id, rowIndex, col.name, value);
-
-                                                                            // Set validation error if needed
-                                                                            if (!isValid) {
-                                                                                setFormErrors(prev => ({
-                                                                                    ...prev,
-                                                                                    [`${field.id}_${rowIndex}_${col.name}`]: errorMessage
-                                                                                }));
-                                                                            } else {
-                                                                                // Clear validation error
-                                                                                setFormErrors(prev => {
-                                                                                    const newErrors = { ...prev };
-                                                                                    delete newErrors[`${field.id}_${rowIndex}_${col.name}`];
-                                                                                    return newErrors;
-                                                                                });
-                                                                            }
-                                                                        }}
-                                                                        className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
+                                                            if (col.type === "label") {
+                                                                return (
+                                                                    <div
+                                                                        className={`w-full p-2 min-h-[36px] flex items-center ${col.labelStyle === 'bold' ? 'font-bold' :
+                                                                            col.labelStyle === 'italic' ? 'italic' :
+                                                                                col.labelStyle === 'underline' ? 'underline' :
+                                                                                    'font-normal'
+                                                                            } ${col.textAlign === 'center' ? 'justify-center' :
+                                                                                col.textAlign === 'right' ? 'justify-end' :
+                                                                                    'justify-start'
                                                                             }`}
                                                                         style={{
-                                                                            color: col.textColor || "inherit",
-                                                                            backgroundColor: col.backgroundColor || "inherit",
-                                                                        }}
-                                                                        minLength={col.minLength || undefined}
-                                                                        maxLength={col.maxLength || undefined}
-                                                                        placeholder={
-                                                                            col.minLength || col.maxLength
-                                                                                ? `${col.minLength || 0}-${col.maxLength || '∞'} chars`
-                                                                                : `Enter ${col.name}`
-                                                                        }
-                                                                    />
-
-                                                                    {/* Character count display */}
-                                                                    {(col.minLength || col.maxLength) && (
-                                                                        <div className="text-xs text-gray-500 mt-1">
-                                                                            {(row[col.name] || "").length}/{col.maxLength || '∞'} characters
-                                                                            {col.minLength && (
-                                                                                <span className="ml-2">
-                                                                                    (Min: {col.minLength})
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Show validation error */}
-                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
-                                                                        <p className="text-red-500 text-xs mt-1">
-                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        }
-
-
-                                                        if (col.type === "dependentDropdown") {
-                                                            const parentValue = row[col.parentColumn] || "";
-                                                            const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
-
-                                                            // Check if the selected option requires remarks
-                                                            const selectedValue = row[col.name] || "";
-                                                            const remarksKey = `${parentValue}:${selectedValue}`;
-                                                            const requiresRemarks = selectedValue && (col.remarksOptions || []).includes(remarksKey);
-                                                            const remarksFieldName = `${col.name}_remarks`;
-
-                                                            return (
-                                                                <div>
-                                                                    <select
-                                                                        value={selectedValue}
-                                                                        onChange={(e) => {
-                                                                            const newValue = e.target.value;
-                                                                            const updatedRow = { ...row, [col.name]: newValue };
-
-                                                                            // Clear remarks if the new selection doesn't require it
-                                                                            const newRemarksKey = `${parentValue}:${newValue}`;
-                                                                            if (!(col.remarksOptions || []).includes(newRemarksKey)) {
-                                                                                updatedRow[remarksFieldName] = "";
-                                                                            }
-
-                                                                            handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
-                                                                        }}
-                                                                        disabled={!parentValue}
-                                                                        className="border rounded px-2 py-1 w-full"
-                                                                        style={{
-                                                                            color: col.textColor || "inherit",
-                                                                            backgroundColor: col.backgroundColor || "inherit"
+                                                                            color: col.textColor || 'inherit',
+                                                                            backgroundColor: col.backgroundColor || 'inherit'
                                                                         }}
                                                                     >
-                                                                        <option value="">Select {col.name}</option>
-                                                                        {dependentOptions.map((opt, i) => (
-                                                                            <option key={i} value={opt}>
-                                                                                {opt}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-
-                                                                    {selectedValue && (
-                                                                        <div className="text-xs text-gray-600 mt-1">
-                                                                            You selected: <span className="font-semibold">{selectedValue}</span>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {requiresRemarks && (
-                                                                        <div className="mt-2">
-                                                                            <label className="block text-xs text-gray-700 mb-1">
-                                                                                Remarks <span className="text-red-500">*</span>
-                                                                            </label>
-                                                                            <textarea
-                                                                                value={row[remarksFieldName] || ""}
-                                                                                onChange={(e) => {
-                                                                                    const remarksValue = e.target.value;
-                                                                                    const updatedRow = { ...row, [remarksFieldName]: remarksValue };
-                                                                                    handleGridChange(field.id, rowIndex, remarksFieldName, remarksValue, updatedRow);
-                                                                                }}
-                                                                                placeholder="Enter remarks..."
-                                                                                required
-                                                                                className="border rounded px-2 py-1 w-full text-sm"
-                                                                                rows="2"
-                                                                            />
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        }
-
-                                                        if (col.type === "dropdown") {
-                                                            return (
-                                                                <div>
-                                                                    <select
-                                                                        value={row[col.name] || ""}
-                                                                        onChange={(e) => {
-                                                                            const newValue = e.target.value;
-                                                                            const updatedRow = { ...row, [col.name]: newValue };
-
-                                                                            // Clear dependent fields
-                                                                            field.columns.forEach(depCol => {
-                                                                                if (
-                                                                                    depCol.type === "dependentDropdown" &&
-                                                                                    depCol.parentColumn === col.name
-                                                                                ) {
-                                                                                    updatedRow[depCol.name] = "";
-                                                                                }
-                                                                            });
-
-                                                                            // If the new value is not in remarksOptions, clear remarks
-                                                                            if (!(col.remarksOptions || []).includes(newValue)) {
-                                                                                updatedRow[`${col.name}_remarks`] = "";
-                                                                            }
-
-                                                                            handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
-                                                                        }}
-                                                                        className="border rounded px-2 py-1 w-full"
-                                                                        style={{
-                                                                            color: col.textColor || "inherit",
-                                                                            backgroundColor: col.backgroundColor || "inherit",
-                                                                        }}
-                                                                    >
-                                                                        <option value="">Select {col.name}</option>
-                                                                        {(col.options || []).map((opt, i) => (
-                                                                            <option key={i} value={opt}>
-                                                                                {opt}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-
-                                                                    {/* ✅ Remarks field appears only if selected option requires it */}
-                                                                    {console.log(col)}
-                                                                    {col.remarksOptions?.includes(row[col.name]) && (
-                                                                        <input
-                                                                            type="text"
-                                                                            required   // <-- mandatory
-                                                                            placeholder={`Enter remarks for ${row[col.name]}`}
-                                                                            value={row[`${col.name}_remarks`] || ""}
-                                                                            onChange={(e) => {
-                                                                                const updatedRow = {
-                                                                                    ...row,
-                                                                                    [`${col.name}_remarks`]: e.target.value,
-                                                                                };
-                                                                                handleGridChange(
-                                                                                    field.id,
-                                                                                    rowIndex,
-                                                                                    `${col.name}_remarks`,
-                                                                                    e.target.value,
-                                                                                    updatedRow
-                                                                                );
-                                                                            }}
-                                                                            className="border rounded px-2 py-1 w-full mt-2"
-                                                                        />
-                                                                    )}
-
-                                                                    {row[col.name] && (
-                                                                        <div className="text-xs text-gray-600 mt-1">
-                                                                            You selected: <span className="font-semibold">{row[col.name]}</span>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        }
-
-                                                        if (col.type === "checkbox") {
-                                                            // Handle boolean checkbox (single true/false value)
-                                                            if (!col.options || col.options.length === 0) {
-                                                                return (
-                                                                    <div>
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                                            checked={row[col.name] === true || row[col.name] === "true"}
-                                                                            onChange={(e) => {
-                                                                                const updatedRow = { ...row, [col.name]: e.target.checked };
-                                                                                handleGridChange(field.id, rowIndex, col.name, e.target.checked, updatedRow);
-                                                                            }}
-                                                                            style={{
-                                                                                color: col.textColor || "inherit",
-                                                                            }}
-                                                                        />
+                                                                        {col.labelText || 'Label Text'}
                                                                     </div>
                                                                 );
                                                             }
 
-                                                            // Handle multi-option checkbox (existing code for checkbox with options)
-                                                            return (
-                                                                <div>
-                                                                    {(col.options || []).map((option) => (
-                                                                        <div key={option} className="flex items-center mb-1">
+
+                                                            if (col.type === "timecalculation") {
+                                                                const formula = col.formula || "";
+                                                                const matches = formula.match(/\{(.*?)\}/g);
+                                                                let time1 = "", time2 = "", diff = "";
+
+                                                                if (matches && matches.length === 2) {
+                                                                    time1 = row[matches[0].replace(/[{}]/g, "")] || "";
+                                                                    time2 = row[matches[1].replace(/[{}]/g, "")] || "";
+                                                                    diff = calculateTimeDifference(time1, time2);
+                                                                }
+                                                                if (row[col.name] !== diff) {
+                                                                    row[col.name] = diff;
+                                                                }
+
+                                                                return (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={diff}
+                                                                        readOnly
+                                                                        className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
+                                                                        style={style}
+                                                                    />
+                                                                );
+                                                            }
+
+                                                            if (col.type === "textbox") {
+                                                                return (
+                                                                    <div>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={row[col.name] || ""}
+                                                                            onChange={(e) => {
+                                                                                const value = e.target.value;
+
+                                                                                // Check character length validation
+                                                                                let isValid = true;
+                                                                                let errorMessage = "";
+
+                                                                                if (col.minLength && value.length < col.minLength) {
+                                                                                    isValid = false;
+                                                                                    errorMessage = col.lengthValidationMessage ||
+                                                                                        `Minimum ${col.minLength} characters required`;
+                                                                                } else if (col.maxLength && value.length > col.maxLength) {
+                                                                                    isValid = false;
+                                                                                    errorMessage = col.lengthValidationMessage ||
+                                                                                        `Maximum ${col.maxLength} characters allowed`;
+                                                                                }
+
+                                                                                // Update the value
+                                                                                handleGridChange(field.id, rowIndex, col.name, value);
+
+                                                                                // Set validation error if needed
+                                                                                if (!isValid) {
+                                                                                    setFormErrors(prev => ({
+                                                                                        ...prev,
+                                                                                        [`${field.id}_${rowIndex}_${col.name}`]: errorMessage
+                                                                                    }));
+                                                                                } else {
+                                                                                    // Clear validation error
+                                                                                    setFormErrors(prev => {
+                                                                                        const newErrors = { ...prev };
+                                                                                        delete newErrors[`${field.id}_${rowIndex}_${col.name}`];
+                                                                                        return newErrors;
+                                                                                    });
+                                                                                }
+                                                                            }}
+                                                                            disabled={isDisabled}
+                                                                            className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
+                                                                                } ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                            style={{
+                                                                                color: col.textColor || "inherit",
+                                                                                backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit"),
+                                                                            }}
+                                                                            minLength={col.minLength || undefined}
+                                                                            maxLength={col.maxLength || undefined}
+                                                                            placeholder={
+                                                                                col.minLength || col.maxLength
+                                                                                    ? `${col.minLength || 0}-${col.maxLength || 'âˆž'} chars`
+                                                                                    : `Enter ${col.name}`
+                                                                            }
+                                                                        />
+
+                                                                        {/* Character count display */}
+                                                                        {(col.minLength || col.maxLength) && (
+                                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                                {(row[col.name] || "").length}/{col.maxLength || 'âˆž'} characters
+                                                                                {col.minLength && (
+                                                                                    <span className="ml-2">
+                                                                                        (Min: {col.minLength})
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Show validation error */}
+                                                                        {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                            <p className="text-red-500 text-xs mt-1">
+                                                                                {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            }
+
+
+                                                            if (col.type === "dependentDropdown") {
+                                                                const parentValue = row[col.parentColumn] || "";
+                                                                const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
+
+                                                                if ((isDisabled || col.visible === false) && dependentOptions.length > 0 && !row[col.name]) {
+                                                                    row[col.name] = dependentOptions[0];
+                                                                }
+
+                                                                // Check if the selected option requires remarks
+                                                                const selectedValue = row[col.name] || "";
+                                                                const remarksKey = `${parentValue}:${selectedValue}`;
+                                                                const requiresRemarks = selectedValue && (col.remarksOptions || []).includes(remarksKey);
+                                                                const remarksFieldName = `${col.name}_remarks`;
+
+                                                                return (
+                                                                    <div>
+                                                                        <select
+                                                                            value={selectedValue}
+                                                                            onChange={(e) => {
+                                                                                const newValue = e.target.value;
+                                                                                const updatedRow = { ...row, [col.name]: newValue };
+
+                                                                                // Clear remarks if the new selection doesn't require it
+                                                                                const newRemarksKey = `${parentValue}:${newValue}`;
+                                                                                if (!(col.remarksOptions || []).includes(newRemarksKey)) {
+                                                                                    updatedRow[remarksFieldName] = "";
+                                                                                }
+
+                                                                                handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                            }}
+                                                                            disabled={!parentValue || isDisabled}
+                                                                            className={`border rounded px-2 py-1 w-full ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
+                                                                                }`}
+                                                                            style={{
+                                                                                color: col.textColor || "inherit",
+                                                                                backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit")
+                                                                            }}
+                                                                        >
+                                                                            <option value="">Select {col.name}</option>
+                                                                            {dependentOptions.map((opt, i) => (
+                                                                                <option key={i} value={opt}>
+                                                                                    {opt}
+                                                                                </option>
+                                                                            ))}
+                                                                        </select>
+
+                                                                        {selectedValue && (
+                                                                            <div className="text-xs text-gray-600 mt-1">
+                                                                                You selected: <span className="font-semibold">{selectedValue}</span>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {requiresRemarks && (
+                                                                            <div className="mt-2">
+                                                                                <label className="block text-xs text-gray-700 mb-1">
+                                                                                    Remarks <span className="text-red-500">*</span>
+                                                                                </label>
+                                                                                <textarea
+                                                                                    value={row[remarksFieldName] || ""}
+                                                                                    onChange={(e) => {
+                                                                                        const remarksValue = e.target.value;
+                                                                                        const updatedRow = { ...row, [remarksFieldName]: remarksValue };
+                                                                                        handleGridChange(field.id, rowIndex, remarksFieldName, remarksValue, updatedRow);
+                                                                                    }}
+                                                                                    placeholder="Enter remarks..."
+                                                                                    disabled={isDisabled}
+                                                                                    required
+                                                                                    className={`border rounded px-2 py-1 w-full text-sm ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
+                                                                                        }`}
+                                                                                    rows="2"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            if (col.type === "dropdown") {
+                                                                return (
+                                                                    <div>
+                                                                        <select
+                                                                            value={row[col.name] || ""}
+                                                                            onChange={(e) => {
+                                                                                const newValue = e.target.value;
+                                                                                const updatedRow = { ...row, [col.name]: newValue };
+
+                                                                                // Clear dependent fields
+                                                                                field.columns.forEach(depCol => {
+                                                                                    if (
+                                                                                        depCol.type === "dependentDropdown" &&
+                                                                                        depCol.parentColumn === col.name
+                                                                                    ) {
+                                                                                        updatedRow[depCol.name] = "";
+                                                                                    }
+                                                                                });
+
+                                                                                // If the new value is not in remarksOptions, clear remarks
+                                                                                if (!(col.remarksOptions || []).includes(newValue)) {
+                                                                                    updatedRow[`${col.name}_remarks`] = "";
+                                                                                }
+
+                                                                                handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                            }}
+                                                                            className="border rounded px-2 py-1 w-full"
+                                                                            style={{
+                                                                                color: col.textColor || "inherit",
+                                                                                backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit"),
+                                                                            }}
+                                                                        >
+                                                                            <option value="">Select {col.name}</option>
+                                                                            {(col.options || []).map((opt, i) => (
+                                                                                <option key={i} value={opt}>
+                                                                                    {opt}
+                                                                                </option>
+                                                                            ))}
+                                                                        </select>
+
+                                                                        {/* âœ… Remarks field appears only if selected option requires it */}
+                                                                        {console.log(col)}
+                                                                        {col.remarksOptions?.includes(row[col.name]) && (
+                                                                            <input
+                                                                                type="text"
+                                                                                required   // <-- mandatory
+                                                                                placeholder={`Enter remarks for ${row[col.name]}`}
+                                                                                value={row[`${col.name}_remarks`] || ""}
+                                                                                onChange={(e) => {
+                                                                                    const updatedRow = {
+                                                                                        ...row,
+                                                                                        [`${col.name}_remarks`]: e.target.value,
+                                                                                    };
+                                                                                    handleGridChange(
+                                                                                        field.id,
+                                                                                        rowIndex,
+                                                                                        `${col.name}_remarks`,
+                                                                                        e.target.value,
+                                                                                        updatedRow
+                                                                                    );
+                                                                                }}
+                                                                                disabled={isDisabled}
+                                                                                className={`border rounded px-2 py-1 w-full mt-2 ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
+                                                                                    }`}
+                                                                            />
+                                                                        )}
+
+                                                                        {row[col.name] && (
+                                                                            <div className="text-xs text-gray-600 mt-1">
+                                                                                You selected: <span className="font-semibold">{row[col.name]}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            if (col.type === "checkbox") {
+                                                                // Handle boolean checkbox (single true/false value)
+                                                                if (!col.options || col.options.length === 0) {
+                                                                    return (
+                                                                        <div>
                                                                             <input
                                                                                 type="checkbox"
-                                                                                id={`${field.id}_${rowIndex}_${col.name}_${option}`}
-                                                                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                                                                                checked={
-                                                                                    Array.isArray(row[col.name])
-                                                                                        ? row[col.name].includes(option)
-                                                                                        : false
-                                                                                }
+                                                                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                                checked={row[col.name] === true || row[col.name] === "true"}
                                                                                 onChange={(e) => {
-                                                                                    let updatedValues = Array.isArray(row[col.name])
-                                                                                        ? [...row[col.name]]
-                                                                                        : [];
-
-                                                                                    if (e.target.checked) {
-                                                                                        if (!updatedValues.includes(option)) {
-                                                                                            updatedValues.push(option);
-                                                                                        }
-                                                                                    } else {
-                                                                                        updatedValues = updatedValues.filter(val => val !== option);
-                                                                                    }
-
-                                                                                    const updatedRow = { ...row, [col.name]: updatedValues };
-                                                                                    handleGridChange(field.id, rowIndex, col.name, updatedValues, updatedRow);
+                                                                                    const updatedRow = { ...row, [col.name]: e.target.checked };
+                                                                                    handleGridChange(field.id, rowIndex, col.name, e.target.checked, updatedRow);
                                                                                 }}
                                                                                 style={{
                                                                                     color: col.textColor || "inherit",
                                                                                 }}
                                                                             />
-                                                                            <label
-                                                                                htmlFor={`${field.id}_${rowIndex}_${col.name}_${option}`}
-                                                                                className="text-sm text-gray-700 cursor-pointer"
-                                                                            >
-                                                                                {option}
-                                                                            </label>
                                                                         </div>
-                                                                    ))}
-                                                                </div>
-                                                            );
-                                                        }
+                                                                    );
+                                                                }
 
-                                                        if (col.type === "numeric") {
-                                                            const currentValue = parseFloat(row[col.name]);
-                                                            const isOutOfRange = !isNaN(currentValue) && (
-                                                                (col.min !== null && col.min !== undefined && currentValue < col.min) ||
-                                                                (col.max !== null && col.max !== undefined && currentValue > col.max)
-                                                            );
+                                                                // Handle multi-option checkbox (existing code for checkbox with options)
+                                                                return (
+                                                                    <div>
+                                                                        {(col.options || []).map((option) => (
+                                                                            <div key={option} className="flex items-center mb-1">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    id={`${field.id}_${rowIndex}_${col.name}_${option}`}
+                                                                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                                                                    checked={
+                                                                                        Array.isArray(row[col.name])
+                                                                                            ? row[col.name].includes(option)
+                                                                                            : false
+                                                                                    }
+                                                                                    onChange={(e) => {
+                                                                                        let updatedValues = Array.isArray(row[col.name])
+                                                                                            ? [...row[col.name]]
+                                                                                            : [];
+
+                                                                                        if (e.target.checked) {
+                                                                                            if (!updatedValues.includes(option)) {
+                                                                                                updatedValues.push(option);
+                                                                                            }
+                                                                                        } else {
+                                                                                            updatedValues = updatedValues.filter(val => val !== option);
+                                                                                        }
+
+                                                                                        const updatedRow = { ...row, [col.name]: updatedValues };
+                                                                                        handleGridChange(field.id, rowIndex, col.name, updatedValues, updatedRow);
+                                                                                    }}
+                                                                                    style={{
+                                                                                        color: col.textColor || "inherit",
+                                                                                    }}
+                                                                                />
+                                                                                <label
+                                                                                    htmlFor={`${field.id}_${rowIndex}_${col.name}_${option}`}
+                                                                                    className="text-sm text-gray-700 cursor-pointer"
+                                                                                >
+                                                                                    {option}
+                                                                                </label>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            if (col.type === "numeric") {
+                                                                const currentValue = parseFloat(row[col.name]);
+                                                                const isOutOfRange = !isNaN(currentValue) && (
+                                                                    (col.min !== null && col.min !== undefined && currentValue < col.min) ||
+                                                                    (col.max !== null && col.max !== undefined && currentValue > col.max)
+                                                                );
+
+                                                                return (
+                                                                    <div>
+                                                                        <input
+                                                                            type="number"
+                                                                            value={row[col.name] || ""}
+                                                                            onChange={(e) => {
+                                                                                const value = e.target.value;
+                                                                                const updatedRow = { ...row, [col.name]: value };
+
+                                                                                // Clear remarks if value is back in range
+                                                                                const numValue = parseFloat(value);
+                                                                                if (value === "" || isNaN(numValue) ||
+                                                                                    (col.min === null || col.min === undefined || numValue >= col.min) &&
+                                                                                    (col.max === null || col.max === undefined || numValue <= col.max)) {
+                                                                                    updatedRow[`${col.name}_remarks`] = "";
+                                                                                }
+
+                                                                                handleGridChange(field.id, rowIndex, col.name, value, updatedRow);
+                                                                            }}
+                                                                            disabled={isDisabled}
+                                                                            className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
+                                                                                } ${isOutOfRange ? "border-orange-500" : ""} ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
+                                                                                }`}
+                                                                            style={{
+                                                                                color: col.textColor || "inherit",
+                                                                                backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit"),
+                                                                            }}
+                                                                            step={col.decimal ? "any" : "1"}
+                                                                            placeholder={`${col.min !== null ? `Min: ${col.min}` : ""}${col.min !== null && col.max !== null ? ", " : ""
+                                                                                }${col.max !== null ? `Max: ${col.max}` : ""}`}
+                                                                        />
+
+                                                                        {/* Show out of range warning */}
+                                                                        {isOutOfRange && (
+                                                                            <div className="text-orange-600 text-xs mt-1">
+                                                                                âš ï¸ Value outside range ({col.min !== null ? `${col.min}` : ""}
+                                                                                {col.min !== null && col.max !== null ? " - " : ""}
+                                                                                {col.max !== null ? `${col.max}` : ""}). Remarks required.
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Remarks field for out of range values */}
+                                                                        {isOutOfRange && (
+                                                                            <textarea
+                                                                                placeholder="Please provide remarks for out-of-range value"
+                                                                                value={row[`${col.name}_remarks`] || ""}
+                                                                                onChange={(e) => {
+                                                                                    const updatedRow = {
+                                                                                        ...row,
+                                                                                        [`${col.name}_remarks`]: e.target.value,
+                                                                                    };
+                                                                                    handleGridChange(
+                                                                                        field.id,
+                                                                                        rowIndex,
+                                                                                        `${col.name}_remarks`,
+                                                                                        e.target.value,
+                                                                                        updatedRow
+                                                                                    );
+                                                                                }}
+                                                                                disabled={isDisabled}
+                                                                                className={`border rounded px-2 py-1 w-full mt-2 text-sm ${formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`] ? "border-red-500" : ""
+                                                                                    } ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                                rows="2"
+                                                                                required
+                                                                            />
+                                                                        )}
+
+                                                                        {/* Show constraint info */}
+                                                                        {(col.min !== null || col.max !== null || !col.decimal) && !isOutOfRange && (
+                                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                                {!col.decimal && "Whole number"}
+                                                                                {!col.decimal && (col.min !== null || col.max !== null) && ", "}
+                                                                                {col.min !== null && col.max !== null
+                                                                                    ? `Range: ${col.min} - ${col.max}`
+                                                                                    : col.min !== null
+                                                                                        ? `Min: ${col.min}`
+                                                                                        : col.max !== null
+                                                                                            ? `Max: ${col.max}`
+                                                                                            : ""
+                                                                                }
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Show validation errors */}
+                                                                        {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                            <p className="text-red-500 text-xs mt-1">
+                                                                                {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                            </p>
+                                                                        )}
+
+                                                                        {/* Show remarks validation error */}
+                                                                        {formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`] && (
+                                                                            <p className="text-red-500 text-xs mt-1">
+                                                                                {formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`]}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            }
+
+                                                            if (col.type === "date") {
+                                                                return (
+                                                                    <div>
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <DatePicker
+                                                                                className="border rounded px-2 py-1 w-full"
+                                                                                selected={row[col.name] ? new Date(row[col.name]) : null}
+                                                                                onChange={(date) => {
+                                                                                    const updatedRow = { ...row, [col.name]: date };
+                                                                                    handleGridChange(field.id, rowIndex, col.name, date, updatedRow);
+                                                                                }}
+                                                                                dateFormat="dd/MM/yyyy"
+                                                                                placeholderText="DD/MM/YYYY"
+                                                                                style={{
+                                                                                    color: col.textColor || "inherit",
+                                                                                    backgroundColor: col.backgroundColor || "inherit",
+                                                                                }}
+                                                                            />
+
+                                                                            {/* Show day name below date picker */}
+                                                                            <input
+                                                                                type="text"
+                                                                                className="border rounded px-2 py-1 w-full text-center bg-gray-100 cursor-not-allowed text-xs"
+                                                                                value={getDayName(row[col.name])}
+                                                                                disabled
+                                                                                aria-label="Day of the week"
+                                                                            />
+                                                                        </div>
+
+                                                                        {/* Show validation error if any */}
+                                                                        {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
+                                                                            <p className="text-red-500 text-xs mt-1">
+                                                                                {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            }
 
                                                             return (
                                                                 <div>
                                                                     <input
-                                                                        type="number"
+                                                                        type="text"
                                                                         value={row[col.name] || ""}
-                                                                        onChange={(e) => {
-                                                                            const value = e.target.value;
-                                                                            const updatedRow = { ...row, [col.name]: value };
-
-                                                                            // Clear remarks if value is back in range
-                                                                            const numValue = parseFloat(value);
-                                                                            if (value === "" || isNaN(numValue) ||
-                                                                                (col.min === null || col.min === undefined || numValue >= col.min) &&
-                                                                                (col.max === null || col.max === undefined || numValue <= col.max)) {
-                                                                                updatedRow[`${col.name}_remarks`] = "";
-                                                                            }
-
-                                                                            handleGridChange(field.id, rowIndex, col.name, value, updatedRow);
-                                                                        }}
+                                                                        onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
                                                                         className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
-                                                                            } ${isOutOfRange ? "border-orange-500" : ""}`}
-                                                                        style={{
-                                                                            color: col.textColor || "inherit",
-                                                                            backgroundColor: col.backgroundColor || "inherit",
-                                                                        }}
-                                                                        step={col.decimal ? "any" : "1"}
-                                                                        placeholder={`${col.min !== null ? `Min: ${col.min}` : ""}${col.min !== null && col.max !== null ? ", " : ""
-                                                                            }${col.max !== null ? `Max: ${col.max}` : ""}`}
+                                                                            }`}
+                                                                        style={style}
                                                                     />
-
-                                                                    {/* Show out of range warning */}
-                                                                    {isOutOfRange && (
-                                                                        <div className="text-orange-600 text-xs mt-1">
-                                                                            ⚠️ Value outside range ({col.min !== null ? `${col.min}` : ""}
-                                                                            {col.min !== null && col.max !== null ? " - " : ""}
-                                                                            {col.max !== null ? `${col.max}` : ""}). Remarks required.
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Remarks field for out of range values */}
-                                                                    {isOutOfRange && (
-                                                                        <textarea
-                                                                            placeholder="Please provide remarks for out-of-range value"
-                                                                            value={row[`${col.name}_remarks`] || ""}
-                                                                            onChange={(e) => {
-                                                                                const updatedRow = {
-                                                                                    ...row,
-                                                                                    [`${col.name}_remarks`]: e.target.value,
-                                                                                };
-                                                                                handleGridChange(
-                                                                                    field.id,
-                                                                                    rowIndex,
-                                                                                    `${col.name}_remarks`,
-                                                                                    e.target.value,
-                                                                                    updatedRow
-                                                                                );
-                                                                            }}
-                                                                            className={`border rounded px-2 py-1 w-full mt-2 text-sm ${formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`] ? "border-red-500" : ""
-                                                                                }`}
-                                                                            rows="2"
-                                                                            required
-                                                                        />
-                                                                    )}
-
-                                                                    {/* Show constraint info */}
-                                                                    {(col.min !== null || col.max !== null || !col.decimal) && !isOutOfRange && (
-                                                                        <div className="text-xs text-gray-500 mt-1">
-                                                                            {!col.decimal && "Whole number"}
-                                                                            {!col.decimal && (col.min !== null || col.max !== null) && ", "}
-                                                                            {col.min !== null && col.max !== null
-                                                                                ? `Range: ${col.min} - ${col.max}`
-                                                                                : col.min !== null
-                                                                                    ? `Min: ${col.min}`
-                                                                                    : col.max !== null
-                                                                                        ? `Max: ${col.max}`
-                                                                                        : ""
-                                                                            }
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Show validation errors */}
-                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
-                                                                        <p className="text-red-500 text-xs mt-1">
-                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
-                                                                        </p>
-                                                                    )}
-
-                                                                    {/* Show remarks validation error */}
-                                                                    {formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`] && (
-                                                                        <p className="text-red-500 text-xs mt-1">
-                                                                            {formErrors[`${field.id}_${rowIndex}_${col.name}_remarks`]}
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        }
-
-                                                        if (col.type === "date") {
-                                                            return (
-                                                                <div>
-                                                                    <div className="flex flex-col gap-1">
-                                                                        <DatePicker
-                                                                            className="border rounded px-2 py-1 w-full"
-                                                                            selected={row[col.name] ? new Date(row[col.name]) : null}
-                                                                            onChange={(date) => {
-                                                                                const updatedRow = { ...row, [col.name]: date };
-                                                                                handleGridChange(field.id, rowIndex, col.name, date, updatedRow);
-                                                                            }}
-                                                                            dateFormat="dd/MM/yyyy"
-                                                                            placeholderText="DD/MM/YYYY"
-                                                                            style={{
-                                                                                color: col.textColor || "inherit",
-                                                                                backgroundColor: col.backgroundColor || "inherit",
-                                                                            }}
-                                                                        />
-
-                                                                        {/* Show day name below date picker */}
-                                                                        <input
-                                                                            type="text"
-                                                                            className="border rounded px-2 py-1 w-full text-center bg-gray-100 cursor-not-allowed text-xs"
-                                                                            value={getDayName(row[col.name])}
-                                                                            disabled
-                                                                            aria-label="Day of the week"
-                                                                        />
-                                                                    </div>
-
-                                                                    {/* Show validation error if any */}
                                                                     {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
                                                                         <p className="text-red-500 text-xs mt-1">
                                                                             {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
@@ -2643,49 +2759,32 @@ export default function DynamicForm() {
                                                                     )}
                                                                 </div>
                                                             );
+                                                        })()}
+                                                    </td>
+                                                )
+                                                )}
+                                                <td className="py-2 px-4 border-b border-gray-200" style={{ width: "auto" }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeGridRow(field.id, rowIndex)}
+                                                        disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
+                                                        className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                            ? 'text-gray-400 cursor-not-allowed'
+                                                            : 'text-red-500 hover:text-red-700'
+                                                            }`}
+                                                        title={
+                                                            (formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                                ? `Minimum ${field.min_rows} rows required`
+                                                                : 'Remove this row'
                                                         }
-
-                                                        return (
-                                                            <div>
-                                                                <input
-                                                                    type="text"
-                                                                    value={row[col.name] || ""}
-                                                                    onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
-                                                                    className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
-                                                                        }`}
-                                                                    style={style}
-                                                                />
-                                                                {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
-                                                                    <p className="text-red-500 text-xs mt-1">
-                                                                        {formErrors[`${field.id}_${rowIndex}_${col.name}`]}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
+                                                    >
+                                                        Remove
+                                                    </button>
                                                 </td>
-                                            ))}
-                                            <td className="py-2 px-4 border-b border-gray-200" style={{ width: "auto" }}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeGridRow(field.id, rowIndex)}
-                                                    disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
-                                                    className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
-                                                        ? 'text-gray-400 cursor-not-allowed'
-                                                        : 'text-red-500 hover:text-red-700'
-                                                        }`}
-                                                    title={
-                                                        (formValues[field.id] || []).length <= (field.min_rows || 0)
-                                                            ? `Minimum ${field.min_rows} rows required`
-                                                            : 'Remove this row'
-                                                    }
-                                                >
-                                                    Remove
-                                                </button>
-                                            </td>
 
-                                        </tr>
-                                    ))}
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -2694,7 +2793,7 @@ export default function DynamicForm() {
                                 type="button"
                                 onClick={() => addGridRow(field.id, field.columns)}
                                 className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
-                                title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || '∞'})`}
+                                title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || 'âˆž'})`}
                             >
                                 Add Row {field.maxRows ? `(${(formValues[field.id] || []).length}/${field.maxRows})` : ''}
                             </button>
@@ -2748,6 +2847,234 @@ export default function DynamicForm() {
                     </div>
                 );
 
+            case "questionGrid": {
+                const colorScheme = getTableColor(field.id);
+
+                console.log("=== QUESTIONGRID DEBUG ===");
+                console.log("allowEditQuestions:", field.allowEditQuestions);
+                console.log("Columns:", field.columns);
+                console.log("Fixed columns:", field.columns.filter(c => c.fixed === true));
+                console.log("Question columns (by name):", field.columns.filter(c => c.name === "question"));
+                console.log("DefaultRows:", field.defaultRows);
+                console.log("formValues for this field:", formValues[field.id]);
+
+                return (
+                    <div
+                        key={field.id}
+                        className={`mb-4 ${field.width || "w-full"}`}
+                        style={{ fontSize: `${fontSize}px` }}
+                    >
+                        <div className={`overflow-x-auto border-2 ${colorScheme.border} rounded-lg`}>
+                            <table className="min-w-full bg-white">
+                                {/* Title Row */}
+                                <thead>
+                                    <tr>
+                                        <td
+                                            colSpan={field.columns.length + (field.allowAddRows === true ? 1 : 0)}
+                                            className={`${colorScheme.titleBg} py-2 px-4 border-b ${colorScheme.border}`}
+                                        >
+                                            <label className="block text-gray-700 text-sm font-bold">
+                                                {field.label}
+                                                {field.required && <span className="text-red-500 ml-1">*</span>}
+                                            </label>
+                                        </td>
+                                    </tr>
+                                </thead>
+
+                                {/* Column Headers */}
+                                <thead className={colorScheme.bg}>
+                                    <tr>
+                                        {field.columns.map((col, idx) => (
+                                            <th
+                                                key={idx}
+                                                className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`}
+                                                style={{ width: col.width || "auto" }}
+                                            >
+                                                {col.label || col.name}
+                                                {col.required && <span className="text-red-500 ml-1">*</span>}
+                                            </th>
+                                        ))}
+                                        {field.allowAddRows === true && (
+                                            <th className={`py-3 px-4 border-b ${colorScheme.border} text-center font-bold text-gray-700 text-sm w-24`}>
+                                                Actions
+                                            </th>
+                                        )}
+                                    </tr>
+                                </thead>
+
+                                {/* Data Rows */}
+                                <tbody>
+                                    {(formValues[field.id] || []).map((row, rowIndex) => (
+                                        <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
+                                            {field.columns.map((col, colIdx) => (
+                                                <td
+                                                    key={colIdx}
+                                                    className="py-2 px-4 border-b border-gray-200"
+                                                    style={{ width: col.width || "auto" }}
+                                                >
+                                                    {/* SERIAL NUMBER - Auto-generated */}
+                                                    {col.type === "serialNumber" && (
+                                                        <div className="px-2 py-1 text-center font-medium text-gray-700 bg-gray-50 rounded">
+                                                            {rowIndex + 1}
+                                                        </div>
+                                                    )}
+
+                                                    {/* FIXED VALUE - From row data or column default */}
+                                                    {col.type === "fixedValue" && (
+                                                        <div className="px-2 py-1 font-medium text-gray-700 bg-blue-50 rounded border border-blue-200">
+                                                            {row[col.name] || col.labelText || ""}
+                                                        </div>
+                                                    )}
+
+                                                    {/* QUESTION COLUMN - Use fixed:true OR name:"question" as fallback */}
+                                                    {(col.fixed === true || col.name === "question") && col.type === "textbox" && (
+                                                        field.allowEditQuestions === false ? (
+                                                            <div className="px-3 py-2 bg-yellow-50 rounded border border-yellow-300">
+                                                                <span className="text-gray-800 font-medium">{row[col.name] || ""}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={row[col.name] || ""}
+                                                                onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                                placeholder="Enter question..."
+                                                                className="border rounded px-2 py-1 w-full"
+                                                                required={col.required}
+                                                            />
+                                                        )
+                                                    )}
+
+                                                    {/* TEXTBOX COLUMN - NOT the question column */}
+                                                    {col.fixed !== true && col.name !== "question" && col.type === "textbox" && (
+                                                        col.disable ? (
+                                                            <div className="px-2 py-1 bg-gray-50 rounded border text-gray-700">
+                                                                {row[col.name] || col.labelText || ""}
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={row[col.name] || ""}
+                                                                onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                                placeholder="Enter text..."
+                                                                className="border rounded px-2 py-1 w-full"
+                                                                required={col.required}
+                                                                disabled={col.disable}
+                                                            />
+                                                        )
+                                                    )}
+
+                                                    {/* NUMERIC COLUMN */}
+                                                    {col.type === "numeric" && (
+                                                        <input
+                                                            type="number"
+                                                            value={row[col.name] || ""}
+                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                            min={col.min}
+                                                            max={col.max}
+                                                            step={col.decimal ? "0.01" : "1"}
+                                                            placeholder="Enter number..."
+                                                            className="border rounded px-2 py-1 w-full"
+                                                            required={col.required}
+                                                            disabled={col.disable}
+                                                        />
+                                                    )}
+
+                                                    {/* DROPDOWN COLUMN */}
+                                                    {col.type === "dropdown" && (
+                                                        <select
+                                                            value={row[col.name] || ""}
+                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                            className="border rounded px-2 py-1 w-full text-sm"
+                                                            required={col.required}
+                                                            disabled={col.disable}
+                                                        >
+                                                            <option value="">Select...</option>
+                                                            {(col.options || []).map((option, optIdx) => (
+                                                                <option key={optIdx} value={option}>{option}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+
+                                                    {/* CHECKBOX COLUMN */}
+                                                    {col.type === "checkbox" && (
+                                                        <div className="flex justify-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={row[col.name] === true || row[col.name] === "true"}
+                                                                onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.checked)}
+                                                                disabled={col.disable}
+                                                                className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    {/* DATE COLUMN */}
+                                                    {col.type === "date" && (
+                                                        <DatePicker
+                                                            selected={row[col.name] ? new Date(row[col.name]) : null}
+                                                            onChange={(date) => handleGridChange(field.id, rowIndex, col.name, date)}
+                                                            dateFormat="dd/MM/yyyy"
+                                                            placeholderText="Select date"
+                                                            className="border rounded px-2 py-1 w-full"
+                                                            required={col.required}
+                                                            disabled={col.disable}
+                                                        />
+                                                    )}
+
+                                                    {/* TIME COLUMN */}
+                                                    {col.type === "time" && (
+                                                        <input
+                                                            type="time"
+                                                            value={row[col.name] || ""}
+                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                            className="border rounded px-2 py-1 w-full"
+                                                            required={col.required}
+                                                            disabled={col.disable}
+                                                        />
+                                                    )}
+                                                </td>
+                                            ))}
+
+                                            {/* Actions Column */}
+                                            {field.allowAddRows === true && (
+                                                <td className="py-2 px-4 border-b border-gray-200 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeGridRow(field.id, rowIndex)}
+                                                        disabled={(formValues[field.id] || []).length <= (field.minRows || 1)}
+                                                        className={`${(formValues[field.id] || []).length <= (field.minRows || 1)
+                                                                ? "text-gray-400 cursor-not-allowed"
+                                                                : "text-red-500 hover:text-red-700"
+                                                            } text-sm font-medium`}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Add Question Button */}
+                        {field.allowAddRows === true &&
+                            (formValues[field.id] || []).length < (field.maxRows || Infinity) && (
+                                <button
+                                    type="button"
+                                    onClick={() => addGridRow(field.id, field.columns)}
+                                    className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm"
+                                >
+                                    Add Question ({(formValues[field.id] || []).length}/{field.maxRows || "∞"})
+                                </button>
+                            )}
+
+                        {formErrors[field.id] && (
+                            <span className="text-red-500 text-xs mt-1">{formErrors[field.id]}</span>
+                        )}
+                    </div>
+                );
+            }
 
             default:
                 return null;

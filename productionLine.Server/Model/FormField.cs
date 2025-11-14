@@ -168,6 +168,30 @@ namespace productionLine.Server.Model
             get => string.IsNullOrEmpty(KeyFieldMappingsJson) ? null : JsonSerializer.Deserialize<List<KeyFieldMapping>>(KeyFieldMappingsJson);
             set => KeyFieldMappingsJson = JsonSerializer.Serialize(value);
         }
+
+        [Column("DEFAULT_ROWS", TypeName = "CLOB")]
+        public string? DefaultRowsJson { get; set; }
+
+        [Column("ALLOW_ADD_ROWS", TypeName = "NUMBER(1)")]
+        public bool? AllowAddRows { get; set; }
+
+        [Column("ALLOW_EDIT_QUESTIONS", TypeName = "NUMBER(1)")]
+        public bool? AllowEditQuestions { get; set; }
+
+        [NotMapped]
+        public List<DefaultRow>? DefaultRows
+        {
+            get => string.IsNullOrEmpty(DefaultRowsJson) ? null : JsonSerializer.Deserialize<List<DefaultRow>>(DefaultRowsJson);
+            set => DefaultRowsJson = JsonSerializer.Serialize(value);
+        }
+    }
+    public class DefaultRow
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; }
+
+        [JsonPropertyName("question")]
+        public string Question { get; set; }
     }
 
     public class KeyFieldMapping
@@ -265,6 +289,10 @@ namespace productionLine.Server.Model
         public string? textAlign { get; set; }
         [JsonPropertyName("lengthValidationMessage")]
         public string? lengthValidationMessage { get; set; }
+        [JsonPropertyName("visible")]
+        public bool? visible { get; set; }
+        [JsonPropertyName("disabled")]
+        public bool? disable { get; set; }
         [JsonPropertyName("maxLength")]
         public int? maxLength { get; set; }
         [JsonPropertyName("minLength")]
@@ -277,6 +305,10 @@ namespace productionLine.Server.Model
             get => string.IsNullOrEmpty(KeyFieldMappingsJson) ? null : JsonSerializer.Deserialize<List<KeyFieldMapping>>(KeyFieldMappingsJson);
             set => KeyFieldMappingsJson = JsonSerializer.Serialize(value);
         }
+        [JsonPropertyName("fixed")]
+        public bool? Fixed { get; set; }
 
+        [JsonPropertyName("label")]
+        public string? Label { get; set; }
     }
 }

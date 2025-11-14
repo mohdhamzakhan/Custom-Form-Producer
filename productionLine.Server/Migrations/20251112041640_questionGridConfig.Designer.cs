@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251112041640_questionGridConfig")]
+    partial class questionGridConfig
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -432,7 +435,7 @@ namespace productionLine.Server.Migrations
 
                     b.Property<string>("FieldValue")
                         .IsRequired()
-                        .HasColumnType("CLOB")
+                        .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("FIELDVALUE");
 
                     b.Property<int>("FormSubmissionId")
@@ -470,10 +473,6 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasAnnotation("Relational:JsonPropertyName", "endTime");
 
-                    b.Property<bool?>("Fixed")
-                        .HasColumnType("BOOLEAN")
-                        .HasAnnotation("Relational:JsonPropertyName", "fixed");
-
                     b.Property<string>("Formula")
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasAnnotation("Relational:JsonPropertyName", "formula");
@@ -485,10 +484,6 @@ namespace productionLine.Server.Migrations
                     b.Property<string>("KeyFieldMappingsJson")
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasAnnotation("Relational:JsonPropertyName", "keyFieldMappingsJson");
-
-                    b.Property<string>("Label")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasAnnotation("Relational:JsonPropertyName", "label");
 
                     b.Property<string>("LinkedColumnId")
                         .HasColumnType("NVARCHAR2(2000)")

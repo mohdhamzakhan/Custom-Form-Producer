@@ -45,7 +45,7 @@ namespace productionLine.Server.Model
         public string FieldLabel { get; set; }
 
         [Required]
-        [Column("FIELDVALUE")]
+        [Column("FIELDVALUE", TypeName = "CLOB")]
         public string FieldValue { get; set; }
 
         [ForeignKey("FormSubmission")]
