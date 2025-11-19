@@ -41,6 +41,7 @@ public class ChartConfig
     public List<ShiftConfigDto>? ShiftConfigs { get; set; }
 
 
+
     // Keep for backward compatibility
     [JsonIgnore] // Don't serialize this anymore
     public ShiftConfigDto ShiftConfig { get; set; }
@@ -112,6 +113,11 @@ public class ShiftConfigDto
 
     [JsonPropertyName("breaks")]
     public List<ShiftBreak> Breaks { get; set; } = new List<ShiftBreak>();
+
+    [JsonPropertyName("modelNumber")]
+    public string ModelNumber { get; set; }
+    [JsonPropertyName("message")]
+    public string Message { get; set; }
 }
 
 public class ShiftBreak

@@ -74,6 +74,35 @@ const SHIFT_CONFIG = {
     }
 };
 
+const marqueeStyle = `
+  @keyframes marquee {
+    0% {
+      transform: translateX(100%);
+    }
+    100% {
+      transform: translateX(-100%);
+    }
+  }
+  
+  .marquee-container {
+    overflow: hidden;
+    white-space: nowrap;
+    background: linear-gradient(90deg, #1e40af 0%, #3b82f6 100%);
+    padding: 8px 0;
+    position: relative;
+  }
+  
+  .marquee-text {
+    display: inline-block;
+    padding-left: 100%;
+    animation: marquee 50s linear infinite;
+    color: white;
+    font-weight: 500;
+    font-size: 1.125rem;
+  }
+`;
+
+
 const getCurrentShift = () => {
     const now = new Date();
     const currentHour = now.getHours();
@@ -1330,6 +1359,21 @@ const ReportCharts = React.memo(({
 
 
         case 'shift':
+            React.useEffect(() => {
+                const styleId = 'marquee-style';
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = marqueeStyle;
+                    document.head.appendChild(style);
+                }
+                return () => {
+                    const existingStyle = document.getElementById(styleId);
+                    if (existingStyle) {
+                        existingStyle.remove();
+                    }
+                };
+            }, []);
             const [configVisible, setConfigVisible] = useState(showConfiguration !== false); // Start visible only if showConfiguration is not false
             const [configTimer, setConfigTimer] = useState(null);
 
@@ -1833,7 +1877,7 @@ const ReportCharts = React.memo(({
                             <div className="flex justify-between items-center">
                                 <div>
                                     <h3 className="text-lg font-semibold text-blue-800">
-                                        {activeShiftConfig.name}
+                                        {activeShiftConfig.name} [{activeShiftConfig.modelNumber}]
                                     </h3>
                                     <p className="text-blue-600">
                                         {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
@@ -1935,52 +1979,102 @@ const ReportCharts = React.memo(({
 
                     {/* Production Summary Cards */}
                     {!isFullscreenMode && (
-                        <>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="mb-6">
+                            {/* Model Name Header - Only show if model name exists */}
+                            {/*{activeShiftConfig?.modelNumber && (*/}
+                            {/*    <div className="mb-4 bg-gradient-to-r from-indigo-600 to-purple-600 p-4 rounded-lg shadow-lg">*/}
+                            {/*        <div className="flex items-center justify-center gap-3">*/}
+                            {/*            <Target className="text-white" size={16} />*/}
+                            {/*            <div>*/}
+                            {/*                <div className="text-sm text-indigo-200 uppercase tracking-wide">*/}
+                            {/*                    Current Model*/}
+                            {/*                </div>*/}
+                            {/*                <div className="font-bold text-white">*/}
+                            {/*                    {activeShiftConfig.modelNumber}*/}
+                            {/*                </div>*/}
+                            {/*            </div>*/}
+                            {/*        </div>*/}
+                            {/*    </div>*/}
+                            {/*)}*/}
+
+                            {/* Production Metrics with conditional title */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {/* Current Production */}
                                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
                                     <div className="text-2xl font-bold text-blue-800">
                                         {currentProduction}
                                     </div>
-                                    <div className="text-sm text-blue-600">Current Production</div>
+                                    <div className="text-sm text-blue-600">
+                                        {activeShiftConfig?.modelNumber
+                                            ? `${activeShiftConfig.modelNumber} - Current Production`
+                                            : 'Current Production'
+                                        }
+                                    </div>
                                 </div>
+
+                                {/* Target Parts */}
                                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
                                     <div className="text-2xl font-bold text-orange-800">
                                         {activeShiftConfig.targetParts}
                                     </div>
-                                    <div className="text-sm text-orange-600">Target Parts</div>
+                                    <div className="text-sm text-orange-600">
+                                        Target Parts
+                                    </div>
                                 </div>
+
+                                {/* Efficiency */}
                                 <div className={`bg-gradient-to-br p-4 rounded-lg border ${efficiency >= 100
-                                    ? 'from-green-50 to-green-100 border-green-200'
-                                    : efficiency >= 80
-                                        ? 'from-yellow-50 to-yellow-100 border-yellow-200'
-                                        : 'from-red-50 to-red-100 border-red-200'
+                                        ? 'from-green-50 to-green-100 border-green-200'
+                                        : efficiency >= 80
+                                            ? 'from-yellow-50 to-yellow-100 border-yellow-200'
+                                            : 'from-red-50 to-red-100 border-red-200'
                                     }`}>
                                     <div className={`text-2xl font-bold ${efficiency >= 100
-                                        ? 'text-green-800'
-                                        : efficiency >= 80
-                                            ? 'text-yellow-800'
-                                            : 'text-red-800'
+                                            ? 'text-green-800'
+                                            : efficiency >= 80
+                                                ? 'text-yellow-800'
+                                                : 'text-red-800'
                                         }`}>
                                         {efficiency}%
                                     </div>
                                     <div className={`text-sm ${efficiency >= 100
-                                        ? 'text-green-600'
-                                        : efficiency >= 80
-                                            ? 'text-yellow-600'
-                                            : 'text-red-600'
+                                            ? 'text-green-600'
+                                            : efficiency >= 80
+                                                ? 'text-yellow-600'
+                                                : 'text-red-600'
                                         }`}>
                                         Efficiency
                                     </div>
                                 </div>
+
+                                {/* Remaining Parts */}
                                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
                                     <div className="text-2xl font-bold text-purple-800">
                                         {Math.max(0, activeShiftConfig.targetParts - currentProduction)}
                                     </div>
-                                    <div className="text-sm text-purple-600">Remaining Parts</div>
+                                    <div className="text-sm text-purple-600">
+                                        Remaining Parts
+                                    </div>
                                 </div>
                             </div>
-                        </>
+                        </div>
                     )}
+                    {/* Marquee Message - News Channel Style */}
+                    {activeShiftConfig?.message && (
+                        <div className="mb-6">
+                            <div className="marquee-container rounded-lg shadow-lg">
+                                <div className="marquee-text">
+                                    <span className="mr-8">🔔</span>
+                                    {activeShiftConfig.message}
+                                    <span className="ml-8 mr-8">🔔</span>
+                                    {activeShiftConfig.message}
+                                    <span className="ml-8 mr-8">🔔</span>
+                                    {activeShiftConfig.message}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
 
                     {/* Break Schedule */}
                     {isMaximized && (

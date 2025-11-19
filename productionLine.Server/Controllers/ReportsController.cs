@@ -155,9 +155,13 @@ namespace productionLine.Server.Controllers
                 var jsonOptions = new JsonSerializerOptions
                 {
                     WriteIndented = false,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                    // ADDED: Allow reading as object/dictionary
+                    PropertyNameCaseInsensitive = true
                 };
-
+                // ADDED: Log incoming data
+                Console.WriteLine("Received ChartConfigs: " +
+                    (dto.ChartConfigs != null ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions) : "null"));
                 ReportTemplate template;
 
                 if (dto.Id > 0)

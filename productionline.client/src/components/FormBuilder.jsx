@@ -120,7 +120,7 @@ const FormBuilder = () => {
                 };
 
                 // Handle grid fields specially
-                if (field.type === "grid") {
+                if (field.type === "grid" || field.type === "questionGrid") {
                     console.log("=== PROCESSING GRID FIELD ===");
                     console.log("columnsJson:", field.columnsJson);
                     console.log("columns:", field.columns);
@@ -1546,7 +1546,6 @@ const FormBuilder = () => {
                 });
             }
         });
-
         return allFields;
     };
 
@@ -1746,7 +1745,7 @@ const FormBuilder = () => {
                             {formFields.map((field, index) => (
                                 <div key={field.id} className="mb-3 p-2 border-b border-gray-200">
                                     <div className="text-sm font-medium">Field {index}: {field.label} ({field.type})</div>
-                                    {field.type === "grid" && (
+                                    {(field.type === "grid" || field.type === "questionGrid") && (
                                         <div className="ml-4 mt-1 text-xs">
                                             <div>Columns property: {field.columns ? 'EXISTS' : 'MISSING'}</div>
                                             <div>ColumnsJson property: {field.columnsJson ? 'EXISTS' : 'MISSING'}</div>
@@ -1859,7 +1858,7 @@ const FormBuilder = () => {
 
     return (
         <Layout>
-
+            {/*<GridDebugComponent/>*/}
             <DndProvider backend={HTML5Backend}>
                 <div className="max-w-8xl mx-auto p-2">
                     <div className="mb-6">
@@ -1915,13 +1914,15 @@ const FormBuilder = () => {
                                     <p className="text-xs text-gray-600 mb-3">
                                         Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name  Column Name"
                                     </p>
-
+                                    {/* NO need to touch*/ }
                                     <div className="space-y-2">
                                         {keyFields.map((keyField, index) => {
                                             // Get available fields for current form (including grid columns)
                                             const currentFormFields = getAllFormFieldsWithGridColumns(formFields);
                                             // Get available fields for linked form (including grid columns)
                                             const linkedFormFields2 = getAllFormFieldsWithGridColumns(linkedFormFields);
+                                            console.log(`KeyField ${index} - Current:`, currentFormFields.length, 'Linked:', linkedFormFields2.length);
+                                            console.log('Linked grid columns:', linkedFormFields2.filter(f => f.isGridColumn));
 
                                             return (
                                                 <div key={index} className="flex items-center gap-2">
@@ -2460,7 +2461,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
         fields.forEach((fieldItem) => {
             if (!fieldItem) return;
 
-            if (fieldItem.type === "grid" && fieldItem.columns && Array.isArray(fieldItem.columns)) {
+            if ((fieldItem.type === "grid" || fieldItem.type === "questionGrid") && fieldItem.columns && Array.isArray(fieldItem.columns)) {
                 fieldItem.columns.forEach((column) => {
                     if (column && column.id && column.name) {
                         allFieldsWithColumns.push({
@@ -2730,7 +2731,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 {/* Grid column fields */}
                                 <optgroup label="Grid Columns">
                                     {linkedFormFields
-                                        .filter(f => f.type === "grid" && f.columns && Array.isArray(f.columns))
+                                        .filter(f => (f.type === "grid" || f.type === "questionGrid") && f.columns && Array.isArray(f.columns))
                                         .flatMap(gridField =>
                                             gridField.columns
                                                 .filter(col => ["textbox", "numeric", "dropdown"].includes(col.type))

@@ -8,6 +8,8 @@ const SHIFT_CONFIG = {
         name: "Shift A",
         startTime: "06:00",
         endTime: "14:30",
+        modelNumber: "",  // Add this
+        message: "",      // Add this
         defaultBreaks: [
             { id: 1, startTime: "08:00", endTime: "08:10", name: "Tea Break" },
             { id: 2, startTime: "11:30", endTime: "12:00", name: "Lunch Break" },
@@ -18,6 +20,8 @@ const SHIFT_CONFIG = {
         name: "Shift B",
         startTime: "14:30",
         endTime: "23:00",
+        modelNumber: "",  // Add this
+        message: "",      // Add this
         defaultBreaks: [
             { id: 1, startTime: "16:30", endTime: "16:40", name: "Evening Break" },
             { id: 2, startTime: "20:00", endTime: "20:30", name: "Dinner Break" },
@@ -28,12 +32,15 @@ const SHIFT_CONFIG = {
         name: "Shift C",
         startTime: "23:00",
         endTime: "06:00",
+        modelNumber: "",  // Add this
+        message: "",      // Add this
         defaultBreaks: [
             { id: 1, startTime: "01:00", endTime: "01:30", name: "Midnight Break" },
             { id: 2, startTime: "04:00", endTime: "04:10", name: "Early Morning Break" },
         ]
     }
 };
+
 
 const MultiChartBuilder = ({
     chartConfigs,
@@ -54,14 +61,17 @@ const MultiChartBuilder = ({
             name: SHIFT_CONFIG[shiftKey].name,
             startTime: SHIFT_CONFIG[shiftKey].startTime,
             endTime: SHIFT_CONFIG[shiftKey].endTime,
-            targetParts: 100, // Default target
-            cycleTimeSeconds: 30, // Default cycle time
+            targetParts: 100,
+            cycleTimeSeconds: 30,
+            modelNumber: SHIFT_CONFIG[shiftKey].modelNumber || "",  // Add this
+            message: SHIFT_CONFIG[shiftKey].message || "",          // Add this
             breaks: SHIFT_CONFIG[shiftKey].defaultBreaks.map(breakItem => ({
                 ...breakItem,
-                id: Date.now() + Math.random() // Ensure unique IDs
+                id: Date.now() + Math.random()
             }))
         }));
     };
+
 
     React.useEffect(() => {
         let hasChanges = false;
@@ -330,6 +340,8 @@ const MultiChartBuilder = ({
                         name: SHIFT_CONFIG[newShiftKey].name,
                         startTime: SHIFT_CONFIG[newShiftKey].startTime,
                         endTime: SHIFT_CONFIG[newShiftKey].endTime,
+                        modelNumber: "",  // Add this - reset when changing shifts
+                        message: "",      // Add this - reset when changing shifts
                         breaks: SHIFT_CONFIG[newShiftKey].defaultBreaks.map(breakItem => ({
                             ...breakItem,
                             id: Date.now() + Math.random()
@@ -342,6 +354,7 @@ const MultiChartBuilder = ({
             return { ...chart, shiftConfigs: newShiftConfigs };
         }));
     };
+
 
     const renderShiftConfiguration = (chart) => {
         if (chart.type !== 'shift' || !chart.shiftConfigs) return null;
@@ -379,21 +392,39 @@ const MultiChartBuilder = ({
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                     {/* Shift Selection */}
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            <Users className="inline w-4 h-4 mr-1" />
-                                            Select Shift
-                                        </label>
-                                        <select
-                                            value={shiftConfig.shift}
-                                            onChange={(e) => handleShiftChange(chart.id, shiftConfig.shift, e.target.value)}
-                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                        >
-                                            <option value="A">Shift A (06:00 - 14:30)</option>
-                                            <option value="B">Shift B (14:30 - 23:00)</option>
-                                            <option value="C">Shift C (23:00 - 06:00)</option>
-                                        </select>
-                                    </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                <Users className="inline w-4 h-4 mr-1" />
+                                                Select Shift
+                                            </label>
+                                            <select
+                                                value={shiftConfig.shift}
+                                                onChange={(e) => handleShiftChange(chart.id, shiftConfig.shift, e.target.value)}
+                                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                <option value="A">Shift A (06:00 - 14:30)</option>
+                                                <option value="B">Shift B (14:30 - 23:00)</option>
+                                                <option value="C">Shift C (23:00 - 06:00)</option>
+                                            </select>
+                                        </div>
 
+                                        {/* Model Number - Add this new field */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                <Target className="inline w-4 h-4 mr-1" />
+                                                Model Number
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={shiftConfig.modelNumber || ""}
+                                                onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                    modelNumber: e.target.value
+                                                })}
+                                                placeholder="Enter model number"
+                                                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </div>
                                     {/* Shift Timing */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -491,6 +522,23 @@ const MultiChartBuilder = ({
                                                 </div>
                                             ))}
                                         </div>
+                                    </div>
+
+                                    {/* Message - Add this section after the grid */}
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <Timer className="inline w-4 h-4 mr-1" />
+                                            Shift Message
+                                        </label>
+                                        <textarea
+                                            value={shiftConfig.message || ""}
+                                            onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                message: e.target.value
+                                            })}
+                                            placeholder="Enter shift message or notes"
+                                            rows="3"
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
+                                        />
                                     </div>
                                 </div>
 
@@ -833,7 +881,9 @@ const MultiChartBuilder = ({
                             comboConfig={chart.comboConfig}
                             fields={fields}
                             calculatedFields={calculatedFields}
+                            shiftConfigs={chart.shiftConfigs}  // This will include modelNumber and message
                         />
+
                     );
                 })}
             </div>

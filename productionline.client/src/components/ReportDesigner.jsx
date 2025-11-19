@@ -823,7 +823,18 @@ export default function EnhancedReportDesigner() {
                     })
                 },
                 // ✅ PRIMARY: Multiple shift configurations (your main goal)
-                shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ? chart.shiftConfigs : null,
+                shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ?
+                    chart.shiftConfigs.map(config => ({
+                        shift: config.shift,
+                        name: config.name,
+                        startTime: config.startTime,
+                        endTime: config.endTime,
+                        targetParts: config.targetParts || 100,
+                        cycleTimeSeconds: config.cycleTimeSeconds || 30,
+                        modelNumber: config.modelNumber || "",  // IMPORTANT: Include this
+                        message: config.message || "",          // IMPORTANT: Include this
+                        breaks: config.breaks || []
+                    })) : null,
 
                 // ✅ COMPATIBILITY: Single shift config to satisfy backend validation
                 shiftConfig: chart.type === 'shift' && chart.shiftConfigs && chart.shiftConfigs.length > 0
@@ -834,7 +845,9 @@ export default function EnhancedReportDesigner() {
                         startTime: chart.shiftConfigs[0].startTime,
                         endTime: chart.shiftConfigs[0].endTime,
                         name: chart.shiftConfigs[0].name,
-                        breaks: chart.shiftConfigs[0].breaks
+                        breaks: chart.shiftConfigs[0].breaks,
+                        modelNumber: chart.shiftConfigs[0].modelNumber,
+                        message: chart.shiftConfigs[0].message
                     }
                     : null
             }))
