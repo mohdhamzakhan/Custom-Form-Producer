@@ -1915,6 +1915,7 @@ export default function EnhancedReportDesigner() {
                                     type={chartConfig.type}
                                     xField={chartConfig.xField || "Line Name"}
                                     title={chartConfig.title || "Chart Preview"}
+
                                 />
                             </div>
                         )}

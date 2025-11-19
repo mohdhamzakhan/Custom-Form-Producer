@@ -2,9 +2,10 @@
 import {
     BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-    ComposedChart
+    ComposedChart, ReferenceArea  // ✅ Add ReferenceArea
 } from 'recharts';
 import { Settings, Play, Pause, Plus, Trash2, Clock, Users, Target, Timer } from 'lucide-react';
+import { APP_CONSTANTS } from "./store";
 
 // Define chart types that your app supports
 export const CHART_TYPES = {
@@ -1359,6 +1360,118 @@ const ReportCharts = React.memo(({
 
 
         case 'shift':
+            const [shiftChartData, setShiftChartData] = useState(null);
+            const [shiftMetrics, setShiftMetrics] = useState(null);
+            const [shiftLoading, setShiftLoading] = useState(true);
+            const [shiftError, setShiftError] = useState(null);
+
+            // Fetch data from backend API
+            useEffect(() => {
+                // ✅ Clear any existing intervals when dependencies change
+                let interval = null;
+                let isCancelled = false;
+
+                const fetchShiftData = async () => {
+                    // ✅ Don't fetch if this effect was cancelled
+                    if (isCancelled) return;
+
+                    setShiftLoading(true);
+                    setShiftError(null);
+
+                    try {
+                        console.log('🔄 Fetching shift data for date:', selectedDate);
+                        console.log('Active shift config:', activeShiftConfig);
+
+                        if (!activeShiftConfig?.startTime || !activeShiftConfig?.endTime) {
+                            throw new Error('Shift configuration is missing start/end times');
+                        }
+
+                        const params = new URLSearchParams({
+                            selectedDate: selectedDate,
+                            shift: activeShiftConfig.shift || 'A',
+                            targetParts: activeShiftConfig.targetParts || 0,
+                            cycleTimeSeconds: activeShiftConfig.cycleTimeSeconds || 1,
+                            startTime: activeShiftConfig.startTime,
+                            endTime: activeShiftConfig.endTime,
+                            breaks: JSON.stringify(
+                                (activeShiftConfig.breaks || []).filter(b => b.startTime && b.endTime)
+                            )
+                        });
+
+                        console.log('📤 Request URL:', `/api/ShiftProduction/chart-data?${params.toString()}`);
+
+                        const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/ShiftProduction/chart-data?${params}`);
+
+                        if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('❌ Server response:', errorText);
+                            throw new Error(`Server error: ${response.status}`);
+                        }
+
+                        const data = await response.json();
+
+                        // ✅ Only update state if not cancelled
+                        if (!isCancelled) {
+                            console.log('✅ Backend response received:', data);
+
+                            setShiftChartData(data.chartData);
+                            setShiftMetrics({
+                                currentProduction: data.currentProduction,
+                                targetParts: data.targetParts,
+                                efficiency: data.efficiency,
+                                remainingParts: data.remainingParts
+                            });
+                        }
+
+                    } catch (err) {
+                        if (!isCancelled) {
+                            console.error('❌ Error fetching shift data:', err);
+                            setShiftError(err.message);
+                        }
+                    } finally {
+                        if (!isCancelled) {
+                            setShiftLoading(false);
+                        }
+                    }
+                };
+
+                if (activeShiftConfig && activeShiftConfig.startTime && activeShiftConfig.endTime) {
+                    // ✅ Fetch immediately
+                    fetchShiftData();
+
+                    // ✅ Set up auto-refresh every 30 seconds
+                    interval = setInterval(() => {
+                        console.log('🔄 Auto-refresh triggered');
+                        fetchShiftData();
+                    }, 30000);
+                } else {
+                    setShiftError('Invalid shift configuration - missing start/end times');
+                    setShiftLoading(false);
+                }
+
+                // ✅ Cleanup function - runs when dependencies change or component unmounts
+                return () => {
+                    console.log('🧹 Cleaning up previous fetch and interval');
+                    isCancelled = true;
+                    if (interval) {
+                        clearInterval(interval);
+                    }
+                };
+
+            }, [
+                selectedDate,
+                // ✅ Use optional chaining to prevent errors
+                activeShiftConfig?.shift,
+                activeShiftConfig?.targetParts,
+                activeShiftConfig?.cycleTimeSeconds,
+                activeShiftConfig?.startTime,
+                activeShiftConfig?.endTime,
+                JSON.stringify(activeShiftConfig?.breaks || [])
+            ]);
+
+
+
+            // Inject marquee styles
             React.useEffect(() => {
                 const styleId = 'marquee-style';
                 if (!document.getElementById(styleId)) {
@@ -1374,334 +1487,92 @@ const ReportCharts = React.memo(({
                     }
                 };
             }, []);
-            const [configVisible, setConfigVisible] = useState(showConfiguration !== false); // Start visible only if showConfiguration is not false
-            const [configTimer, setConfigTimer] = useState(null);
 
-            // Auto-hide configuration after 2 minutes ONLY on viewer page
-            useEffect(() => {
-                if (type === 'shift' && configVisible && showConfiguration === false) {
-                    const timer = setTimeout(() => {
-                        setConfigVisible(false);
-                    }, 120000); // 2 minutes = 120000ms
-
-                    setConfigTimer(timer);
-
-                    return () => clearTimeout(timer);
-                }
-            }, [configVisible, type, showConfiguration]);
-
-            console.log('=== SHIFT CHART DATA DEBUG ===');
-            console.log('Raw data:', data);
-            console.log('Active shift config:', activeShiftConfig);
-
-
-            // ✅ FIX: Filter data by shift time - Handle UTC dates correctly
-
-
-            // Then in your component, memoize the filtered data:
-            const filteredShiftData = useMemo(() => {
-                console.log('🔍 Filtering shift data (memoized)');
-                console.log('📅 Selected date:', selectedDate);
-                console.log('📊 Total data records:', data.length);
-
-                // First filter by selected date
-                const dateFilteredData = data.filter(item => {
-                    const itemDate = new Date(item.Date);
-                    const selectedDateObj = new Date(selectedDate);
-
-                    // Compare only the date parts (ignore time)
-                    const isSameDate =
-                        itemDate.getFullYear() === selectedDateObj.getFullYear() &&
-                        itemDate.getMonth() === selectedDateObj.getMonth() &&
-                        itemDate.getDate() === selectedDateObj.getDate();
-
-                    return isSameDate;
-                });
-
-                console.log('📊 After date filter:', dateFilteredData.length);
-
-                // Then filter by shift time
-                const shiftFilteredData = filterDataByShiftTime(
-                    dateFilteredData,
-                    activeShiftConfig.startTime,
-                    activeShiftConfig.endTime
-                );
-
-                console.log('📊 After shift time filter:', shiftFilteredData.length);
-
-                return shiftFilteredData;
-            }, [
-                data.length,
-                selectedDate,
-                activeShiftConfig.startTime,
-                activeShiftConfig.endTime,
-                JSON.stringify(data.map(item => ({ Date: item.Date, submissionId: item.submissionId })))
-            ]);
-
-
-            const calculateDistributedTarget = (targetParts, cycleTimeSeconds, shiftStart, shiftEnd, breaks) => {
-                console.log('⚡ Calculating distributed target (optimized)');
-
-                // Pre-calculate constants
-                const partsPerSecond = 1 / cycleTimeSeconds;
-                const partsPerInterval = partsPerSecond * 300; // 5-minute intervals
-
-                // Parse times once
-                const [startHour, startMinute] = shiftStart.split(':').map(Number);
-                const [endHour, endMinute] = shiftEnd.split(':').map(Number);
-
-                const shiftStartMinutes = startHour * 60 + startMinute;
-                let shiftEndMinutes = endHour * 60 + endMinute;
-
-                if (shiftEndMinutes <= shiftStartMinutes) {
-                    shiftEndMinutes += 24 * 60; // Handle overnight
-                }
-
-                // Pre-process breaks into minute ranges
-                const breakRanges = breaks.map(breakItem => {
-                    const [bStartH, bStartM] = breakItem.startTime.split(':').map(Number);
-                    const [bEndH, bEndM] = breakItem.endTime.split(':').map(Number);
-                    let bStart = bStartH * 60 + bStartM;
-                    let bEnd = bEndH * 60 + bEndM;
-
-                    if (bEnd < bStart) bEnd += 24 * 60;
-
-                    return { start: bStart, end: bEnd };
-                });
-
-                const targetData = [];
-                let cumulativeParts = 0;
-
-                // Generate data points every 5 minutes
-                for (let minutes = shiftStartMinutes; minutes <= shiftEndMinutes; minutes += 5) {
-                    // Check if current time is during a break
-                    let adjustedMinutes = minutes;
-                    if (minutes >= 24 * 60) adjustedMinutes = minutes - 24 * 60;
-
-                    const isDuringBreak = breakRanges.some(range =>
-                        adjustedMinutes >= range.start && adjustedMinutes <= range.end
-                    );
-
-                    if (!isDuringBreak) {
-                        cumulativeParts += partsPerInterval;
-                    }
-
-                    // Format time
-                    const hours = Math.floor(adjustedMinutes / 60);
-                    const mins = adjustedMinutes % 60;
-                    const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-                    const period = hours >= 12 ? 'PM' : 'AM';
-                    const timeLabel = `${displayHour}:${String(mins).padStart(2, '0')} ${period}`;
-
-                    targetData.push({
-                        time: timeLabel,
-                        targetParts: Math.round(Math.min(cumulativeParts, targetParts)),
-                        actualParts: 0,
-                        isBreak: isDuringBreak
-                    });
-                }
-
-                console.log('⚡ Target data computed with', targetData.length, 'points');
-                return targetData;
-            };
-
-
-
-            // First, memoize the target line data separately (add this BEFORE combinedData)
-            const targetLineData = useMemo(() => {
-                console.log('🎯 Computing target line data (memoized)');
-                return calculateDistributedTarget(
-                    activeShiftConfig.targetParts,
-                    activeShiftConfig.cycleTimeSeconds,
-                    activeShiftConfig.startTime,
-                    activeShiftConfig.endTime,
-                    activeShiftConfig.breaks
-                );
-            }, [
-                activeShiftConfig.targetParts,
-                activeShiftConfig.cycleTimeSeconds,
-                activeShiftConfig.startTime,
-                activeShiftConfig.endTime,
-                JSON.stringify(activeShiftConfig.breaks)
-            ]);
-
-            const combinedData = useMemo(() => {
-                if (!targetLineData || !filteredShiftData) return [];
-
-                console.log('🚀 Computing combinedData (fixed version)');
-                console.log('🔍 Total filtered records:', filteredShiftData.length);
-                console.log('🔍 First data item:', filteredShiftData[0]);
-
-                // ✅ Create a time-to-submissions map
-                const timeToSubmissionsMap = new Map();
-
-                filteredShiftData.forEach((item, index) => {
-                    const date = new Date(item.Date);
-                    const hours = date.getUTCHours();
-                    const minutes = date.getUTCMinutes();
-
-                    // ✅ Round UP to nearest 5 minutes
-                    const roundedMinutes = Math.ceil(minutes / 5) * 5;
-                    let adjustedHours = hours;
-                    let finalMinutes = roundedMinutes;
-
-                    // Handle minute overflow
-                    if (roundedMinutes === 60) {
-                        adjustedHours = hours + 1;
-                        finalMinutes = 0;
-                    }
-
-                    // Convert to 12-hour format
-                    const hours12 = adjustedHours === 0 ? 12 : adjustedHours > 12 ? adjustedHours - 12 : adjustedHours;
-                    const period = adjustedHours >= 12 ? 'PM' : 'AM';
-                    const timeKey = `${hours12}:${String(finalMinutes).padStart(2, '0')} ${period}`;
-
-                    // ✅ Count submissions per time bucket
-                    const currentCount = timeToSubmissionsMap.get(timeKey) || 0;
-                    timeToSubmissionsMap.set(timeKey, currentCount + 1);
-
-                    // Debug first few items
-                    if (index < 5) {
-                        console.log(`📍 Item ${index}: Date=${item.Date}, Time bucket=${timeKey}, Count=${currentCount + 1}`);
-                    }
-                });
-
-                console.log('🗺️ Time to Submissions Map size:', timeToSubmissionsMap.size);
-                console.log('🗺️ Sample entries:', Array.from(timeToSubmissionsMap.entries()).slice(0, 10));
-
-                // ✅ Build cumulative totals
-                let cumulativeTotal = 0;
-                const result = targetLineData.map((targetPoint, index) => {
-                    const submissionsInThisBucket = timeToSubmissionsMap.get(targetPoint.time) || 0;
-
-                    // Add this bucket's submissions to the cumulative total
-                    cumulativeTotal += submissionsInThisBucket;
-
-                    const resultPoint = {
-                        ...targetPoint,
-                        actualParts: cumulativeTotal,
-                        newPartsInBucket: submissionsInThisBucket
-                    };
-
-                    // Debug first few and last few points
-                    if (index < 5 || index >= targetLineData.length - 5) {
-                        console.log(`📈 Point ${index}: time=${targetPoint.time}, newParts=${submissionsInThisBucket}, cumulative=${cumulativeTotal}`);
-                    }
-
-                    return resultPoint;
-                });
-
-                console.log('✅ Final cumulative total:', cumulativeTotal);
-                console.log('✅ Expected total:', filteredShiftData.length);
-
-                return result;
-            }, [
-                targetLineData,
-                filteredShiftData.length,
-                filteredShiftData.length > 0 ? filteredShiftData[filteredShiftData.length - 1]?.Date : null
-            ]);
-
-            console.log('📈 Combined chart data:', combinedData);
-
-
-            //let cumulativeActual = 0;
-            //const cumulativeData = combinedData.map(point => {
-            //    cumulativeActual += point.actualParts;
-            //    return {
-            //        ...point,
-            //        actualParts: cumulativeActual
-            //    };
-            //});
-
-            const cumulativeData = combinedData; // No additional processing needed!
-
-            console.log('📈 Using combinedData directly (no double processing):', cumulativeData.slice(0, 5));
-
-            console.log('📈 Cumulative chart data (with running totals):', cumulativeData);
-
-            // Find data points with actual production for debugging
-            const pointsWithProduction = cumulativeData.filter(p => p.actualParts > 0);
-            console.log('📊 Time points with production:', pointsWithProduction);
-
-            if (!cumulativeData || cumulativeData.length === 0) {
+            // Loading state
+            if (shiftLoading && !shiftChartData) {
                 return (
-                    <div className="w-full max-w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
-                        <div className="text-center py-12">
-                            <div className="text-6xl mb-4">📊</div>
-                            <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
-                            <p className="text-gray-500">No production data found for the selected shift period</p>
-                        </div>
+                    <div className="w-full p-12 text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading production data...</p>
+                    </div>
+                );
+            }
+            console.log("Error", shiftError)
+            // Error state
+            if (shiftError) {
+                return (
+                    <div className="w-full p-6 bg-red-50 border border-red-200 rounded-lg">
+                        <h3 className="text-red-800 font-semibold mb-2">Error Loading Data</h3>
+                        <p className="text-red-600">{shiftError}</p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                            Retry
+                        </button>
                     </div>
                 );
             }
 
-            if (!combinedData || combinedData.length === 0) {
+            // No data state
+            if (!shiftChartData || shiftChartData.length === 0) {
                 return (
-                    <div className="w-full max-w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
-                        <div className="text-center py-12">
-                            <div className="text-6xl mb-4">📊</div>
-                            <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
-                            <p className="text-gray-500">No production data found for the selected shift period</p>
-                        </div>
+                    <div className="w-full p-12 text-center bg-gray-50 rounded-lg">
+                        <div className="text-6xl mb-4">📊</div>
+                        <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
+                        <p className="text-gray-500">No production data found for the selected shift period</p>
                     </div>
                 );
             }
 
-            console.log('📈 Cumulative chart data:', cumulativeData);
-
-            // Validation
-            if (!cumulativeData || cumulativeData.length === 0) {
-                return (
-                    <div className="w-full max-w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
-                        <div className="text-center py-12">
-                            <div className="text-6xl mb-4">📊</div>
-                            <h3 className="text-xl font-medium text-gray-600 mb-2">No Data Available</h3>
-                            <p className="text-gray-500">No production data found for the selected shift period</p>
-                        </div>
-                    </div>
-                );
-            }
-
-            const currentProduction = filteredShiftData.length; // This should be 1308
-            const efficiency = Math.round((currentProduction / activeShiftConfig.targetParts) * 100);
-
-            const shiftInfo = SHIFT_CONFIG[activeShiftConfig.shift]; // ✅ FIXED: Use activeShiftConfig.shift
-
-            // Rest of shift chart JSX with updated configuration visibility
+            // Render shift chart with backend data
             return (
                 <div className={`w-full max-w-full mx-auto ${isMaximized ? 'h-screen flex flex-col' : 'p-6 bg-white rounded-lg shadow-lg'}`}>
 
+                    {/* Header Section */}
                     {!isMaximized && (
                         <div className="flex justify-between items-center mb-6">
+                            {/* Date Picker Toggle */}
                             {!isMaximized && (
                                 <button
                                     onClick={onToggleDatePicker}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${showDatePicker
-                                        ? 'bg-green-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            ? 'bg-green-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                 >
                                     📅 {showDatePicker ? 'Hide' : 'Show'} Date Picker
                                 </button>
                             )}
+
+                            {/* ✅ Date Picker Input */}
                             {showDatePicker && (
                                 <div className="flex items-center gap-2">
                                     <label className="font-medium text-gray-700">Select Date:</label>
                                     <input
                                         type="date"
                                         value={selectedDate}
-                                        onChange={(e) => onDateChange(e.target.value)}
+                                        onChange={(e) => {
+                                            console.log('📅 Date changed to:', e.target.value);
+                                            onDateChange(e.target.value);
+                                        }}
                                         max={new Date().toISOString().split('T')[0]}
                                         className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                     <button
-                                        onClick={() => onDateChange(new Date().toISOString().split('T')[0])}
+                                        onClick={() => {
+                                            const today = new Date().toISOString().split('T')[0];
+                                            console.log('📅 Reset to today:', today);
+                                            onDateChange(today);
+                                        }}
                                         className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium text-sm"
                                     >
                                         Today
                                     </button>
                                 </div>
                             )}
+
+                            {/* Current Date Display */}
                             <div className="text-center text-sm text-gray-600">
                                 Showing data for: <span className="font-semibold">
                                     {new Date(selectedDate).toLocaleDateString('en-US', {
@@ -1712,164 +1583,11 @@ const ReportCharts = React.memo(({
                                     })}
                                 </span>
                             </div>
-                            <div>
-                                {!title && (
-                                    <>
-                                        <h1 className="text-3xl font-bold text-gray-800">Shift Production Monitor</h1>
-                                        <p className="text-gray-600">Real-time production tracking • Filtered by shift time</p>
-                                    </>
-                                )}
-                                {title && <ChartTitle />}
-                            </div>
 
-                            {showConfiguration !== false && (
-                                <button
-                                    onClick={() => setConfigVisible(!configVisible)}
-                                    onFocus={() => {
-                                        if (configTimer) clearTimeout(configTimer);
-                                    }}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                                >
-                                    <Settings size={20} />
-                                    {configVisible ? 'Hide' : 'Show'} Configuration
-                                </button>
-                            )}
+                            {/* Rest of header... */}
                         </div>
                     )}
 
-                    {!isFullscreenMode && showConfiguration && showConfig && (
-                        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-gray-800">Configuration</h3>
-                                <button
-                                    onClick={resetToDefaults}
-                                    className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                >
-                                    Reset to Defaults
-                                </button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                {/* Shift Selection */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        <Users className="inline w-4 h-4 mr-1" />
-                                        Select Shift
-                                    </label>
-                                    <select
-                                        value={shiftConfig.shift}
-                                        onChange={(e) => handleShiftChange(e.target.value)}
-                                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    >
-                                        <option value="A">Shift A (06:00 - 14:30)</option>
-                                        <option value="B">Shift B (14:30 - 23:00)</option>
-                                        <option value="C">Shift C (23:00 - 06:00)</option>
-                                    </select>
-                                </div>
-
-                                {/* Shift Timing */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        <Clock className="inline w-4 h-4 mr-1" />
-                                        Shift Start Time
-                                    </label>
-                                    <input
-                                        type="time"
-                                        value={shiftConfig.startTime}
-                                        onChange={(e) => setShiftConfig({ ...shiftConfig, startTime: e.target.value })}
-                                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    />
-                                    <label className="block text-sm font-medium text-gray-700 mt-2 mb-2">Shift End Time</label>
-                                    <input
-                                        type="time"
-                                        value={shiftConfig.endTime}
-                                        onChange={(e) => setShiftConfig({ ...shiftConfig, endTime: e.target.value })}
-                                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
-
-                                {/* Production Settings */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        <Target className="inline w-4 h-4 mr-1" />
-                                        Target Parts per Shift
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={shiftConfig.targetParts}
-                                        onChange={(e) => setShiftConfig({ ...shiftConfig, targetParts: parseInt(e.target.value) })}
-                                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    />
-                                    <label className="block text-sm font-medium text-gray-700 mt-2 mb-2">
-                                        <Timer className="inline w-4 h-4 mr-1" />
-                                        Cycle Time (seconds)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        step="0.01" // Allows decimal values
-                                        value={shiftConfig.cycleTimeSeconds}
-                                        onChange={(e) =>
-                                            setShiftConfig({
-                                                ...shiftConfig,
-                                                cycleTimeSeconds: parseFloat(e.target.value) || 0, // Parse as float and handle empty input
-                                            })
-                                        }
-                                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                    />
-
-                                </div>
-
-                                {/* Break Management */}
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <label className="text-sm font-medium text-gray-700">Breaks</label>
-                                        <button
-                                            onClick={addBreak}
-                                            className="p-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
-                                        >
-                                            <Plus size={16} />
-                                        </button>
-                                    </div>
-                                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                                        {shiftConfig.breaks.map((breakItem) => (
-                                            <div key={breakItem.id} className="p-2 bg-white rounded border">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <input
-                                                        type="text"
-                                                        value={breakItem.name}
-                                                        onChange={(e) => updateBreak(breakItem.id, 'name', e.target.value)}
-                                                        className="text-xs font-medium bg-transparent border-none p-0 focus:outline-none"
-                                                    />
-                                                    <button
-                                                        onClick={() => removeBreak(breakItem.id)}
-                                                        className="text-red-500 hover:text-red-700"
-                                                    >
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-1">
-                                                    <input
-                                                        type="time"
-                                                        value={breakItem.startTime}
-                                                        onChange={(e) => updateBreak(breakItem.id, 'startTime', e.target.value)}
-                                                        className="text-xs p-1 border rounded"
-                                                    />
-                                                    <input
-                                                        type="time"
-                                                        value={breakItem.endTime}
-                                                        onChange={(e) => updateBreak(breakItem.id, 'endTime', e.target.value)}
-                                                        className="text-xs p-1 border rounded"
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Current Shift Info */}
                     {!isFullscreenMode && (
@@ -1877,7 +1595,7 @@ const ReportCharts = React.memo(({
                             <div className="flex justify-between items-center">
                                 <div>
                                     <h3 className="text-lg font-semibold text-blue-800">
-                                        {activeShiftConfig.name} [{activeShiftConfig.modelNumber}]
+                                        {activeShiftConfig.name} {activeShiftConfig.modelNumber && `[${activeShiftConfig.modelNumber}]`}
                                     </h3>
                                     <p className="text-blue-600">
                                         {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
@@ -1889,20 +1607,10 @@ const ReportCharts = React.memo(({
                                 <div className="text-right">
                                     <div className="text-sm text-blue-600">Last Updated</div>
                                     <div className="text-blue-800 font-medium">
-                                        {lastUpdate.toLocaleTimeString()}
+                                        {new Date().toLocaleTimeString()}
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
-
-                    {/* Chart Title - Show in fullscreen with different styling */}
-                    {isFullscreenMode && (
-                        <div className="text-center mb-4">
-                            <h1 className="text-4xl font-bold text-white mb-2">{title || 'Shift Production Monitor'}</h1>
-                            <p className="text-xl text-gray-300">
-                                {activeShiftConfig?.name} • Target: {activeShiftConfig?.targetParts} parts
-                            </p>
                         </div>
                     )}
 
@@ -1913,13 +1621,96 @@ const ReportCharts = React.memo(({
                             height={isFullscreenMode ? "60vh" : 500}
                         >
                             <LineChart
-                                data={cumulativeData}
+                                data={shiftChartData}
                                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                             >
                                 <CartesianGrid
                                     strokeDasharray="3 3"
                                     stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"}
                                 />
+
+                                {/* ✅ Add highlighted area for elapsed time */}
+                                {shiftChartData && (() => {
+                                    const areas = [];
+
+                                    // Find the current time point (where actual production ends)
+                                    let currentTimeIndex = -1;
+                                    for (let i = shiftChartData.length - 1; i >= 0; i--) {
+                                        if (shiftChartData[i].actualParts !== null && shiftChartData[i].actualParts !== undefined) {
+                                            currentTimeIndex = i;
+                                            break;
+                                        }
+                                    }
+
+                                    // Add elapsed time highlight (from start to current time)
+                                    if (currentTimeIndex > 0) {
+                                        areas.push(
+                                            <ReferenceArea
+                                                key="elapsed-time"
+                                                x1={shiftChartData[0].time}
+                                                x2={shiftChartData[currentTimeIndex].time}
+                                                fill="#4ade80"
+                                                fillOpacity={0.1}
+                                                label={{
+                                                    value: "Time Elapsed",
+                                                    position: "insideTopLeft",
+                                                    fill: "#16a34a",
+                                                    fontSize: 12,
+                                                    fontWeight: "bold"
+                                                }}
+                                            />
+                                        );
+                                    }
+
+                                    // Add break time highlights
+                                    let breakStart = null;
+                                    shiftChartData.forEach((point, index) => {
+                                        if (point.isBreak && breakStart === null) {
+                                            breakStart = index;
+                                        } else if (!point.isBreak && breakStart !== null) {
+                                            areas.push(
+                                                <ReferenceArea
+                                                    key={`break-${breakStart}`}
+                                                    x1={shiftChartData[breakStart].time}
+                                                    x2={shiftChartData[index - 1].time}
+                                                    fill="#ffcccc"
+                                                    fillOpacity={0.5}
+                                                    label={{
+                                                        value: "BREAK",
+                                                        position: "insideTop",
+                                                        fill: "#ff0000",
+                                                        fontSize: 11,
+                                                        fontWeight: "bold"
+                                                    }}
+                                                />
+                                            );
+                                            breakStart = null;
+                                        }
+                                    });
+
+                                    // Handle break at the end
+                                    if (breakStart !== null) {
+                                        areas.push(
+                                            <ReferenceArea
+                                                key={`break-${breakStart}`}
+                                                x1={shiftChartData[breakStart].time}
+                                                x2={shiftChartData[shiftChartData.length - 1].time}
+                                                fill="#ffcccc"
+                                                fillOpacity={0.5}
+                                                label={{
+                                                    value: "BREAK",
+                                                    position: "insideTop",
+                                                    fill: "#ff0000",
+                                                    fontSize: 11,
+                                                    fontWeight: "bold"
+                                                }}
+                                            />
+                                        );
+                                    }
+
+                                    return areas;
+                                })()}
+
                                 <XAxis
                                     dataKey="time"
                                     tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
@@ -1940,10 +1731,48 @@ const ReportCharts = React.memo(({
                                     }}
                                 />
                                 <Tooltip
-                                    contentStyle={{
-                                        backgroundColor: isFullscreenMode ? 'rgba(0,0,0,0.8)' : 'white',
-                                        border: '1px solid #ccc',
-                                        borderRadius: '8px'
+                                    content={({ active, payload }) => {
+                                        if (active && payload && payload.length) {
+                                            const data = payload[0].payload;
+                                            return (
+                                                <div style={{
+                                                    backgroundColor: 'white',
+                                                    padding: '10px',
+                                                    border: '2px solid #ccc',
+                                                    borderRadius: '8px',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                                                }}>
+                                                    <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px' }}>
+                                                        {data.time}
+                                                    </p>
+                                                    <p style={{ margin: '5px 0', color: '#82ca9d', fontSize: '13px' }}>
+                                                        Actual: {data.actualParts}
+                                                    </p>
+                                                    <p style={{ margin: '5px 0', color: '#ff7300', fontSize: '13px' }}>
+                                                        Target: {data.targetParts}
+                                                    </p>
+                                                    {data.newPartsInBucket > 0 && (
+                                                        <p style={{ margin: '5px 0', color: '#4ade80', fontSize: '13px' }}>
+                                                            New parts: +{data.newPartsInBucket}
+                                                        </p>
+                                                    )}
+                                                    {console.log("Break Data" ,data)}
+                                                    {data.isBreak && (
+                                                        <p style={{
+                                                            margin: '5px 0',
+                                                            color: '#ff0000',
+                                                            fontWeight: 'bold',
+                                                            backgroundColor: '#ffeeee',
+                                                            padding: '3px 6px',
+                                                            borderRadius: '4px'
+                                                        }}>
+                                                            ⏸️ {data.breakName || 'BREAK TIME'}  {/* ✅ Show break name */}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
+                                        return null;
                                     }}
                                 />
                                 <Legend />
@@ -1960,49 +1789,42 @@ const ReportCharts = React.memo(({
                                 />
 
                                 {/* Actual Production Line */}
+                                {/*<Line*/}
+                                {/*    type="monotone"*/}
+                                {/*    dataKey="actualParts"*/}
+                                {/*    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"}*/}
+                                {/*    strokeWidth={isFullscreenMode ? 5 : 3}*/}
+                                {/*    name="Actual Production (Cumulative)"*/}
+                                {/*    connectNulls={false}*/}
+                                {/*    dot={{*/}
+                                {/*        fill: isFullscreenMode ? '#4ade80' : '#82ca9d',*/}
+                                {/*        strokeWidth: 3,*/}
+                                {/*        r: isFullscreenMode ? 6 : 3*/}
+                                {/*    }}*/}
+                                {/*/>*/}
                                 <Line
                                     type="monotone"
                                     dataKey="actualParts"
-                                    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"}
-                                    strokeWidth={isFullscreenMode ? 5 : 3}
+                                    stroke="#82ca9d"
+                                    strokeWidth={3}
                                     name="Actual Production (Cumulative)"
-                                    connectNulls={false}
-                                    dot={{
-                                        fill: isFullscreenMode ? '#4ade80' : '#82ca9d',
-                                        strokeWidth: 3,
-                                        r: isFullscreenMode ? 6 : 3
-                                    }}
+                                    connectNulls={false}    // Do not connect points with nulls!
+                                    dot={{ fill: '#82ca9d', strokeWidth: 3, r: 3 }}
                                 />
+
                             </LineChart>
+
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Production Summary Cards */}
-                    {!isFullscreenMode && (
+                    {/* Production Summary Cards - Using Backend Metrics */}
+                    {!isFullscreenMode && shiftMetrics && (
                         <div className="mb-6">
-                            {/* Model Name Header - Only show if model name exists */}
-                            {/*{activeShiftConfig?.modelNumber && (*/}
-                            {/*    <div className="mb-4 bg-gradient-to-r from-indigo-600 to-purple-600 p-4 rounded-lg shadow-lg">*/}
-                            {/*        <div className="flex items-center justify-center gap-3">*/}
-                            {/*            <Target className="text-white" size={16} />*/}
-                            {/*            <div>*/}
-                            {/*                <div className="text-sm text-indigo-200 uppercase tracking-wide">*/}
-                            {/*                    Current Model*/}
-                            {/*                </div>*/}
-                            {/*                <div className="font-bold text-white">*/}
-                            {/*                    {activeShiftConfig.modelNumber}*/}
-                            {/*                </div>*/}
-                            {/*            </div>*/}
-                            {/*        </div>*/}
-                            {/*    </div>*/}
-                            {/*)}*/}
-
-                            {/* Production Metrics with conditional title */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {/* Current Production */}
                                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
                                     <div className="text-2xl font-bold text-blue-800">
-                                        {currentProduction}
+                                        {shiftMetrics.currentProduction}
                                     </div>
                                     <div className="text-sm text-blue-600">
                                         {activeShiftConfig?.modelNumber
@@ -2015,7 +1837,7 @@ const ReportCharts = React.memo(({
                                 {/* Target Parts */}
                                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
                                     <div className="text-2xl font-bold text-orange-800">
-                                        {activeShiftConfig.targetParts}
+                                        {shiftMetrics.targetParts}
                                     </div>
                                     <div className="text-sm text-orange-600">
                                         Target Parts
@@ -2023,23 +1845,23 @@ const ReportCharts = React.memo(({
                                 </div>
 
                                 {/* Efficiency */}
-                                <div className={`bg-gradient-to-br p-4 rounded-lg border ${efficiency >= 100
+                                <div className={`bg-gradient-to-br p-4 rounded-lg border ${shiftMetrics.efficiency >= 100
                                         ? 'from-green-50 to-green-100 border-green-200'
-                                        : efficiency >= 80
+                                        : shiftMetrics.efficiency >= 80
                                             ? 'from-yellow-50 to-yellow-100 border-yellow-200'
                                             : 'from-red-50 to-red-100 border-red-200'
                                     }`}>
-                                    <div className={`text-2xl font-bold ${efficiency >= 100
+                                    <div className={`text-2xl font-bold ${shiftMetrics.efficiency >= 100
                                             ? 'text-green-800'
-                                            : efficiency >= 80
+                                            : shiftMetrics.efficiency >= 80
                                                 ? 'text-yellow-800'
                                                 : 'text-red-800'
                                         }`}>
-                                        {efficiency}%
+                                        {shiftMetrics.efficiency}%
                                     </div>
-                                    <div className={`text-sm ${efficiency >= 100
+                                    <div className={`text-sm ${shiftMetrics.efficiency >= 100
                                             ? 'text-green-600'
-                                            : efficiency >= 80
+                                            : shiftMetrics.efficiency >= 80
                                                 ? 'text-yellow-600'
                                                 : 'text-red-600'
                                         }`}>
@@ -2050,7 +1872,7 @@ const ReportCharts = React.memo(({
                                 {/* Remaining Parts */}
                                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
                                     <div className="text-2xl font-bold text-purple-800">
-                                        {Math.max(0, activeShiftConfig.targetParts - currentProduction)}
+                                        {shiftMetrics.remainingParts}
                                     </div>
                                     <div className="text-sm text-purple-600">
                                         Remaining Parts
@@ -2059,7 +1881,8 @@ const ReportCharts = React.memo(({
                             </div>
                         </div>
                     )}
-                    {/* Marquee Message - News Channel Style */}
+
+                    {/* Marquee Message */}
                     {activeShiftConfig?.message && (
                         <div className="mb-6">
                             <div className="marquee-container rounded-lg shadow-lg">
@@ -2075,14 +1898,13 @@ const ReportCharts = React.memo(({
                         </div>
                     )}
 
-
                     {/* Break Schedule */}
-                    {isMaximized && (
+                    {isMaximized && activeShiftConfig.breaks && activeShiftConfig.breaks.length > 0 && (
                         <div className="p-4 bg-gray-50 rounded-lg">
                             <h4 className="text-sm font-semibold text-gray-700 mb-3">Break Schedule</h4>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                {shiftConfig.breaks.map((breakItem, index) => (
-                                    <div key={breakItem.id} className="flex items-center p-2 bg-white rounded border">
+                                {activeShiftConfig.breaks.map((breakItem, idx) => (
+                                    <div key={breakItem.id || idx} className="flex items-center p-2 bg-white rounded border">
                                         <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
                                         <div>
                                             <div className="text-sm font-medium">{breakItem.name}</div>
@@ -2095,9 +1917,10 @@ const ReportCharts = React.memo(({
                             </div>
                         </div>
                     )}
-                    {/* Rest of your summary cards */}
                 </div>
             );
+
+
 
         default:
             return (
@@ -2110,13 +1933,32 @@ const ReportCharts = React.memo(({
     }
 }, (prevProps, nextProps) => {
     // Return TRUE to PREVENT re-render, FALSE to ALLOW re-render
+
+    // For shift charts, be more selective about what triggers re-renders
+    if (prevProps.type === 'shift' && nextProps.type === 'shift') {
+        const shouldSkipRender = (
+            prevProps.selectedShiftPeriod === nextProps.selectedShiftPeriod &&
+            prevProps.selectedDate === nextProps.selectedDate &&
+            prevProps.showDatePicker === nextProps.showDatePicker &&
+            prevProps.isMaximized === nextProps.isMaximized &&
+            prevProps.isFullscreenMode === nextProps.isFullscreenMode &&
+            // Only check shift config essentials, not every detail
+            prevProps.shiftConfigs?.[0]?.shift === nextProps.shiftConfigs?.[0]?.shift &&
+            prevProps.shiftConfigs?.[0]?.startTime === nextProps.shiftConfigs?.[0]?.startTime &&
+            prevProps.shiftConfigs?.[0]?.endTime === nextProps.shiftConfigs?.[0]?.endTime
+        );
+        return shouldSkipRender;
+    }
+
+    // For other chart types, use original logic
     const shouldSkipRender = (
         prevProps.type === nextProps.type &&
         prevProps.data.length === nextProps.data.length &&
         prevProps.selectedShiftPeriod === nextProps.selectedShiftPeriod &&
-        prevProps.refreshTrigger === nextProps.refreshTrigger && // ✅ ADD THIS
+        prevProps.refreshTrigger === nextProps.refreshTrigger &&
+        prevProps.selectedDate === nextProps.selectedDate &&
+        prevProps.showDatePicker === nextProps.showDatePicker &&
         prevProps.shiftConfigs?.[0]?.targetParts === nextProps.shiftConfigs?.[0]?.targetParts &&
-        // CRITICAL: Check if the last data point changed
         prevProps.data[prevProps.data.length - 1]?.Date === nextProps.data[nextProps.data.length - 1]?.Date &&
         prevProps.data[prevProps.data.length - 1]?.Count === nextProps.data[nextProps.data.length - 1]?.Count
     );
