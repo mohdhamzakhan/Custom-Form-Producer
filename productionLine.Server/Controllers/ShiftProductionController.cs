@@ -181,9 +181,9 @@ namespace productionLine.Server.Controllers
 
 
         private async Task<List<FormSubmission>> GetFilteredSubmissions(
-     DateTime selectedDate,
-     string startTime,
-     string endTime)
+    DateTime selectedDate,
+    string startTime,
+    string endTime)
         {
             try
             {
@@ -194,33 +194,48 @@ namespace productionLine.Server.Controllers
                 var queryDate = selectedDate.Date;
 
                 Console.WriteLine($"[GetFilteredSubmissions] Querying for date: {queryDate:yyyy-MM-dd}");
-                Console.WriteLine($"[GetFilteredSubmissions] Start: {startMinutes} min, End: {endMinutes} min");
+                Console.WriteLine($"[GetFilteredSubmissions] Start: {startMinutes} min ({startTime}), End: {endMinutes} min ({endTime})");
 
                 var isOvernightShift = endMinutes <= startMinutes;
 
-                // ✅ Query with exact date match
-                IQueryable<FormSubmission> query = _context.FormSubmissions
-                    .AsNoTracking()
-                    .Where(s => s.SubmittedAt.Date == queryDate);
+                IQueryable<FormSubmission> query;
 
                 if (isOvernightShift)
                 {
                     Console.WriteLine($"[GetFilteredSubmissions] Overnight shift detected");
-                    endMinutes += 24 * 60;
 
-                    query = query.Where(s =>
-                        (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes) ||
-                        (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes - 24 * 60 &&
-                         s.SubmittedAt.Date == queryDate.AddDays(1))
-                    );
+                    // ✅ For overnight shifts, we need submissions from TWO dates:
+                    // 1. Current date from startTime onwards (e.g., 11:00 PM onwards on Day 1)
+                    // 2. Next date until endTime (e.g., until 6:00 AM on Day 2)
+
+                    var nextDate = queryDate.AddDays(1);
+
+                    query = _context.FormSubmissions
+                        .AsNoTracking()
+                        .Where(s =>
+                            // Part 1: Same day, time >= startTime
+                            (s.SubmittedAt.Date == queryDate &&
+                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes)
+                            ||
+                            // Part 2: Next day, time <= endTime
+                            (s.SubmittedAt.Date == nextDate &&
+                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes)
+                        );
+
+                    Console.WriteLine($"[GetFilteredSubmissions] Querying overnight: {queryDate:yyyy-MM-dd} from {startTime} + {nextDate:yyyy-MM-dd} until {endTime}");
                 }
                 else
                 {
                     Console.WriteLine($"[GetFilteredSubmissions] Regular shift");
-                    query = query.Where(s =>
-                        s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes &&
-                        s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes
-                    );
+
+                    // ✅ Regular shift: same day, between startTime and endTime
+                    query = _context.FormSubmissions
+                        .AsNoTracking()
+                        .Where(s =>
+                            s.SubmittedAt.Date == queryDate &&
+                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes &&
+                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes
+                        );
                 }
 
                 var result = await query
@@ -232,7 +247,14 @@ namespace productionLine.Server.Controllers
                     })
                     .ToListAsync();
 
-                Console.WriteLine($"[GetFilteredSubmissions] Found {result.Count} submissions for {queryDate:yyyy-MM-dd}");
+                Console.WriteLine($"[GetFilteredSubmissions] Found {result.Count} submissions");
+
+                // ✅ Log sample submissions for debugging
+                if (result.Any())
+                {
+                    Console.WriteLine($"[GetFilteredSubmissions] First submission: {result.First().SubmittedAt:yyyy-MM-dd HH:mm:ss}");
+                    Console.WriteLine($"[GetFilteredSubmissions] Last submission: {result.Last().SubmittedAt:yyyy-MM-dd HH:mm:ss}");
+                }
 
                 return result;
             }
@@ -242,6 +264,7 @@ namespace productionLine.Server.Controllers
                 throw;
             }
         }
+
 
 
 
@@ -368,41 +391,56 @@ namespace productionLine.Server.Controllers
         //   }
 
         private List<ChartDataPoint> BuildCombinedChartData(
-     List<FormSubmission> submissions,
-     List<ChartDataPoint> targetLineData)
+    List<FormSubmission> submissions,
+    List<ChartDataPoint> targetLineData)
         {
-            // Compute the last actual minute from submissions
-            int? lastActualMinute = null;
-            if (submissions.Any())
-            {
-                var lastSubmission = submissions.Max(s => s.SubmittedAt);
-                lastActualMinute = lastSubmission.Hour * 60 + lastSubmission.Minute;
-            }
+            int ToBucket(int totalMinutes) => (totalMinutes / 5) * 5;
 
+            // Map submission time "rounded buckets" to counts
             var timeToSubmissionsMap = new Dictionary<string, int>();
             foreach (var submission in submissions)
             {
-                var date = submission.SubmittedAt;
-                var totalMinutes = date.Hour * 60 + date.Minute;
-                var roundedMinutes = (int)Math.Round(totalMinutes / 5.0) * 5;
+                var totalMinutes = submission.SubmittedAt.Hour * 60 + submission.SubmittedAt.Minute;
+                var bucketMinutes = ToBucket(totalMinutes);
 
-                if (roundedMinutes >= 24 * 60)
-                {
-                    roundedMinutes = 0;
-                }
+                if (bucketMinutes >= 24 * 60) bucketMinutes = 0;
 
-                var timeKey = FormatTime(roundedMinutes);
+                var timeKey = FormatTime(bucketMinutes);
                 timeToSubmissionsMap[timeKey] = timeToSubmissionsMap.GetValueOrDefault(timeKey) + 1;
+            }
+
+            // Bucket edges
+            int? firstSubmissionBucket = null, lastSubmissionBucket = null;
+            if (submissions.Any())
+            {
+                var buckets = submissions
+                    .Select(s => ToBucket(s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute))
+                    .OrderBy(m => m)
+                    .ToList();
+
+                firstSubmissionBucket = buckets.First();
+                lastSubmissionBucket = buckets.Last();
+            }
+
+            // Window logic: handles both normal and overnight shifts
+            bool IsWithinWindow(int start, int end, int value)
+            {
+                if (start <= end)
+                    return value >= start && value <= end;
+                else
+                    return value >= start || value <= end; // Overnight
             }
 
             var cumulativeTotal = 0;
             var productionHeldDuringBreak = 0;
             var pendingPartsFromBreak = 0;
             var result = new List<ChartDataPoint>();
+            bool anyActualSet = false;
 
             for (int idx = 0; idx < targetLineData.Count; idx++)
             {
                 var targetPoint = targetLineData[idx];
+
                 var timeParts = targetPoint.Time.Split(new[] { ':', ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 int chartHour = int.Parse(timeParts[0]);
                 string meridiem = timeParts[2];
@@ -410,13 +448,30 @@ namespace productionLine.Server.Controllers
                 if (meridiem == "AM" && chartHour == 12) chartHour = 0;
                 int chartMinute = int.Parse(timeParts[1]);
                 int chartTotalMinute = chartHour * 60 + chartMinute;
+                int chartBucket = ToBucket(chartTotalMinute);
 
                 var submissionsInBucket = timeToSubmissionsMap.GetValueOrDefault(targetPoint.Time, 0);
 
-                bool showActual = !lastActualMinute.HasValue || chartTotalMinute <= lastActualMinute;
+                // Conditions
+                bool beforeProduction = firstSubmissionBucket.HasValue && chartBucket < firstSubmissionBucket.Value
+                                        && !IsWithinWindow(firstSubmissionBucket.Value, lastSubmissionBucket ?? firstSubmissionBucket.Value, chartBucket);
 
+                bool inWindow = false;
+                if (firstSubmissionBucket.HasValue && lastSubmissionBucket.HasValue)
+                {
+                    inWindow = IsWithinWindow(firstSubmissionBucket.Value, lastSubmissionBucket.Value, chartBucket);
+                }
+
+                // Result
                 int? actualParts = null;
-                if (showActual)
+                int newParts = 0;
+
+                if (beforeProduction)
+                {
+                    actualParts = 0;
+                    newParts = 0;
+                }
+                else if (inWindow)
                 {
                     if (targetPoint.IsBreak)
                     {
@@ -424,6 +479,7 @@ namespace productionLine.Server.Controllers
                         if (idx > 0 && !targetLineData[idx - 1].IsBreak)
                             productionHeldDuringBreak = cumulativeTotal;
                         actualParts = productionHeldDuringBreak;
+                        newParts = submissionsInBucket;
                     }
                     else
                     {
@@ -434,24 +490,32 @@ namespace productionLine.Server.Controllers
                         }
                         cumulativeTotal += submissionsInBucket;
                         actualParts = cumulativeTotal;
+                        newParts = submissionsInBucket;
                     }
+                    anyActualSet = true;
                 }
-                // else -> actualParts remains null, so the frontend line will stop
+                else
+                {
+                    // Only null after production has started and ended (for chart gap)
+                    actualParts = anyActualSet ? (int?)null : 0;
+                    newParts = 0;
+                }
 
                 result.Add(new ChartDataPoint
                 {
                     Time = targetPoint.Time,
                     TargetParts = targetPoint.TargetParts,
-                    ActualParts = actualParts,        // << Only has value up to last submission
+                    ActualParts = actualParts,
                     IsBreak = targetPoint.IsBreak,
                     BreakName = targetPoint.BreakName,
-                    NewPartsInBucket = submissionsInBucket
+                    NewPartsInBucket = newParts
                 });
             }
+
+            Console.WriteLine($"[BuildCombinedChartData] Generated {result.Count} chart points with {result.Count(r => r.ActualParts.HasValue)} having actual data");
+
             return result;
         }
-
-
 
 
 

@@ -307,16 +307,19 @@ const filterDataByShiftTime = (data, shiftStart, shiftEnd) => {
     console.log(`🔍 Filtered ${filtered.length} items from ${data.length} total`);
     return filtered;
 };
-const parseTimeToMinutes = (timeStr) => {
-    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/);
+function parseTimeToMinutes(timeStr) {
+    // Example: "5:40 AM", "11:20 PM"
+    const match = timeStr.match(/(\d+):(\d+) (\w+)/);
     if (!match) return 0;
-    let [_, hours, minutes, period] = match;
-    hours = parseInt(hours);
-    minutes = parseInt(minutes);
-    if (period === 'PM' && hours !== 12) hours += 12;
-    if (period === 'AM' && hours === 12) hours = 0;
-    return hours * 60 + minutes;
-};
+    let [, hourStr, minuteStr, period] = match;
+    let hour = parseInt(hourStr, 10);
+    const minute = parseInt(minuteStr, 10);
+    if (period === "PM" && hour !== 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    return hour * 60 + minute;
+}
+
+
 
 const ReportCharts = React.memo(({
     data,
@@ -675,7 +678,61 @@ const ReportCharts = React.memo(({
         }
         return null;
     };
+    const calculateColumnwiseValue = (calcField, allData) => {
+        try {
+            const { formula, functionType } = calcField;
 
+            if (functionType === 'EXPRESSION') {
+                // For expression-based columnwise calculations
+                const fieldRefs = formula.match(/"([^"]+)"/g);
+                if (!fieldRefs) return 0;
+
+                // Calculate totals for each field referenced in the formula
+                let processedFormula = formula;
+
+                fieldRefs.forEach(match => {
+                    const fieldName = match.replace(/"/g, '');
+
+                    // Sum up all values for this field across all data
+                    const totalValue = allData.reduce((sum, item) => {
+                        const value = parseFloat(item[fieldName]) || 0;
+                        return sum + value;
+                    }, 0);
+
+                    processedFormula = processedFormula.replace(match, totalValue.toString());
+                });
+
+                // Evaluate the expression with totals
+                const result = Function('"use strict"; return (' + processedFormula + ')')();
+                return typeof result === 'number' && !isNaN(result) ? result : 0;
+            }
+
+            // Handle other function types (SUM, AVG, etc.)
+            const fieldRefs = formula.match(/"([^"]+)"/g);
+            if (!fieldRefs || fieldRefs.length === 0) return 0;
+
+            const fieldName = fieldRefs[0].replace(/"/g, '');
+            const allValues = allData.map(item => parseFloat(item[fieldName]) || 0);
+
+            switch (functionType) {
+                case 'SUM':
+                    return allValues.reduce((sum, val) => sum + val, 0);
+                case 'AVG':
+                    return allValues.length > 0 ? allValues.reduce((sum, val) => sum + val, 0) / allValues.length : 0;
+                case 'MIN':
+                    return allValues.length > 0 ? Math.min(...allValues) : 0;
+                case 'MAX':
+                    return allValues.length > 0 ? Math.max(...allValues) : 0;
+                case 'COUNT':
+                    return allValues.length;
+                default:
+                    return 0;
+            }
+        } catch (error) {
+            console.error('Error calculating columnwise value:', error);
+            return 0;
+        }
+    };
     const findCalculatedFieldValue = (metric, item, calculatedFields, allData) => {
         if (metric.startsWith('calc_')) {
             const calcId = metric.replace('calc_', '');
@@ -743,28 +800,28 @@ const ReportCharts = React.memo(({
         }
     };
 
-    const filteredShiftData = useMemo(() => {
-        const filtered = filterDataByShiftTime(
-            data,
-            activeShiftConfig.startTime,
-            activeShiftConfig.endTime
-        );
+    //const filteredShiftData = useMemo(() => {
+    //    const filtered = filterDataByShiftTime(
+    //        data,
+    //        activeShiftConfig.startTime,
+    //        activeShiftConfig.endTime
+    //    );
 
-        // ✅ ADD THIS DEBUG
-        console.log('🔍 Filtered data sample:', filtered.slice(0, 5).map(item => ({
-            Date: item.Date,
-            Count: item.Count,
-            formatted: new Date(item.Date).toLocaleTimeString()
-        })));
+    //    // ✅ ADD THIS DEBUG
+    //    console.log('🔍 Filtered data sample:', filtered.slice(0, 5).map(item => ({
+    //        Date: item.Date,
+    //        Count: item.Count,
+    //        formatted: new Date(item.Date).toLocaleTimeString()
+    //    })));
 
-        return filtered;
-    }, [
-        data.length,
-        activeShiftConfig.startTime,
-        activeShiftConfig.endTime,
-        // Track both last Date AND last Count to detect new submissions
-        data.length > 0 ? `${data[data.length - 1]?.Date}_${data[data.length - 1]?.Count}` : null
-    ]);
+    //    return filtered;
+    //}, [
+    //    data.length,
+    //    activeShiftConfig.startTime,
+    //    activeShiftConfig.endTime,
+    //    // Track both last Date AND last Count to detect new submissions
+    //    data.length > 0 ? `${data[data.length - 1]?.Date}_${data[data.length - 1]?.Count}` : null
+    //]);
 
 
 
@@ -1364,12 +1421,58 @@ const ReportCharts = React.memo(({
             const [shiftMetrics, setShiftMetrics] = useState(null);
             const [shiftLoading, setShiftLoading] = useState(true);
             const [shiftError, setShiftError] = useState(null);
+            function parseTimeToMinutes(timeStr) {
+                // Example: "5:40 AM", "11:20 PM"
+                const match = timeStr.match(/(\d+):(\d+) (\w+)/);
+                if (!match) return 0;
+                let [, hourStr, minuteStr, period] = match;
+                let hour = parseInt(hourStr, 10);
+                const minute = parseInt(minuteStr, 10);
+                if (period === "PM" && hour !== 12) hour += 12;
+                if (period === "AM" && hour === 12) hour = 0;
+                return hour * 60 + minute;
+            }
+            function isViewingToday(selectedDate) {
+                const today = new Date();
+                const selected = new Date(selectedDate);
+                return (
+                    today.getFullYear() === selected.getFullYear() &&
+                    today.getMonth() === selected.getMonth() &&
+                    today.getDate() === selected.getDate()
+                );
+            }
+
+            function getCurrentChartBucketIndex(shiftChartData) {
+                const now = new Date();
+                let hour = now.getHours();
+                let minute = now.getMinutes();
+                minute = Math.floor(minute / 5) * 5;
+                if (minute === 60) {
+                    minute = 0;
+                    hour = (hour + 1) % 24;
+                }
+                let period = hour >= 12 ? "PM" : "AM";
+                let displayHour = hour % 12;
+                if (displayHour === 0) displayHour = 12;
+                const nowLabel = `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
+                const nowBucketMinutes = parseTimeToMinutes(nowLabel);
+
+                let idx = -1;
+                for (let i = 0; i < shiftChartData.length; i++) {
+                    if (parseTimeToMinutes(shiftChartData[i].time) <= nowBucketMinutes) {
+                        idx = i;
+                    }
+                }
+                if (idx === -1) idx = shiftChartData.length - 1;
+                return idx;
+            }
 
             // Fetch data from backend API
             useEffect(() => {
                 // ✅ Clear any existing intervals when dependencies change
                 let interval = null;
                 let isCancelled = false;
+                
 
                 const fetchShiftData = async () => {
                     // ✅ Don't fetch if this effect was cancelled
@@ -1583,8 +1686,6 @@ const ReportCharts = React.memo(({
                                     })}
                                 </span>
                             </div>
-
-                            {/* Rest of header... */}
                         </div>
                     )}
 
@@ -1634,13 +1735,41 @@ const ReportCharts = React.memo(({
                                     const areas = [];
 
                                     // Find the current time point (where actual production ends)
-                                    let currentTimeIndex = -1;
-                                    for (let i = shiftChartData.length - 1; i >= 0; i--) {
-                                        if (shiftChartData[i].actualParts !== null && shiftChartData[i].actualParts !== undefined) {
-                                            currentTimeIndex = i;
-                                            break;
+                                    function getCurrentTimeBucketIndex(shiftChartData) {
+                                        const now = new Date();
+                                        let chartHour = now.getHours();
+                                        let chartMinute = now.getMinutes();
+                                        chartMinute = Math.floor(chartMinute / 5) * 5;
+                                        if (chartMinute === 60) {
+                                            chartMinute = 0;
+                                            chartHour = (chartHour + 1) % 24;
                                         }
+                                        let meridiem = chartHour >= 12 ? "PM" : "AM";
+                                        let displayHour = chartHour % 12;
+                                        if (displayHour === 0) displayHour = 12;
+                                        const nowKey = `${displayHour}:${chartMinute.toString().padStart(2, '0')} ${meridiem}`;
+
+                                        // Find the index for now
+                                        let idx = shiftChartData.findIndex(d => d.time === nowKey);
+                                        if (idx === -1) {
+                                            // Use closest previous bucket
+                                            for (let i = shiftChartData.length - 1; i >= 0; i--) {
+                                                if (shiftChartData[i].time <= nowKey) {
+                                                    idx = i;
+                                                    break;
+                                                }
+                                            }
+                                            if (idx === -1) idx = shiftChartData.length - 1; // fallback
+                                        }
+                                        return idx;
                                     }
+
+                                    const currentTimeIndex = isViewingToday(selectedDate)
+                                        ? getCurrentChartBucketIndex(shiftChartData)
+                                        : shiftChartData.length - 1;
+
+
+
 
                                     // Add elapsed time highlight (from start to current time)
                                     if (currentTimeIndex > 0) {
@@ -1649,21 +1778,24 @@ const ReportCharts = React.memo(({
                                                 key="elapsed-time"
                                                 x1={shiftChartData[0].time}
                                                 x2={shiftChartData[currentTimeIndex].time}
-                                                fill="#4ade80"
-                                                fillOpacity={0.1}
+                                                fill={isFullscreenMode ? "#4ade80" : "#4ade80"}
+                                                fillOpacity={isFullscreenMode ? 0.3 : 0.1}
                                                 label={{
                                                     value: "Time Elapsed",
                                                     position: "insideTopLeft",
-                                                    fill: "#16a34a",
-                                                    fontSize: 12,
+                                                    fill: isFullscreenMode ? "#ffffff" : "#16a34a",
+                                                    fontSize: isFullscreenMode ? 18 : 12,
                                                     fontWeight: "bold"
                                                 }}
                                             />
+
                                         );
                                     }
 
                                     // Add break time highlights
                                     let breakStart = null;
+
+
                                     shiftChartData.forEach((point, index) => {
                                         if (point.isBreak && breakStart === null) {
                                             breakStart = index;
@@ -1674,12 +1806,12 @@ const ReportCharts = React.memo(({
                                                     x1={shiftChartData[breakStart].time}
                                                     x2={shiftChartData[index - 1].time}
                                                     fill="#ffcccc"
-                                                    fillOpacity={0.5}
+                                                    fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
                                                     label={{
                                                         value: "BREAK",
                                                         position: "insideTop",
-                                                        fill: "#ff0000",
-                                                        fontSize: 11,
+                                                        fill: isFullscreenMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
+                                                        fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
                                                         fontWeight: "bold"
                                                     }}
                                                 />
@@ -1696,12 +1828,12 @@ const ReportCharts = React.memo(({
                                                 x1={shiftChartData[breakStart].time}
                                                 x2={shiftChartData[shiftChartData.length - 1].time}
                                                 fill="#ffcccc"
-                                                fillOpacity={0.5}
+                                                fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
                                                 label={{
                                                     value: "BREAK",
                                                     position: "insideTop",
-                                                    fill: "#ff0000",
-                                                    fontSize: 11,
+                                                    fill: isFullscreenMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
+                                                    fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
                                                     fontWeight: "bold"
                                                 }}
                                             />
@@ -1710,6 +1842,7 @@ const ReportCharts = React.memo(({
 
                                     return areas;
                                 })()}
+
 
                                 <XAxis
                                     dataKey="time"
@@ -1805,12 +1938,31 @@ const ReportCharts = React.memo(({
                                 <Line
                                     type="monotone"
                                     dataKey="actualParts"
-                                    stroke="#82ca9d"
-                                    strokeWidth={3}
-                                    name="Actual Production (Cumulative)"
-                                    connectNulls={false}    // Do not connect points with nulls!
-                                    dot={{ fill: '#82ca9d', strokeWidth: 3, r: 3 }}
+                                    stroke="#10b981"
+                                    strokeWidth={isFullscreenMode ? 4 : 3}
+                                    name="Actual Production"
+                                    connectNulls={false}
+                                    dot={(props) => {
+                                        const { cx, cy, payload } = props;
+                                        // Only show dot if there's real production (not zero, not null)
+                                        if (payload.actualParts && payload.actualParts > 0) {
+                                            return (
+                                                <circle
+                                                    cx={cx}
+                                                    cy={cy}
+                                                    r={isFullscreenMode ? 6 : 4}
+                                                    fill="#10b981"
+                                                    stroke="#fff"
+                                                    strokeWidth={2}
+                                                />
+                                            );
+                                        }
+                                        return null;
+                                    }}
+                                    activeDot={{ r: isFullscreenMode ? 8 : 6 }}
                                 />
+
+
 
                             </LineChart>
 
@@ -1827,10 +1979,7 @@ const ReportCharts = React.memo(({
                                         {shiftMetrics.currentProduction}
                                     </div>
                                     <div className="text-sm text-blue-600">
-                                        {activeShiftConfig?.modelNumber
-                                            ? `${activeShiftConfig.modelNumber} - Current Production`
-                                            : 'Current Production'
-                                        }
+                                        Current Production
                                     </div>
                                 </div>
 
@@ -1865,7 +2014,7 @@ const ReportCharts = React.memo(({
                                                 ? 'text-yellow-600'
                                                 : 'text-red-600'
                                         }`}>
-                                        Efficiency
+                                        Current %
                                     </div>
                                 </div>
 
@@ -1888,10 +2037,6 @@ const ReportCharts = React.memo(({
                             <div className="marquee-container rounded-lg shadow-lg">
                                 <div className="marquee-text">
                                     <span className="mr-8">🔔</span>
-                                    {activeShiftConfig.message}
-                                    <span className="ml-8 mr-8">🔔</span>
-                                    {activeShiftConfig.message}
-                                    <span className="ml-8 mr-8">🔔</span>
                                     {activeShiftConfig.message}
                                 </div>
                             </div>
