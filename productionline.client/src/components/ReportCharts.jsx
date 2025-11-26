@@ -335,6 +335,7 @@ const ReportCharts = React.memo(({
     shiftConfigs: passedShiftConfig = null,
     isFullscreenMode = false,
     isMaximized = false,
+    templateId,
     lastUpdate = new Date(),
     selectedDate = new Date().toISOString().split('T')[0],  // ✅ ADD THIS
     showDatePicker = false,  // ✅ ADD THIS
@@ -547,81 +548,6 @@ const ReportCharts = React.memo(({
             return () => clearTimeout(timer);
         }
     }, [configVisible, type, showConfiguration]);
-
-    const generateSimulatedData = () => {
-        const targetData = calculateTargetLine(
-            shiftConfig.startTime,
-            shiftConfig.endTime,
-            shiftConfig.targetParts,
-            shiftConfig.cycleTimeSeconds,
-            shiftConfig.breaks
-        );
-
-        return targetData.map((point, index) => {
-            // Simulate actual production with some variance
-            const efficiency = 0.85 + Math.random() * 0.3; // 85-115% efficiency
-            const actualParts = Math.round(point.targetParts * efficiency);
-            return {
-                ...point,
-                actualParts: Math.max(0, actualParts)
-            };
-        });
-    };
-
-
-    // Shift configuration handlers
-    const handleShiftChange = (newShift) => {
-        const shiftDefaults = SHIFT_CONFIG[newShift];
-        setShiftConfig({
-            ...shiftConfig,
-            shift: newShift,
-            startTime: shiftDefaults.startTime,
-            endTime: shiftDefaults.endTime,
-            breaks: shiftDefaults.defaultBreaks.map(b => ({ ...b }))
-        });
-        setCurrentShift(newShift);
-    };
-
-    const addBreak = () => {
-        const newBreak = {
-            id: Date.now(),
-            startTime: "12:00",
-            endTime: "12:15",
-            name: `Break ${shiftConfig.breaks.length + 1}`
-        };
-        setShiftConfig({
-            ...shiftConfig,
-            breaks: [...shiftConfig.breaks, newBreak]
-        });
-    };
-
-    const removeBreak = (breakId) => {
-        setShiftConfig({
-            ...shiftConfig,
-            breaks: shiftConfig.breaks.filter(b => b.id !== breakId)
-        });
-    };
-
-    const updateBreak = (breakId, field, value) => {
-        setShiftConfig({
-            ...shiftConfig,
-            breaks: shiftConfig.breaks.map(b =>
-                b.id === breakId ? { ...b, [field]: value } : b
-            )
-        });
-    };
-
-    const resetToDefaults = () => {
-        const shiftDefaults = SHIFT_CONFIG[currentShift];
-        setShiftConfig({
-            shift: currentShift,
-            startTime: shiftDefaults.startTime,
-            endTime: shiftDefaults.endTime,
-            targetParts: 100,
-            cycleTimeSeconds: 30,
-            breaks: shiftDefaults.defaultBreaks.map(b => ({ ...b }))
-        });
-    };
 
     // Validate props for non-shift charts
     if (type !== 'shift') {
@@ -1498,7 +1424,8 @@ const ReportCharts = React.memo(({
                             endTime: activeShiftConfig.endTime,
                             breaks: JSON.stringify(
                                 (activeShiftConfig.breaks || []).filter(b => b.startTime && b.endTime)
-                            )
+                            ),
+                            formId: templateId
                         });
 
                         console.log('📤 Request URL:', `/api/ShiftProduction/chart-data?${params.toString()}`);
@@ -1716,7 +1643,41 @@ const ReportCharts = React.memo(({
                     )}
 
                     {/* Production Chart */}
-                    <div className={`mb-6 ${isFullscreenMode ? 'flex-1' : ''}`}>
+                    <div className={`mb-6 ${isFullscreenMode ? 'flex-1' : ''}`} style={{
+                        transform: 'translateZ(0)',
+                        WebkitTransform: 'translateZ(0)',
+                        willChange: 'transform',
+                        position: 'relative'
+                    }}>
+                        {/* ✅ Add "Time Elapsed" label as HTML element */}
+                        {shiftChartData && (() => {
+                            const currentTimeIndex = isViewingToday(selectedDate)
+                                ? getCurrentChartBucketIndex(shiftChartData)
+                                : shiftChartData.length - 1;
+
+                            if (currentTimeIndex > 0) {
+                                return (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: isFullscreenMode ? '40px' : '30px',
+                                        left: isFullscreenMode ? '60px' : '40px',
+                                        zIndex: 10,
+                                        backgroundColor: isFullscreenMode ? 'rgba(74, 222, 128, 0.9)' : 'rgba(74, 222, 128, 0.7)',
+                                        color: isFullscreenMode ? '#ffffff' : '#16a34a',
+                                        padding: '6px 12px',
+                                        borderRadius: '6px',
+                                        fontWeight: 'bold',
+                                        fontSize: isFullscreenMode ? '18px' : '14px',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                        pointerEvents: 'none'
+                                    }}>
+                                        ⏱️ Time Elapsed
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
+
                         <ResponsiveContainer
                             width="100%"
                             height={isFullscreenMode ? "60vh" : 500}
@@ -1732,37 +1693,7 @@ const ReportCharts = React.memo(({
 
                                 {/* ✅ Add highlighted area for elapsed time */}
                                 {shiftChartData && (() => {
-                                    const areas = [];
-
-                                    // Find the current time point (where actual production ends)
-                                    function getCurrentTimeBucketIndex(shiftChartData) {
-                                        const now = new Date();
-                                        let chartHour = now.getHours();
-                                        let chartMinute = now.getMinutes();
-                                        chartMinute = Math.floor(chartMinute / 5) * 5;
-                                        if (chartMinute === 60) {
-                                            chartMinute = 0;
-                                            chartHour = (chartHour + 1) % 24;
-                                        }
-                                        let meridiem = chartHour >= 12 ? "PM" : "AM";
-                                        let displayHour = chartHour % 12;
-                                        if (displayHour === 0) displayHour = 12;
-                                        const nowKey = `${displayHour}:${chartMinute.toString().padStart(2, '0')} ${meridiem}`;
-
-                                        // Find the index for now
-                                        let idx = shiftChartData.findIndex(d => d.time === nowKey);
-                                        if (idx === -1) {
-                                            // Use closest previous bucket
-                                            for (let i = shiftChartData.length - 1; i >= 0; i--) {
-                                                if (shiftChartData[i].time <= nowKey) {
-                                                    idx = i;
-                                                    break;
-                                                }
-                                            }
-                                            if (idx === -1) idx = shiftChartData.length - 1; // fallback
-                                        }
-                                        return idx;
-                                    }
+                                    const areas = [];                            
 
                                     const currentTimeIndex = isViewingToday(selectedDate)
                                         ? getCurrentChartBucketIndex(shiftChartData)
@@ -1780,8 +1711,8 @@ const ReportCharts = React.memo(({
                                                 x2={shiftChartData[currentTimeIndex].time}
                                                 fill={isFullscreenMode ? "#4ade80" : "#4ade80"}
                                                 fillOpacity={isFullscreenMode ? 0.3 : 0.1}
+                                                ifOverflow="visible"
                                                 label={{
-                                                    value: "Time Elapsed",
                                                     position: "insideTopLeft",
                                                     fill: isFullscreenMode ? "#ffffff" : "#16a34a",
                                                     fontSize: isFullscreenMode ? 18 : 12,

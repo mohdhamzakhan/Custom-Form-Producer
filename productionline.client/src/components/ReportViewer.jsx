@@ -708,6 +708,7 @@ export default function EnhancedReportViewer() {
                                     currentShift={getCurrentShift()}
                                     showConfiguration={false}
                                     shiftConfigs={chart.shiftConfigs}
+                                    templateId={templateId}
                                     isMaximized={maximizedChart === chart.id}
                                     refreshTrigger={refreshTrigger}
                                     selectedDate={selectedDate}  // ✅ ADD THIS

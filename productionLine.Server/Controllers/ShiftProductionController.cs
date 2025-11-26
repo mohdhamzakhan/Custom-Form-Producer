@@ -29,7 +29,8 @@ namespace productionLine.Server.Controllers
     [FromQuery] double cycleTimeSeconds,
     [FromQuery] string startTime,
     [FromQuery] string endTime,
-    [FromQuery] string breaks)
+    [FromQuery] string breaks,
+    [FromQuery] int formId)
         {
             try
             {
@@ -37,6 +38,8 @@ namespace productionLine.Server.Controllers
                 Console.WriteLine($"  Date: {selectedDate:yyyy-MM-dd} (parsed from query)");
                 Console.WriteLine($"  Date kind: {selectedDate.Kind}");
                 Console.WriteLine($"  Shift: {shift}");
+
+                int form = _context.ReportTemplates.Where(x => x.Id == formId).Select(y => y.FormId).FirstOrDefault();
 
                 // ✅ Ensure we're using the date portion only
                 var queryDate = selectedDate.Date;
@@ -111,7 +114,7 @@ namespace productionLine.Server.Controllers
 
                 // Fetch and filter submissions by date and shift time
                 Console.WriteLine($"[ShiftProduction] Fetching submissions from database...");
-                var submissions = await GetFilteredSubmissions(selectedDate, startTime, endTime);
+                var submissions = await GetFilteredSubmissions(selectedDate, startTime, endTime, form);
                 Console.WriteLine($"[ShiftProduction] Found {submissions.Count} submissions");
 
                 // Calculate target line data
@@ -183,7 +186,8 @@ namespace productionLine.Server.Controllers
         private async Task<List<FormSubmission>> GetFilteredSubmissions(
     DateTime selectedDate,
     string startTime,
-    string endTime)
+    string endTime,
+    int formID)
         {
             try
             {
@@ -214,12 +218,13 @@ namespace productionLine.Server.Controllers
                         .AsNoTracking()
                         .Where(s =>
                             // Part 1: Same day, time >= startTime
-                            (s.SubmittedAt.Date == queryDate &&
+                            ((s.SubmittedAt.Date == queryDate &&
                              s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes)
                             ||
                             // Part 2: Next day, time <= endTime
                             (s.SubmittedAt.Date == nextDate &&
-                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes)
+                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes))
+                             && s.FormId == formID
                         );
 
                     Console.WriteLine($"[GetFilteredSubmissions] Querying overnight: {queryDate:yyyy-MM-dd} from {startTime} + {nextDate:yyyy-MM-dd} until {endTime}");
@@ -234,7 +239,7 @@ namespace productionLine.Server.Controllers
                         .Where(s =>
                             s.SubmittedAt.Date == queryDate &&
                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes &&
-                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes
+                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes && s.FormId == formID
                         );
                 }
 
@@ -476,11 +481,18 @@ namespace productionLine.Server.Controllers
                     if (targetPoint.IsBreak)
                     {
                         pendingPartsFromBreak += submissionsInBucket;
+
+                        // Capture cumulative at break start only
                         if (idx > 0 && !targetLineData[idx - 1].IsBreak)
+                        {
                             productionHeldDuringBreak = cumulativeTotal;
-                        actualParts = productionHeldDuringBreak;
+                        }
+
+                        // Actual reflects production during break
+                        actualParts = productionHeldDuringBreak + pendingPartsFromBreak;
                         newParts = submissionsInBucket;
                     }
+                    
                     else
                     {
                         if (idx > 0 && targetLineData[idx - 1].IsBreak)
