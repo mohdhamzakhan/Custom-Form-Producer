@@ -44,7 +44,7 @@ public class ChartConfig
 
     // Keep for backward compatibility
     [JsonIgnore] // Don't serialize this anymore
-    public ShiftConfigDto ShiftConfig { get; set; }
+    public ShiftConfigDto? ShiftConfig { get; set; }
 }
 
 public class PositionDto

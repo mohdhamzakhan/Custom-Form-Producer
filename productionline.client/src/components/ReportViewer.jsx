@@ -29,6 +29,11 @@ export default function EnhancedReportViewer() {
     const [isRefreshing, setIsRefreshing] = useState(false); // Add this state
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(() => {
+        // Initialize from localStorage
+        const saved = localStorage.getItem('darkMode');
+        return saved === 'true';
+    });
 
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -44,6 +49,38 @@ export default function EnhancedReportViewer() {
         // Shift C: 11:00 PM to 6:00 AM next day
         return 'C';
     };
+
+    useEffect(() => {
+        const savedMode = localStorage.getItem('darkMode');
+        if (savedMode === 'true') {
+            setIsDarkMode(true);
+            document.documentElement.classList.add('dark');
+        }
+    }, []);
+
+    useEffect(() => {
+        console.log('🎨 Dark mode changed:', isDarkMode); // Debug log
+
+        if (isDarkMode) {
+            document.body.classList.add('dark-mode');
+            document.documentElement.classList.add('dark-mode');
+        } else {
+            document.body.classList.remove('dark-mode');
+            document.documentElement.classList.remove('dark-mode');
+        }
+    }, [isDarkMode]);
+
+    const toggleDarkMode = () => {
+        console.log('🔄 Toggling dark mode from:', isDarkMode); // Debug log
+
+        setIsDarkMode(prev => {
+            const newMode = !prev;
+            console.log('✅ New dark mode:', newMode); // Debug log
+            localStorage.setItem('darkMode', newMode.toString());
+            return newMode;
+        });
+    };
+
 
     useEffect(() => {
         const fetchTemplate = async () => {
@@ -503,45 +540,70 @@ export default function EnhancedReportViewer() {
         );
     };
 
-    const renderViewControls = () => (
-        <div className="view-controls">
-            <button
-                onClick={() => setDisplayMode("table")}
-                className={displayMode === 'table' ? 'active' : ''}
-            >
-                📊 Table
-            </button>
-            <button
-                onClick={() => setDisplayMode("charts")}
-                className={displayMode === 'charts' ? 'active' : ''}
-            >
-                📈 Charts ({chartConfigs.length})
-            </button>
-            <button
-                onClick={() => setDisplayMode("dashboard")}
-                className={displayMode === 'dashboard' ? 'active' : ''}
-            >
-                🎯 Dashboard
-            </button>
+    const renderViewControls = () => {
+        console.log('🎨 Rendering view controls, isDarkMode:', isDarkMode); // Debug log
 
-            {displayMode === 'table' && (
-                <>
-                    <button
-                        onClick={() => setViewMode("expanded")}
-                        className={viewMode === 'expanded' ? 'active' : ''}
-                    >
-                        📋 Expanded
-                    </button>
-                    <button
-                        onClick={() => setViewMode("grouped")}
-                        className={viewMode === 'grouped' ? 'active' : ''}
-                    >
-                        📑 Grouped
-                    </button>
-                </>
-            )}
-        </div>
-    );
+        return (
+            <div className="view-controls">
+                {/* Dark Mode Toggle - MUST BE FIRST */}
+                <button
+                    onClick={() => {
+                        console.log('🖱️ Dark mode button clicked'); // Debug log
+                        toggleDarkMode();
+                    }}
+                    className={`dark-mode-toggle ${isDarkMode ? 'active' : ''}`}
+                    style={{
+                        backgroundColor: isDarkMode ? '#fbbf24' : '#374151',
+                        color: isDarkMode ? '#1f2937' : 'white',
+                        border: `2px solid ${isDarkMode ? '#f59e0b' : '#4b5563'}`,
+                        fontWeight: 'bold',
+                        padding: '10px 16px',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                    }}
+                >
+                    {isDarkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
+                </button>
+
+                {/* Rest of your existing buttons */}
+                <button
+                    onClick={() => setDisplayMode("table")}
+                    className={displayMode === 'table' ? 'active' : ''}
+                >
+                    📊 Table
+                </button>
+                <button
+                    onClick={() => setDisplayMode("charts")}
+                    className={displayMode === 'charts' ? 'active' : ''}
+                >
+                    📈 Charts ({chartConfigs.length})
+                </button>
+                <button
+                    onClick={() => setDisplayMode("dashboard")}
+                    className={displayMode === 'dashboard' ? 'active' : ''}
+                >
+                    🎯 Dashboard
+                </button>
+
+                {displayMode === 'table' && (
+                    <>
+                        <button
+                            onClick={() => setViewMode("expanded")}
+                            className={viewMode === 'expanded' ? 'active' : ''}
+                        >
+                            📋 Expanded
+                        </button>
+                        <button
+                            onClick={() => setViewMode("grouped")}
+                            className={viewMode === 'grouped' ? 'active' : ''}
+                        >
+                            📑 Grouped
+                        </button>
+                    </>
+                )}
+            </div>
+        );
+    };
 
     const renderExpandedTable = () => {
         return renderExpandedTableWithSummary(reportData, summaryRows, selectedFields, fields);
@@ -594,10 +656,14 @@ export default function EnhancedReportViewer() {
 
         if (chartConfigs.length === 0) {
             return (
-                <div className="text-center py-12 bg-gray-50 rounded">
+                <div className={`text-center py-12 rounded ${isDarkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-50 text-gray-600'  // ✅ ADD THIS
+                    }`}>
                     <div className="text-6xl mb-4">📊</div>
-                    <h3 className="text-xl font-medium text-gray-600 mb-2">No Charts Configured</h3>
-                    <p className="text-gray-500">Charts need to be configured in the report designer.</p>
+                    <h3 className={`text-xl font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-600'  // ✅ ADD THIS
+                        }`}>No Charts Configured</h3>
+                    <p className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>  {/* ✅ ADD THIS */}
+                        Charts need to be configured in the report designer.
+                    </p>
                 </div>
             );
         }
@@ -640,85 +706,127 @@ export default function EnhancedReportViewer() {
 
                     {/* Shift Period Selector - Show when not maximized */}
                     {!maximizedChart && (
-                        <div className="mb-6 flex justify-center items-center gap-4 bg-white p-4 rounded-lg shadow">
-                            <label className="font-medium text-gray-700">View Period:</label>
+                        <div className={`mb-6 flex justify-center items-center gap-4 bg-white p-4 rounded-lg shadow${isDarkMode ? 'bg-gray-800' : 'bg-white'  // ✅ ADD THIS
+                            }`}>
+                            <label className={`font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'  // ✅ ADD THIS
+                                }`}>View Period:</label>
                             <div className="flex gap-2">
-                                <button onClick={() => setSelectedShiftPeriod('current')}
-                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'current' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                <button
+                                    onClick={() => setSelectedShiftPeriod('current')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'current'
+                                            ? 'bg-blue-600 text-white'
+                                            : isDarkMode
+                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'  // ✅ DARK MODE
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'  // ✅ LIGHT MODE
+                                        }`}
+                                >
                                     Current Shift ({getCurrentShift()})
                                 </button>
-                                <button onClick={() => setSelectedShiftPeriod('A')}
-                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'A' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                {/* Apply same pattern to all shift buttons */}
+                                <button
+                                    onClick={() => setSelectedShiftPeriod('A')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'A'
+                                            ? 'bg-blue-600 text-white'
+                                            : isDarkMode
+                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
                                     Shift A
                                 </button>
-                                <button onClick={() => setSelectedShiftPeriod('B')}
-                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'B' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                <button
+                                    onClick={() => setSelectedShiftPeriod('B')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'B'
+                                            ? 'bg-blue-600 text-white'
+                                            : isDarkMode
+                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
                                     Shift B
                                 </button>
-                                <button onClick={() => setSelectedShiftPeriod('C')}
-                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'C' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                <button
+                                    onClick={() => setSelectedShiftPeriod('C')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'C'
+                                            ? 'bg-blue-600 text-white'
+                                            : isDarkMode
+                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
                                     Shift C
                                 </button>
-                                <button onClick={() => setSelectedShiftPeriod('fullday')}
-                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'fullday' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                <button
+                                    onClick={() => setSelectedShiftPeriod('fullday')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'fullday'
+                                            ? 'bg-green-600 text-white'
+                                            : isDarkMode
+                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                >
                                     Full Day (24h)
                                 </button>
                             </div>
-                        </div>
-                    )}
+                        </div >
+                    )
+                    }
 
                     {/* Render shift charts with maximize button */}
-                    {shiftCharts
-                        .filter(chart => !maximizedChart || chart.id === maximizedChart)
-                        .map((chart, index) => (
-                            <div key={`${chart.id}-${index}`}
-                                className={`shift-chart-container ${maximizedChart === chart.id ? 'chart-maximized' : ''} ${maximizedChart ? 'mt-16' : 'mb-8'}`}>
-                                {/* Maximize button - only show when not maximized */}
-                                {!maximizedChart && (
-                                    <div className="chart-header-controls">
-                                        <button
-                                            onClick={() => handleMaximizeChart(chart.id)}
-                                            className="maximize-chart-btn"
-                                            title="Maximize chart"
-                                        >
-                                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                    d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                )}
-                                {console.log('=== ENHANCED REPORT VIEWER DATA DEBUG ===')}
-                                {console.log('reportData length:', reportData.length)}
-                                {console.log('chartData length:', chartData.length)}
-                                {console.log('chartData sample:', chartData.slice(0, 2))}
-                                {console.log('Is shift chart?', chart.type === 'shift')}
-                                {console.log('Data being passed to ReportCharts:', chartData)}
+                    {
+                        shiftCharts
+                            .filter(chart => !maximizedChart || chart.id === maximizedChart)
+                            .map((chart, index) => (
+                                <div key={`${chart.id}-${index}`}
+                                    className={`shift-chart-container ${maximizedChart === chart.id ? 'chart-maximized' : ''} ${maximizedChart ? 'mt-16' : 'mb-8'}`}>
+                                    {/* Maximize button - only show when not maximized */}
+                                    {!maximizedChart && (
+                                        <div className="chart-header-controls">
+                                            <button
+                                                onClick={() => handleMaximizeChart(chart.id)}
+                                                className="maximize-chart-btn"
+                                                title="Maximize chart"
+                                            >
+                                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                        d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    )}
+                                    {console.log('=== ENHANCED REPORT VIEWER DATA DEBUG ===')}
+                                    {console.log('reportData length:', reportData.length)}
+                                    {console.log('chartData length:', chartData.length)}
+                                    {console.log('chartData sample:', chartData.slice(0, 2))}
+                                    {console.log('Is shift chart?', chart.type === 'shift')}
+                                    {console.log('Data being passed to ReportCharts:', chartData)}
 
-                                <ReportCharts
-                                    data={chartData}
-                                    metrics={chart.metrics}
-                                    type={chart.type}
-                                    xField={chart.xField}
-                                    submissionId="submissionId"
-                                    title={chart.title || `Shift Production Chart ${index + 1}`}
-                                    comboConfig={chart.comboConfig}
-                                    calculatedFields={calculatedFields}
-                                    selectedShiftPeriod={selectedShiftPeriod}
-                                    currentShift={getCurrentShift()}
-                                    showConfiguration={false}
-                                    shiftConfigs={chart.shiftConfigs}
-                                    templateId={templateId}
-                                    isMaximized={maximizedChart === chart.id}
-                                    refreshTrigger={refreshTrigger}
-                                    selectedDate={selectedDate}  // ✅ ADD THIS
-                                    showDatePicker={showDatePicker && !maximizedChart}  // ✅ CHANGE THIS LINE
-                                    onDateChange={handleDateChange}  // ✅ ADD THIS
-                                    onToggleDatePicker={() => setShowDatePicker(!showDatePicker)}  // ✅ ADD THIS
-                                />
-                            </div>
-                        ))}
-                </div>
+                                    <ReportCharts
+                                        data={chartData}
+                                        metrics={chart.metrics}
+                                        type={chart.type}
+                                        xField={chart.xField}
+                                        submissionId="submissionId"
+                                        title={chart.title || `Shift Production Chart ${index + 1}`}
+                                        comboConfig={chart.comboConfig}
+                                        calculatedFields={calculatedFields}
+                                        selectedShiftPeriod={selectedShiftPeriod}
+                                        currentShift={getCurrentShift()}
+                                        showConfiguration={false}
+                                        shiftConfigs={chart.shiftConfigs}
+                                        templateId={templateId}
+                                        isMaximized={maximizedChart === chart.id}
+                                        refreshTrigger={refreshTrigger}
+                                        selectedDate={selectedDate}  // ✅ ADD THIS
+                                        showDatePicker={showDatePicker && !maximizedChart}  // ✅ CHANGE THIS LINE
+                                        onDateChange={handleDateChange}  // ✅ ADD THIS
+                                        onToggleDatePicker={() => setShowDatePicker(!showDatePicker)}  // ✅ ADD THIS
+                                        isDarkMode={isDarkMode} // ✅ ADD THIS PROP
+                                    />
+                                </div>
+                            ))
+                    }
+                </div >
             );
         }
 
@@ -1778,21 +1886,429 @@ export default function EnhancedReportViewer() {
 
     if (error) return <div className="error">{error}</div>;
 
+    const darkModeStyles = `
+/* ============================================
+   DARK MODE STYLES - FIXED VERSION
+   ============================================ */
+
+/* Base dark mode class */
+body.dark-mode,
+html.dark-mode,
+.dark-mode {
+    background-color: #111827 !important;
+    color: #f3f4f6 !important;
+}
+
+/* Report viewer wrapper */
+.report-viewer-wrapper.dark-mode {
+    background-color: #111827 !important;
+    color: #f3f4f6 !important;
+    min-height: 100vh;
+}
+
+.report-viewer-wrapper.light-mode {
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+}
+
+/* Viewer heading */
+.dark-mode .viewer-heading {
+    color: #f3f4f6 !important;
+}
+
+/* Filter section */
+.dark-mode .filter-section {
+    background-color: #1f2937 !important;
+    border: 1px solid #374151 !important;
+}
+
+.dark-mode .filter-section h3 {
+    color: #f3f4f6 !important;
+}
+
+.dark-mode .filter-section label {
+    color: #d1d5db !important;
+}
+
+.dark-mode .filter-section input,
+.dark-mode .filter-section select {
+    background-color: #374151 !important;
+    color: #f3f4f6 !important;
+    border: 1px solid #4b5563 !important;
+}
+
+.dark-mode .filter-section input::placeholder {
+    color: #9ca3af !important;
+}
+
+/* Stats card */
+.dark-mode .stats-card {
+    background-color: #1f2937 !important;
+    border: 1px solid #374151 !important;
+}
+
+.dark-mode .stat-number {
+    color: #60a5fa !important;
+}
+
+/* View controls */
+.dark-mode .view-controls {
+    background-color: #1f2937 !important;
+    padding: 12px !important;
+    border-radius: 8px !important;
+}
+
+.dark-mode .view-controls button {
+    background-color: #374151 !important;
+    color: #d1d5db !important;
+    border: 1px solid #4b5563 !important;
+}
+
+.dark-mode .view-controls button:hover {
+    background-color: #4b5563 !important;
+    color: #f3f4f6 !important;
+}
+
+.dark-mode .view-controls button.active {
+    background-color: #3b82f6 !important;
+    color: white !important;
+}
+
+/* Dark mode toggle button specific styles */
+.dark-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 2px solid #e5e7eb !important;
+}
+
+.light-mode .dark-mode-toggle {
+    background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+    color: white !important;
+    border-color: #374151 !important;
+}
+
+.light-mode .dark-mode-toggle:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dark-mode .dark-mode-toggle {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+    color: #1f2937 !important;
+    border-color: #f59e0b !important;
+}
+
+.dark-mode .dark-mode-toggle:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+}
+
+/* Report table */
+.dark-mode .report-table,
+.dark-mode .table-container {
+    background-color: #1f2937 !important;
+}
+
+.dark-mode .report-table {
+    border: 1px solid #374151 !important;
+}
+
+.dark-mode .report-table thead {
+    background-color: #374151 !important;
+}
+
+.dark-mode .report-table th {
+    color: #f3f4f6 !important;
+    border: 1px solid #4b5563 !important;
+    background-color: #374151 !important;
+}
+
+.dark-mode .report-table td {
+    color: #d1d5db !important;
+    border: 1px solid #374151 !important;
+    background-color: #1f2937 !important;
+}
+
+.dark-mode .report-table tbody tr:hover {
+    background-color: #374151 !important;
+}
+
+.dark-mode .report-table tbody tr:hover td {
+    background-color: #374151 !important;
+}
+
+/* Chart containers */
+.dark-mode .chart-container,
+.dark-mode .shift-chart-container {
+    background-color: #1f2937 !important;
+    border: 1px solid #374151 !important;
+    border-radius: 12px !important;
+    padding: 20px !important;
+}
+
+.dark-mode .dashboard-chart-item {
+    background-color: #1f2937 !important;
+    border: 1px solid #374151 !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+}
+
+/* Main content area */
+.dark-mode .main-content {
+    background-color: #111827 !important;
+}
+
+/* Grouped view */
+.dark-mode .group {
+    background-color: #1f2937 !important;
+    border: 1px solid #374151 !important;
+}
+
+.dark-mode .group-header {
+    background-color: #374151 !important;
+    border-bottom: 1px solid #4b5563 !important;
+}
+
+.dark-mode .group-header h4 {
+    color: #f3f4f6 !important;
+}
+
+/* Summary rows */
+.dark-mode .summary-divider {
+    background: linear-gradient(to right, #374151, #4b5563) !important;
+}
+
+.dark-mode .summary-divider-cell {
+    border-top: 2px solid #4b5563 !important;
+    border-bottom: 1px solid #4b5563 !important;
+}
+
+.dark-mode .summary-row {
+    background-color: #422006 !important;
+}
+
+.dark-mode .summary-row:hover {
+    background-color: #451a03 !important;
+}
+
+.dark-mode .summary-row td {
+    background-color: #422006 !important;
+}
+
+.dark-mode .summary-row:hover td {
+    background-color: #451a03 !important;
+}
+
+.dark-mode .summary-label {
+    border-right: 1px solid #92400e !important;
+}
+
+.dark-mode .summary-type {
+    color: #fcd34d !important;
+}
+
+.dark-mode .summary-result {
+    color: #fde68a !important;
+}
+
+.dark-mode .summary-formula {
+    color: #a3a3a3 !important;
+}
+
+/* Buttons */
+.dark-mode button {
+    background-color: #374151 !important;
+    color: #d1d5db !important;
+    border: 1px solid #4b5563 !important;
+}
+
+.dark-mode button:hover {
+    background-color: #4b5563 !important;
+}
+
+.dark-mode .bg-blue-600 {
+    background-color: #2563eb !important;
+}
+
+.dark-mode .bg-red-100 {
+    background-color: #7f1d1d !important;
+}
+
+/* Maximize controls */
+.dark-mode .maximize-controls-overlay {
+    background: transparent !important;
+}
+
+.dark-mode .refresh-btn {
+    background-color: #2563eb !important;
+}
+
+.dark-mode .minimize-btn {
+    background-color: #dc2626 !important;
+}
+
+.dark-mode .maximize-chart-btn {
+    background-color: #374151 !important;
+    border-color: #4b5563 !important;
+    color: #d1d5db !important;
+}
+
+/* Empty states and messages */
+.dark-mode .text-center.py-12,
+.dark-mode .text-center.bg-gray-50 {
+    background-color: #1f2937 !important;
+    color: #d1d5db !important;
+}
+
+/* Scrollbars for dark mode */
+.dark-mode ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+    background-color: #1f2937;
+}
+
+.dark-mode ::-webkit-scrollbar-track {
+    background: #1f2937;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 6px;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* Mini grid table */
+.dark-mode .mini-grid-table {
+    background-color: #374151 !important;
+    border-color: #4b5563 !important;
+}
+
+.dark-mode .mini-grid-table th {
+    background-color: #4b5563 !important;
+    color: #f3f4f6 !important;
+}
+
+.dark-mode .mini-grid-table td {
+    color: #d1d5db !important;
+    border-color: #4b5563 !important;
+}
+
+/* Shift period selector buttons */
+.dark-mode .mb-6.flex button {
+    background-color: #374151 !important;
+    color: #d1d5db !important;
+}
+
+.dark-mode .mb-6.flex button.bg-blue-600 {
+    background-color: #2563eb !important;
+    color: white !important;
+}
+
+/* Override any white backgrounds */
+.dark-mode div,
+.dark-mode section,
+.dark-mode article {
+    background-color: inherit;
+}
+
+/* Ensure proper text color inheritance */
+.dark-mode * {
+    color: inherit;
+}
+
+.dark-mode h1, .dark-mode h2, .dark-mode h3, 
+.dark-mode h4, .dark-mode h5, .dark-mode h6 {
+    color: #f3f4f6 !important;
+}
+
+.dark-mode p {
+    color: #d1d5db !important;
+}
+
+/* Animations */
+.report-viewer-wrapper,
+.report-viewer-wrapper * {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Maximized mode dark mode fixes */
+.dark-mode .maximized-mode {
+    background-color: #111827 !important;
+}
+
+.dark-mode .chart-maximized {
+    background-color: #1f2937 !important;
+}
+
+/* Shift period selector in maximized view */
+.dark-mode .maximize-controls-overlay {
+    background: transparent !important;
+}
+
+/* Date picker in dark mode */
+.dark-mode input[type="date"] {
+    background-color: #374151 !important;
+    color: #f3f4f6 !important;
+    border-color: #4b5563 !important;
+}
+
+.dark-mode input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+}
+
+/* Summary cards - ensure proper colors */
+.dark-mode .bg-gradient-to-br.from-orange-50 {
+    background: linear-gradient(to bottom right, #7c2d12, #9a3412) !important;
+}
+
+.dark-mode .border-orange-200 {
+    border-color: #c2410c !important;
+}
+
+.dark-mode .text-orange-800 {
+    color: #fdba74 !important;
+}
+
+.dark-mode .text-orange-600 {
+    color: #fb923c !important;
+}
+
+/* Fix for "No Charts Configured" message */
+.dark-mode .text-gray-600 {
+    color: #d1d5db !important;
+}
+
+.dark-mode .text-gray-500 {
+    color: #9ca3af !important;
+}
+
+/* Ensure all text inherits proper color */
+.dark-mode .text-center {
+    color: inherit !important;
+}
+`;
+
     return (
         <>
-            <style>{shiftChartStyles + maximizeStyles}</style>
-            <div className="report-viewer-wrapper">
-                {/*{isRefreshing && !loading && (*/}
-                {/*    <div className="refresh-indicator">*/}
-                {/*        <div className="flex items-center gap-2 text-blue-600 text-sm">*/}
-                {/*            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">*/}
-                {/*                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>*/}
-                {/*                <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>*/}
-                {/*            </svg>*/}
-                {/*            */}{/*Updating data...*/}
-                {/*        </div>*/}
-                {/*    </div>*/}
-                {/*)}*/}
+            <style>{shiftChartStyles + maximizeStyles + darkModeStyles}</style>
+            <div
+                className={`report-viewer-wrapper ${isDarkMode ? 'dark-mode' : 'light-mode'}`}
+                style={{
+                    backgroundColor: isDarkMode ? '#111827' : '#ffffff',
+                    minHeight: '100vh',
+                    color: isDarkMode ? '#f3f4f6' : '#1f2937'
+                }}
+            >
+                {/* ✅ ADD DEBUG INDICATOR */}
                 <h2 className="viewer-heading">📊 Enhanced Report Viewer</h2>
 
                 {filters.length > 0 && (

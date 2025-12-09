@@ -76,7 +76,7 @@ namespace productionLine.Server.Controllers
                 Console.WriteLine($"  Breaks: {breaks ?? "null"}");
 
                 // Build cache key
-                var cacheKey = $"shift_chart_{selectedDate:yyyyMMdd}_{shift}_{targetParts}_{cycleTimeSeconds}";
+                var cacheKey = $"shift_chart_{formId}_{selectedDate:yyyyMMdd}_{shift}_{targetParts}_{cycleTimeSeconds}";
 
                 // Try to get from cache (30 seconds)
                 if (_cache.TryGetValue(cacheKey, out ShiftChartResponse cachedData))

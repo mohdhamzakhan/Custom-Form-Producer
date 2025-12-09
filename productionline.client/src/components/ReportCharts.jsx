@@ -43,6 +43,8 @@ export const CHART_TYPES = {
     }
 };
 
+// Add this after your existing useState declarations
+
 const SHIFT_CONFIG = {
     A: {
         name: "Shift A",
@@ -77,20 +79,23 @@ const SHIFT_CONFIG = {
 
 const marqueeStyle = `
   @keyframes marquee {
-    0% {
-      transform: translateX(100%);
-    }
-    100% {
-      transform: translateX(-100%);
-    }
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
   }
   
   .marquee-container {
     overflow: hidden;
     white-space: nowrap;
-    background: linear-gradient(90deg, #1e40af 0%, #3b82f6 100%);
     padding: 8px 0;
     position: relative;
+  }
+  
+  .marquee-container.light {
+    background: linear-gradient(90deg, #1e40af 0%, #3b82f6 100%);
+  }
+  
+  .marquee-container.dark {
+    background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
   }
   
   .marquee-text {
@@ -102,6 +107,7 @@ const marqueeStyle = `
     font-size: 1.125rem;
   }
 `;
+
 
 
 const getCurrentShift = () => {
@@ -340,7 +346,8 @@ const ReportCharts = React.memo(({
     selectedDate = new Date().toISOString().split('T')[0],  // ✅ ADD THIS
     showDatePicker = false,  // ✅ ADD THIS
     onDateChange = () => { },  // ✅ ADD THIS
-    onToggleDatePicker = () => { }  // ✅ ADD THIS
+    onToggleDatePicker = () => { },  // ✅ ADD THIS
+    isDarkMode = false  // ✅ ADD THIS
 }) => {
     console.log('=== ReportCharts Debug ===');
     console.log('selectedShiftPeriod:', selectedShiftPeriod);
@@ -362,6 +369,56 @@ const ReportCharts = React.memo(({
             console.log(`  Shift ${index}: ${config.shift} - Target: ${config.targetParts}`);
         });
     }
+
+    const theme = {
+        // Background colors
+        bg: {
+            primary: isDarkMode ? 'bg-gray-900' : 'bg-white',
+            secondary: isDarkMode ? 'bg-gray-800' : 'bg-gray-50',
+            card: isDarkMode ? 'bg-gray-800' : 'bg-white',
+            empty: isDarkMode ? 'bg-gray-800' : 'bg-gray-50',
+        },
+        // Text colors
+        text: {
+            primary: isDarkMode ? 'text-white' : 'text-gray-800',
+            secondary: isDarkMode ? 'text-gray-300' : 'text-gray-600',
+            muted: isDarkMode ? 'text-gray-400' : 'text-gray-500',
+        },
+        // Border colors
+        border: {
+            default: isDarkMode ? 'border-gray-700' : 'border-gray-200',
+            light: isDarkMode ? 'border-gray-600' : 'border-gray-300',
+        },
+        // Chart colors
+        chart: {
+            grid: isDarkMode ? 'rgba(255,255,255,0.1)' : '#e5e7eb',
+            axisText: isDarkMode ? '#d1d5db' : '#374151',
+            tooltipBg: isDarkMode ? '#1f2937' : '#ffffff',
+            tooltipBorder: isDarkMode ? '#374151' : '#e5e7eb',
+        },
+        // Gradient backgrounds for cards
+        gradients: {
+            blue: isDarkMode
+                ? 'from-blue-900 to-blue-800 border-blue-700'
+                : 'from-blue-50 to-blue-100 border-blue-200',
+            orange: isDarkMode
+                ? 'from-orange-900 to-orange-800 border-orange-700'
+                : 'from-orange-50 to-orange-100 border-orange-200',
+            green: isDarkMode
+                ? 'from-green-900 to-green-800 border-green-700'
+                : 'from-green-50 to-green-100 border-green-200',
+            yellow: isDarkMode
+                ? 'from-yellow-900 to-yellow-800 border-yellow-700'
+                : 'from-yellow-50 to-yellow-100 border-yellow-200',
+            red: isDarkMode
+                ? 'from-red-900 to-red-800 border-red-700'
+                : 'from-red-50 to-red-100 border-red-200',
+            purple: isDarkMode
+                ? 'from-purple-900 to-purple-800 border-purple-700'
+                : 'from-purple-50 to-purple-100 border-purple-200',
+        }
+    };
+
 
     const getActiveShiftConfig = () => {
         console.log('=== getActiveShiftConfig Debug ===');
@@ -573,7 +630,10 @@ const ReportCharts = React.memo(({
     }
 
     // Colors for charts
-    const colors = [
+    const colors = isDarkMode ? [
+        '#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa',
+        '#2dd4bf', '#fb923c', '#ec4899', '#38bdf8', '#c084fc'
+    ] : [
         '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe',
         '#00c49f', '#ffbb28', '#ff8042', '#8dd1e1', '#d084d0'
     ];
@@ -582,7 +642,9 @@ const ReportCharts = React.memo(({
     const ChartTitle = () => (
         title ? (
             <div className="mb-4 text-center">
-                <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
+                <h3 className={`text-xl font-semibold ${theme.text.primary}`}>
+                    {title}
+                </h3>
             </div>
         ) : null
     );
@@ -592,8 +654,14 @@ const ReportCharts = React.memo(({
     const CustomTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
             return (
-                <div className="bg-white p-3 border rounded shadow-lg">
-                    {label && <p className="font-medium">{`${label}`}</p>}
+                <div
+                    className={`p-3 rounded shadow-lg ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border`}
+                >
+                    {label && (
+                        <p className={`font-medium ${theme.text.primary}`}>
+                            {`${label}`}
+                        </p>
+                    )}
                     {payload.map((entry, index) => (
                         <p key={index} style={{ color: entry.color }}>
                             {`${entry.name}: ${typeof entry.value === 'number' ? entry.value.toLocaleString() : entry.value}`}
@@ -840,45 +908,39 @@ const ReportCharts = React.memo(({
 
             // Rest of your bar chart JSX with the same tooltip logic as combo
             return (
-                <div className="w-full">
+                <div className={`w-full ${theme.bg.primary} p-4 rounded-lg`}>
                     <ChartTitle />
                     {getChartSubtitle(metrics || [], calculatedFields) && (
                         <div className="mb-2 text-center">
-                            <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full inline-block">
+                            <p className={`text-xs px-3 py-1 rounded-full inline-block ${isDarkMode
+                                ? 'text-yellow-400 bg-yellow-900/30'
+                                : 'text-amber-600 bg-amber-50'
+                                }`}>
                                 {getChartSubtitle(metrics || [], calculatedFields)}
                             </p>
                         </div>
                     )}
                     <ResponsiveContainer width="100%" height={400}>
                         <BarChart data={barData} margin={{ top: 20, right: 30, left: 20, bottom: 90 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
+                            <CartesianGrid
+                                strokeDasharray="3 3"
+                                stroke={theme.chart.grid}
+                            />
                             <XAxis
                                 dataKey={xField}
-                                tick={{ fontSize: 8 }}
+                                tick={{ fontSize: 8, fill: theme.chart.axisText }}
                                 angle={-45}
                                 textAnchor="end"
                                 height={90}
                                 interval={0}
                             />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <Tooltip
-                                content={({ active, payload, label }) => {
-                                    if (active && payload && payload.length) {
-                                        return (
-                                            <div className="bg-white p-3 border rounded shadow-lg">
-                                                <p className="font-medium">{isDateField ? `Date: ${label}` : label}</p>
-                                                {payload.map((entry, index) => (
-                                                    <p key={index} style={{ color: entry.color }}>
-                                                        {`${entry.name}: ${entry.value.toLocaleString()}`}
-                                                    </p>
-                                                ))}
-                                            </div>
-                                        );
-                                    }
-                                    return null;
-                                }}
+                            <YAxis
+                                tick={{ fontSize: 12, fill: theme.chart.axisText }}
                             />
-                            <Legend />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend
+                                wrapperStyle={{ color: theme.chart.axisText }}
+                            />
                             {metrics.map((metric, index) => (
                                 <Bar
                                     key={metric}
@@ -899,7 +961,10 @@ const ReportCharts = React.memo(({
                     <ChartTitle />
                     <ResponsiveContainer width="100%" height={400}>
                         <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
+                            <CartesianGrid
+                                strokeDasharray="3 3"
+                                stroke={theme.chart.grid}
+                            />
                             <XAxis
                                 dataKey={xField || 'name'}
                                 tick={{ fontSize: 12 }}
@@ -907,7 +972,7 @@ const ReportCharts = React.memo(({
                                 textAnchor="end"
                                 height={80}
                             />
-                            <YAxis tick={{ fontSize: 12 }} />
+                            <YAxis tick={{ fontSize: 12, fill: theme.chart.axisText }} />
                             <Tooltip content={<CustomTooltip />} />
                             <Legend />
                             {metrics.map((metric, index) => {
@@ -1398,7 +1463,7 @@ const ReportCharts = React.memo(({
                 // ✅ Clear any existing intervals when dependencies change
                 let interval = null;
                 let isCancelled = false;
-                
+
 
                 const fetchShiftData = async () => {
                     // ✅ Don't fetch if this effect was cancelled
@@ -1557,7 +1622,12 @@ const ReportCharts = React.memo(({
 
             // Render shift chart with backend data
             return (
-                <div className={`w-full max-w-full mx-auto ${isMaximized ? 'h-screen flex flex-col' : 'p-6 bg-white rounded-lg shadow-lg'}`}>
+                <div
+                    className={`w-full max-w-full mx-auto
+      ${isMaximized ? 'h-screen flex flex-col' : 'p-6 rounded-lg shadow-lg'}
+      ${isDarkMode ? 'bg-gray-800' : 'bg-white'}
+    `}
+                >
 
                     {/* Header Section */}
                     {!isMaximized && (
@@ -1567,7 +1637,9 @@ const ReportCharts = React.memo(({
                                 <button
                                     onClick={onToggleDatePicker}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${showDatePicker
-                                            ? 'bg-green-600 text-white'
+                                        ? 'bg-green-600 text-white'
+                                        : isDarkMode  // ✅ ADD DARK MODE CHECK
+                                            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
                                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                 >
@@ -1575,10 +1647,11 @@ const ReportCharts = React.memo(({
                                 </button>
                             )}
 
-                            {/* ✅ Date Picker Input */}
+                            {/* Date Picker Input */}
                             {showDatePicker && (
                                 <div className="flex items-center gap-2">
-                                    <label className="font-medium text-gray-700">Select Date:</label>
+                                    <label className={`font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'  // ✅ ADD THIS
+                                        }`}>Select Date:</label>
                                     <input
                                         type="date"
                                         value={selectedDate}
@@ -1587,7 +1660,10 @@ const ReportCharts = React.memo(({
                                             onDateChange(e.target.value);
                                         }}
                                         max={new Date().toISOString().split('T')[0]}
-                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className={`px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode  // ✅ ADD THIS
+                                            ? 'bg-gray-700 border-gray-600 text-gray-200'
+                                            : 'bg-white border-gray-300 text-gray-900'
+                                            }`}
                                     />
                                     <button
                                         onClick={() => {
@@ -1595,7 +1671,10 @@ const ReportCharts = React.memo(({
                                             console.log('📅 Reset to today:', today);
                                             onDateChange(today);
                                         }}
-                                        className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium text-sm"
+                                        className={`px-3 py-2 rounded-lg font-medium text-sm ${isDarkMode  // ✅ ADD THIS
+                                            ? 'bg-blue-700 text-blue-100 hover:bg-blue-600'
+                                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                            }`}
                                     >
                                         Today
                                     </button>
@@ -1603,8 +1682,10 @@ const ReportCharts = React.memo(({
                             )}
 
                             {/* Current Date Display */}
-                            <div className="text-center text-sm text-gray-600">
-                                Showing data for: <span className="font-semibold">
+                            <div className={`text-center text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'  // ✅ ADD THIS
+                                }`}>
+                                Showing data for: <span className={`font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-900'  // ✅ ADD THIS
+                                    }`}>
                                     {new Date(selectedDate).toLocaleDateString('en-US', {
                                         weekday: 'long',
                                         year: 'numeric',
@@ -1619,13 +1700,17 @@ const ReportCharts = React.memo(({
 
                     {/* Current Shift Info */}
                     {!isFullscreenMode && (
-                        <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                        <div className={`mb-6 p-4 rounded-lg border ${isDarkMode
+                            ? 'bg-gradient-to-r from-gray-800 to-gray-700 border-gray-600'
+                            : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
+                            }`}>
                             <div className="flex justify-between items-center">
                                 <div>
-                                    <h3 className="text-lg font-semibold text-blue-800">
+                                    <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-blue-300' : 'text-blue-800'
+                                        }`}>
                                         {activeShiftConfig.name} {activeShiftConfig.modelNumber && `[${activeShiftConfig.modelNumber}]`}
                                     </h3>
-                                    <p className="text-blue-600">
+                                    <p className={isDarkMode ? 'text-gray-300' : 'text-blue-600'}>
                                         {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
                                         Target: {activeShiftConfig.targetParts} parts •
                                         Cycle: {activeShiftConfig.cycleTimeSeconds}s •
@@ -1693,7 +1778,7 @@ const ReportCharts = React.memo(({
 
                                 {/* ✅ Add highlighted area for elapsed time */}
                                 {shiftChartData && (() => {
-                                    const areas = [];                            
+                                    const areas = [];
 
                                     const currentTimeIndex = isViewingToday(selectedDate)
                                         ? getCurrentChartBucketIndex(shiftChartData)
@@ -1709,8 +1794,8 @@ const ReportCharts = React.memo(({
                                                 key="elapsed-time"
                                                 x1={shiftChartData[0].time}
                                                 x2={shiftChartData[currentTimeIndex].time}
-                                                fill={isFullscreenMode ? "#4ade80" : "#4ade80"}
-                                                fillOpacity={isFullscreenMode ? 0.3 : 0.1}
+                                                fill={isDarkMode ? "#10b981" : "#4ade80"}
+                                                fillOpacity={isDarkMode ? 0.4 : 0.2}
                                                 ifOverflow="visible"
                                                 label={{
                                                     position: "insideTopLeft",
@@ -1741,7 +1826,7 @@ const ReportCharts = React.memo(({
                                                     label={{
                                                         value: "BREAK",
                                                         position: "insideTop",
-                                                        fill: isFullscreenMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
+                                                        fill: isDarkMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
                                                         fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
                                                         fontWeight: "bold"
                                                     }}
@@ -1763,7 +1848,7 @@ const ReportCharts = React.memo(({
                                                 label={{
                                                     value: "BREAK",
                                                     position: "insideTop",
-                                                    fill: isFullscreenMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
+                                                    fill: isDarkMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
                                                     fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
                                                     fontWeight: "bold"
                                                 }}
@@ -1800,9 +1885,10 @@ const ReportCharts = React.memo(({
                                             const data = payload[0].payload;
                                             return (
                                                 <div style={{
-                                                    backgroundColor: 'white',
+                                                    backgroundColor: isDarkMode ? '#1f2937' : 'white',
+                                                    color: isDarkMode ? '#f3f4f6' : '#111827',
                                                     padding: '10px',
-                                                    border: '2px solid #ccc',
+                                                    border: `2px solid ${isDarkMode ? '#374151' : '#ccc'}`,
                                                     borderRadius: '8px',
                                                     boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                                                 }}>
@@ -1820,7 +1906,7 @@ const ReportCharts = React.memo(({
                                                             New parts: +{data.newPartsInBucket}
                                                         </p>
                                                     )}
-                                                    {console.log("Break Data" ,data)}
+                                                    {console.log("Break Data", data)}
                                                     {data.isBreak && (
                                                         <p style={{
                                                             margin: '5px 0',
@@ -1905,67 +1991,82 @@ const ReportCharts = React.memo(({
                         <div className="mb-6">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {/* Current Production */}
-                                <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                                    <div className="text-2xl font-bold text-blue-800">
+                                <div
+                                    className={`p-4 rounded-lg border shadow-sm ${isDarkMode
+                                            ? 'bg-slate-800 border-slate-500 text-blue-200'
+                                            : 'bg-blue-50 border-blue-300 text-blue-900'
+                                        }`}
+                                >
+                                    <div className="text-2xl font-bold">
                                         {shiftMetrics.currentProduction}
                                     </div>
-                                    <div className="text-sm text-blue-600">
+                                    <div className="mt-1 text-sm">
                                         Current Production
                                     </div>
                                 </div>
 
                                 {/* Target Parts */}
-                                <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
-                                    <div className="text-2xl font-bold text-orange-800">
+                                <div
+                                    className={`p-4 rounded-lg border shadow-sm ${isDarkMode
+                                            ? 'bg-orange-900 border-orange-700 text-orange-100'
+                                            : 'bg-orange-50 border-orange-300 text-orange-900'
+                                        }`}
+                                >
+                                    <div className="text-2xl font-bold">
                                         {shiftMetrics.targetParts}
                                     </div>
-                                    <div className="text-sm text-orange-600">
+                                    <div className="mt-1 text-sm">
                                         Target Parts
                                     </div>
                                 </div>
 
                                 {/* Efficiency */}
-                                <div className={`bg-gradient-to-br p-4 rounded-lg border ${shiftMetrics.efficiency >= 100
-                                        ? 'from-green-50 to-green-100 border-green-200'
-                                        : shiftMetrics.efficiency >= 80
-                                            ? 'from-yellow-50 to-yellow-100 border-yellow-200'
-                                            : 'from-red-50 to-red-100 border-red-200'
-                                    }`}>
-                                    <div className={`text-2xl font-bold ${shiftMetrics.efficiency >= 100
-                                            ? 'text-green-800'
+                                <div
+                                    className={`p-4 rounded-lg border shadow-sm ${shiftMetrics.efficiency >= 100
+                                            ? isDarkMode
+                                                ? 'bg-emerald-900 border-emerald-700 text-emerald-100'
+                                                : 'bg-emerald-50 border-emerald-300 text-emerald-900'
                                             : shiftMetrics.efficiency >= 80
-                                                ? 'text-yellow-800'
-                                                : 'text-red-800'
-                                        }`}>
+                                                ? isDarkMode
+                                                    ? 'bg-yellow-900 border-yellow-700 text-yellow-100'
+                                                    : 'bg-yellow-50 border-yellow-300 text-yellow-900'
+                                                : isDarkMode
+                                                    ? 'bg-red-900 border-red-700 text-red-100'
+                                                    : 'bg-red-50 border-red-300 text-red-900'
+                                        }`}
+                                >
+                                    <div className="text-2xl font-bold">
                                         {shiftMetrics.efficiency}%
                                     </div>
-                                    <div className={`text-sm ${shiftMetrics.efficiency >= 100
-                                            ? 'text-green-600'
-                                            : shiftMetrics.efficiency >= 80
-                                                ? 'text-yellow-600'
-                                                : 'text-red-600'
-                                        }`}>
+                                    <div className="mt-1 text-sm">
                                         Current %
                                     </div>
                                 </div>
 
                                 {/* Remaining Parts */}
-                                <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
-                                    <div className="text-2xl font-bold text-purple-800">
+                                <div
+                                    className={`p-4 rounded-lg border shadow-sm ${isDarkMode
+                                            ? 'bg-purple-900 border-purple-700 text-purple-100'
+                                            : 'bg-purple-50 border-purple-300 text-purple-900'
+                                        }`}
+                                >
+                                    <div className="text-2xl font-bold">
                                         {shiftMetrics.remainingParts}
                                     </div>
-                                    <div className="text-sm text-purple-600">
+                                    <div className="mt-1 text-sm">
                                         Remaining Parts
                                     </div>
                                 </div>
                             </div>
+
                         </div>
                     )}
+
 
                     {/* Marquee Message */}
                     {activeShiftConfig?.message && (
                         <div className="mb-6">
-                            <div className="marquee-container rounded-lg shadow-lg">
+                            <div className={`marquee-container ${isDarkMode ? 'dark' : 'light'} rounded-lg shadow-lg`}>
                                 <div className="marquee-text">
                                     <span className="mr-8">🔔</span>
                                     {activeShiftConfig.message}

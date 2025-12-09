@@ -798,59 +798,82 @@ export default function EnhancedReportDesigner() {
                 sourceFields: c.sourceFields || [],
                 windowSize: c.windowSize || 3
             })),
-            ChartConfigs: chartConfigs.map(chart => ({
-                id: chart.id,
-                title: chart.title,
-                type: chart.type,
-                metrics: chart.metrics.map(metricId => {
-                    const field = fields.find(f => f.id === metricId);
-                    return field ? field.label : metricId;
-                }),
-                xField: (() => {
-                    if (!chart.xField) return null;
-                    const field = fields.find(f => f.id === chart.xField);
-                    return field ? field.label : chart.xField;
-                })(),
-                position: chart.position,
-                comboConfig: {
-                    barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
+            ChartConfigs: chartConfigs.map(chart => {
+                // Build the base chart config WITHOUT shift properties
+                const baseConfig = {
+                    id: chart.id,
+                    title: chart.title,
+                    type: chart.type,
+                    metrics: chart.metrics.map(metricId => {
                         const field = fields.find(f => f.id === metricId);
                         return field ? field.label : metricId;
                     }),
-                    lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
-                        const field = fields.find(f => f.id === metricId);
-                        return field ? field.label : metricId;
-                    })
-                },
-                // ✅ PRIMARY: Multiple shift configurations (your main goal)
-                shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ?
-                    chart.shiftConfigs.map(config => ({
-                        shift: config.shift,
-                        name: config.name,
-                        startTime: config.startTime,
-                        endTime: config.endTime,
-                        targetParts: config.targetParts || 100,
-                        cycleTimeSeconds: config.cycleTimeSeconds || 30,
-                        modelNumber: config.modelNumber || "",  // IMPORTANT: Include this
-                        message: config.message || "",          // IMPORTANT: Include this
-                        breaks: config.breaks || []
-                    })) : null,
-
-                // ✅ COMPATIBILITY: Single shift config to satisfy backend validation
-                shiftConfig: chart.type === 'shift' && chart.shiftConfigs && chart.shiftConfigs.length > 0
-                    ? {
-                        targetParts: chart.shiftConfigs[0].targetParts,
-                        cycleTimeSeconds: chart.shiftConfigs[0].cycleTimeSeconds,
-                        shift: chart.shiftConfigs[0].shift,
-                        startTime: chart.shiftConfigs[0].startTime,
-                        endTime: chart.shiftConfigs[0].endTime,
-                        name: chart.shiftConfigs[0].name,
-                        breaks: chart.shiftConfigs[0].breaks,
-                        modelNumber: chart.shiftConfigs[0].modelNumber,
-                        message: chart.shiftConfigs[0].message
+                    xField: (() => {
+                        if (!chart.xField) return null;
+                        const field = fields.find(f => f.id === chart.xField);
+                        return field ? field.label : chart.xField;
+                    })(),
+                    position: chart.position,
+                    comboConfig: {
+                        barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
+                            const field = fields.find(f => f.id === metricId);
+                            return field ? field.label : metricId;
+                        }),
+                        lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
+                            const field = fields.find(f => f.id === metricId);
+                            return field ? field.label : metricId;
+                        })
                     }
-                    : null
-            }))
+                };
+
+                // ✅ Only add shift properties for shift charts
+                if (chart.type === 'shift') {
+                    if (chart.shiftConfigs && chart.shiftConfigs.length > 0) {
+                        // ✅ REQUIRED: Single shift config for backend validation
+                        baseConfig.shiftConfig = {
+                            targetParts: chart.shiftConfigs[0].targetParts || 100,
+                            cycleTimeSeconds: chart.shiftConfigs[0].cycleTimeSeconds || 30,
+                            shift: chart.shiftConfigs[0].shift || 'A',
+                            startTime: chart.shiftConfigs[0].startTime,
+                            endTime: chart.shiftConfigs[0].endTime,
+                            name: chart.shiftConfigs[0].name,
+                            breaks: chart.shiftConfigs[0].breaks || [],
+                            modelNumber: chart.shiftConfigs[0].modelNumber || "",
+                            message: chart.shiftConfigs[0].message || ""
+                        };
+
+                        // ✅ OPTIONAL: Multiple shift configurations
+                        baseConfig.shiftConfigs = chart.shiftConfigs.map(config => ({
+                            shift: config.shift,
+                            name: config.name,
+                            startTime: config.startTime,
+                            endTime: config.endTime,
+                            targetParts: config.targetParts || 100,
+                            cycleTimeSeconds: config.cycleTimeSeconds || 30,
+                            modelNumber: config.modelNumber || "",
+                            message: config.message || "",
+                            breaks: config.breaks || []
+                        }));
+                    } else {
+                        // ✅ Shift chart but no configs - provide default shift config
+                        baseConfig.shiftConfig = {
+                            targetParts: 100,
+                            cycleTimeSeconds: 30,
+                            shift: 'A',
+                            startTime: '06:00',
+                            endTime: '14:30',
+                            name: 'Shift A',
+                            breaks: [],
+                            modelNumber: "",
+                            message: ""
+                        };
+                        baseConfig.shiftConfigs = null;
+                    }
+                }
+                // ✅ For non-shift charts, shift properties are NOT added at all
+
+                return baseConfig;
+            })
         };
 
         // ✅ FIXED: Correct debugging - use the right property name
