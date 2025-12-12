@@ -1505,6 +1505,18 @@ const ReportCharts = React.memo(({
 
                         const data = await response.json();
 
+                        const processedChartData = data.chartData.map((point, index) => {
+                            if (point.isBreak && index > 0) {
+                                // During breaks, maintain the previous cumulative value
+                                const previousPoint = data.chartData[index - 1];
+                                return {
+                                    ...point,
+                                    actualParts: previousPoint.actualParts || point.actualParts
+                                };
+                            }
+                            return point;
+                        });
+
                         // ✅ Only update state if not cancelled
                         if (!isCancelled) {
                             console.log('✅ Backend response received:', data);
@@ -1514,7 +1526,8 @@ const ReportCharts = React.memo(({
                                 currentProduction: data.currentProduction,
                                 targetParts: data.targetParts,
                                 efficiency: data.efficiency,
-                                remainingParts: data.remainingParts
+                                remainingParts: data.remainingParts,
+                                initialCount: data.initialCount ?? 0,
                             });
                         }
 
@@ -1619,6 +1632,8 @@ const ReportCharts = React.memo(({
                     </div>
                 );
             }
+
+
 
             // Render shift chart with backend data
             return (
@@ -1883,6 +1898,11 @@ const ReportCharts = React.memo(({
                                     content={({ active, payload }) => {
                                         if (active && payload && payload.length) {
                                             const data = payload[0].payload;
+                                            const actual = Number(data?.actualParts ?? data?.actual ?? 0);
+                                            const target = Number(data?.targetParts ?? 0);
+
+                                            const currentPct =
+                                                target > 0 ? ((actual / target) * 100).toFixed(1) : 0;
                                             return (
                                                 <div style={{
                                                     backgroundColor: isDarkMode ? '#1f2937' : 'white',
@@ -1892,20 +1912,28 @@ const ReportCharts = React.memo(({
                                                     borderRadius: '8px',
                                                     boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                                                 }}>
-                                                    <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px' }}>
-                                                        {data.time}
+                                                    <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#1d4ed8' }}>
+                                                        {data.time} {/* Indigo-700 */}
                                                     </p>
-                                                    <p style={{ margin: '5px 0', color: '#82ca9d', fontSize: '13px' }}>
-                                                        Actual: {data.actualParts}
+
+                                                    <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
+                                                        Actual: {data.actualParts} {/* Green-500 */}
                                                     </p>
-                                                    <p style={{ margin: '5px 0', color: '#ff7300', fontSize: '13px' }}>
-                                                        Target: {data.targetParts}
+
+                                                    <p style={{ margin: '5px 0', color: '#f97316', fontSize: '13px' }}>
+                                                        Target: {data.targetParts} {/* Orange-500 */}
                                                     </p>
+
+                                                    <p style={{ margin: '5px 0', color: '#0ea5e9', fontSize: '13px' }}>
+                                                        Current Percentage: {currentPct}% {/* Sky-500 */}
+                                                    </p>
+
                                                     {data.newPartsInBucket > 0 && (
-                                                        <p style={{ margin: '5px 0', color: '#4ade80', fontSize: '13px' }}>
-                                                            New parts: +{data.newPartsInBucket}
+                                                        <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
+                                                            New parts: +{data.newPartsInBucket} {/* Same green as Actual */}
                                                         </p>
                                                     )}
+
                                                     {console.log("Break Data", data)}
                                                     {data.isBreak && (
                                                         <p style={{
@@ -1978,8 +2006,6 @@ const ReportCharts = React.memo(({
                                     }}
                                     activeDot={{ r: isFullscreenMode ? 8 : 6 }}
                                 />
-
-
 
                             </LineChart>
 

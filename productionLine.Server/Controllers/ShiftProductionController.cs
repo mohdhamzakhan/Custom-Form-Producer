@@ -115,6 +115,43 @@ namespace productionLine.Server.Controllers
                 // Fetch and filter submissions by date and shift time
                 Console.WriteLine($"[ShiftProduction] Fetching submissions from database...");
                 var submissions = await GetFilteredSubmissions(selectedDate, startTime, endTime, form);
+
+                // After: var submissions = await GetFilteredSubmissions(...);
+
+                var startMinutes = ParseTimeToMinutes(startTime);
+                var isOvernight = ParseTimeToMinutes(endTime) <= startMinutes;
+
+                int initialCount = 0;
+
+                if (isOvernight)
+                {
+                    // overnight: count everything before start on day N, plus all of day N-1
+                    var prevDate = queryDate.AddDays(-1);
+
+                    initialCount = await _context.FormSubmissions
+                        .AsNoTracking()
+                        .Where(s =>
+                            s.FormId == form &&
+                            (
+                                s.SubmittedAt.Date < queryDate ||                             // any previous day
+                                (s.SubmittedAt.Date == queryDate &&
+                                 s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute < startMinutes)
+                            ))
+                        .CountAsync();
+                }
+                else
+                {
+                    // normal shift: same day, before start
+                    initialCount = await _context.FormSubmissions
+                        .AsNoTracking()
+                        .Where(s =>
+                            s.FormId == form &&
+                            s.SubmittedAt.Date == queryDate &&
+                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute < startMinutes)
+                        .CountAsync();
+                }
+
+
                 Console.WriteLine($"[ShiftProduction] Found {submissions.Count} submissions");
 
                 // Calculate target line data
@@ -144,7 +181,8 @@ namespace productionLine.Server.Controllers
                     TargetParts = targetParts,
                     Efficiency = efficiency,
                     RemainingParts = remainingParts,
-                    LastUpdate = DateTime.Now
+                    LastUpdate = DateTime.Now,
+                    InitialCount = initialCount
                 };
 
                 // Cache for 30 seconds
@@ -394,10 +432,9 @@ namespace productionLine.Server.Controllers
         //           };
         //       }).ToList();
         //   }
-
         private List<ChartDataPoint> BuildCombinedChartData(
-    List<FormSubmission> submissions,
-    List<ChartDataPoint> targetLineData)
+            List<FormSubmission> submissions,
+            List<ChartDataPoint> targetLineData)
         {
             int ToBucket(int totalMinutes) => (totalMinutes / 5) * 5;
 
@@ -414,26 +451,103 @@ namespace productionLine.Server.Controllers
                 timeToSubmissionsMap[timeKey] = timeToSubmissionsMap.GetValueOrDefault(timeKey) + 1;
             }
 
-            // Bucket edges
+            // ✅ CRITICAL FIX: Determine shift start/end from targetLineData to get chronological order
+            int? shiftStartBucket = null;
+            int? shiftEndBucket = null;
+
+            if (targetLineData.Any())
+            {
+                // Parse the first and last times from target line data
+                var firstTargetTime = targetLineData.First().Time;
+                var lastTargetTime = targetLineData.Last().Time;
+
+                shiftStartBucket = ParseTimeToMinutes(firstTargetTime);
+                shiftEndBucket = ParseTimeToMinutes(lastTargetTime);
+
+                Console.WriteLine($"[BuildCombinedChartData] Shift start: {shiftStartBucket} ({firstTargetTime})");
+                Console.WriteLine($"[BuildCombinedChartData] Shift end: {shiftEndBucket} ({lastTargetTime})");
+                Console.WriteLine($"[BuildCombinedChartData] Is overnight shift: {shiftStartBucket > shiftEndBucket}");
+            }
+
+            // Helper to parse formatted time string back to minutes
+            int ParseTimeToMinutes(string formattedTime)
+            {
+                var parts = formattedTime.Split(new[] { ':', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                int hour = int.Parse(parts[0]);
+                string meridiem = parts[2];
+                if (meridiem == "PM" && hour != 12) hour += 12;
+                if (meridiem == "AM" && hour == 12) hour = 0;
+                int minute = int.Parse(parts[1]);
+                return hour * 60 + minute;
+            }
+
+            // Bucket edges - NOW ONLY USED FOR DEBUG, NOT FOR WINDOW DETECTION
             int? firstSubmissionBucket = null, lastSubmissionBucket = null;
             if (submissions.Any())
             {
                 var buckets = submissions
                     .Select(s => ToBucket(s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute))
-                    .OrderBy(m => m)
                     .ToList();
 
-                firstSubmissionBucket = buckets.First();
-                lastSubmissionBucket = buckets.Last();
+                // For overnight shifts, we need chronological order, not numeric order
+                if (shiftStartBucket.HasValue && shiftEndBucket.HasValue && shiftStartBucket > shiftEndBucket)
+                {
+                    // Overnight: separate into late night (>= start) and early morning (<= end)
+                    var lateNightBuckets = buckets.Where(b => b >= shiftStartBucket.Value).OrderBy(b => b);
+                    var earlyMorningBuckets = buckets.Where(b => b <= shiftEndBucket.Value).OrderBy(b => b);
+
+                    if (lateNightBuckets.Any() && earlyMorningBuckets.Any())
+                    {
+                        firstSubmissionBucket = lateNightBuckets.First();
+                        lastSubmissionBucket = earlyMorningBuckets.Last();
+                    }
+                    else if (lateNightBuckets.Any())
+                    {
+                        firstSubmissionBucket = lateNightBuckets.First();
+                        lastSubmissionBucket = lateNightBuckets.Last();
+                    }
+                    else if (earlyMorningBuckets.Any())
+                    {
+                        firstSubmissionBucket = earlyMorningBuckets.First();
+                        lastSubmissionBucket = earlyMorningBuckets.Last();
+                    }
+                }
+                else
+                {
+                    // Normal shift: simple numeric sort
+                    firstSubmissionBucket = buckets.OrderBy(b => b).First();
+                    lastSubmissionBucket = buckets.OrderBy(b => b).Last();
+                }
+
+                Console.WriteLine($"[BuildCombinedChartData] Total submissions: {submissions.Count}");
+                Console.WriteLine($"[BuildCombinedChartData] First submission bucket: {firstSubmissionBucket} ({FormatTime(firstSubmissionBucket.Value)})");
+                Console.WriteLine($"[BuildCombinedChartData] Last submission bucket: {lastSubmissionBucket} ({FormatTime(lastSubmissionBucket.Value)})");
             }
 
-            // Window logic: handles both normal and overnight shifts
+            // ✅ FIXED: Improved window logic that properly handles overnight shifts
             bool IsWithinWindow(int start, int end, int value)
             {
                 if (start <= end)
-                    return value >= start && value <= end;
+                {
+                    // Normal shift: simple range check
+                    bool result = value >= start && value <= end;
+                    return result;
+                }
                 else
-                    return value >= start || value <= end; // Overnight
+                {
+                    // ✅ Overnight shift: value is in range if >= start OR <= end
+                    // For example, shift 23:00 (1380) to 06:00 (360)
+                    // A value of 0 (midnight) should return true because 0 <= 360
+                    bool result = value >= start || value <= end;
+
+                    // Debug logging for overnight shifts
+                    if (value >= 1415 || value <= 15) // Around midnight
+                    {
+                        Console.WriteLine($"[IsWithinWindow] Overnight: start={start}, end={end}, value={value}, result={result}");
+                    }
+
+                    return result;
+                }
             }
 
             var cumulativeTotal = 0;
@@ -446,6 +560,7 @@ namespace productionLine.Server.Controllers
             {
                 var targetPoint = targetLineData[idx];
 
+                // Parse chart time
                 var timeParts = targetPoint.Time.Split(new[] { ':', ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 int chartHour = int.Parse(timeParts[0]);
                 string meridiem = timeParts[2];
@@ -457,27 +572,55 @@ namespace productionLine.Server.Controllers
 
                 var submissionsInBucket = timeToSubmissionsMap.GetValueOrDefault(targetPoint.Time, 0);
 
-                // Conditions
-                bool beforeProduction = firstSubmissionBucket.HasValue && chartBucket < firstSubmissionBucket.Value
-                                        && !IsWithinWindow(firstSubmissionBucket.Value, lastSubmissionBucket ?? firstSubmissionBucket.Value, chartBucket);
-
+                // ✅ FIXED: Better logic for determining if we're within production window
+                bool beforeProduction = false;
                 bool inWindow = false;
+
                 if (firstSubmissionBucket.HasValue && lastSubmissionBucket.HasValue)
                 {
                     inWindow = IsWithinWindow(firstSubmissionBucket.Value, lastSubmissionBucket.Value, chartBucket);
+
+                    // ✅ CRITICAL FIX: "beforeProduction" should only be true for times OUTSIDE the window
+                    // AND before any production has actually started
+                    // For overnight shifts, we need to check the actual production range
+                    if (!inWindow)
+                    {
+                        // If we're not in the production window, determine if we're before or after
+                        if (firstSubmissionBucket.Value <= lastSubmissionBucket.Value)
+                        {
+                            // Normal shift: before means less than first
+                            beforeProduction = chartBucket < firstSubmissionBucket.Value;
+                        }
+                        else
+                        {
+                            // Overnight shift: "before" means in the gap between last and first
+                            // Example: first=1380 (11PM), last=360 (6AM)
+                            // Gap is 361-1379 (6:05 AM to 10:55 PM)
+                            beforeProduction = chartBucket > lastSubmissionBucket.Value && chartBucket < firstSubmissionBucket.Value;
+                        }
+                    }
+                    // If inWindow is true, beforeProduction is always false
                 }
 
                 // Result
                 int? actualParts = null;
                 int newParts = 0;
 
-                if (beforeProduction)
+                if (!inWindow)
                 {
+                    // ✅ OUTSIDE SHIFT WINDOW - don't show any data
+                    actualParts = null;
+                    newParts = 0;
+                }
+                else if (beforeProduction)
+                {
+                    // ✅ IN SHIFT, BUT BEFORE PRODUCTION STARTED - show 0
                     actualParts = 0;
                     newParts = 0;
                 }
                 else if (inWindow)
                 {
+                    // ✅ IN SHIFT AND PRODUCTION HAS STARTED
                     if (targetPoint.IsBreak)
                     {
                         pendingPartsFromBreak += submissionsInBucket;
@@ -492,7 +635,6 @@ namespace productionLine.Server.Controllers
                         actualParts = productionHeldDuringBreak + pendingPartsFromBreak;
                         newParts = submissionsInBucket;
                     }
-                    
                     else
                     {
                         if (idx > 0 && targetLineData[idx - 1].IsBreak)
@@ -506,11 +648,12 @@ namespace productionLine.Server.Controllers
                     }
                     anyActualSet = true;
                 }
-                else
+                if (actualParts > 0 && result.All(r => r.ActualParts == null))
                 {
-                    // Only null after production has started and ended (for chart gap)
-                    actualParts = anyActualSet ? (int?)null : 0;
-                    newParts = 0;
+                    foreach (var dp in result)
+                    {
+                        dp.ActualParts = 0;
+                    }
                 }
 
                 result.Add(new ChartDataPoint
@@ -522,11 +665,154 @@ namespace productionLine.Server.Controllers
                     BreakName = targetPoint.BreakName,
                     NewPartsInBucket = newParts
                 });
+
+                // ✅ Debug logging for midnight transition
+                if (chartBucket >= 1415 || chartBucket <= 15) // 11:55 PM to 12:15 AM range
+                {
+                    Console.WriteLine($"[Midnight Debug] Time={targetPoint.Time}, Bucket={chartBucket}, " +
+                                    $"InWindow={inWindow}, BeforeProduction={beforeProduction}, " +
+                                    $"ActualParts={actualParts}, Cumulative={cumulativeTotal}");
+                }
             }
 
             Console.WriteLine($"[BuildCombinedChartData] Generated {result.Count} chart points with {result.Count(r => r.ActualParts.HasValue)} having actual data");
+            Console.WriteLine($"[BuildCombinedChartData] Points with actualParts=0: {result.Count(r => r.ActualParts == 0)}");
+            Console.WriteLine($"[BuildCombinedChartData] Points with actualParts>0: {result.Count(r => r.ActualParts > 0)}");
+            Console.WriteLine($"[BuildCombinedChartData] Points with actualParts=null: {result.Count(r => !r.ActualParts.HasValue)}");
 
             return result;
+        }
+
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+
+        //    private List<ChartDataPoint> BuildCombinedChartData(
+        //List<FormSubmission> submissions,
+        //List<ChartDataPoint> targetLineData)
+        //    {
+        //        int ToBucket(int totalMinutes) => (totalMinutes / 5) * 5;
+
+        //        // Map submission time "rounded buckets" to counts
+        //        var timeToSubmissionsMap = new Dictionary<string, int>();
+        //        foreach (var submission in submissions)
+        //        {
+        //            var totalMinutes = submission.SubmittedAt.Hour * 60 + submission.SubmittedAt.Minute;
+        //            var bucketMinutes = ToBucket(totalMinutes);
+
+        //            if (bucketMinutes >= 24 * 60) bucketMinutes = 0;
+
+        //            var timeKey = FormatTime(bucketMinutes);
+        //            timeToSubmissionsMap[timeKey] = timeToSubmissionsMap.GetValueOrDefault(timeKey) + 1;
+        //        }
+
+        //        Console.WriteLine($"[BuildCombinedChartData] Processing {submissions.Count} submissions");
+        //        Console.WriteLine($"[BuildCombinedChartData] Mapped to {timeToSubmissionsMap.Count} time buckets");
+
+        //        // If no submissions, return empty actual data
+        //        if (!submissions.Any())
+        //        {
+        //            return targetLineData.Select(t => new ChartDataPoint
+        //            {
+        //                Time = t.Time,
+        //                TargetParts = t.TargetParts,
+        //                ActualParts = 0,
+        //                IsBreak = t.IsBreak,
+        //                BreakName = t.BreakName,
+        //                NewPartsInBucket = 0
+        //            }).ToList();
+        //        }
+
+        //        // Build cumulative production data
+        //        var cumulativeTotal = 0;
+        //        var result = new List<ChartDataPoint>();
+        //        bool productionHasStarted = false;
+
+        //        foreach (var targetPoint in targetLineData)
+        //        {
+        //            var submissionsInBucket = timeToSubmissionsMap.GetValueOrDefault(targetPoint.Time, 0);
+
+        //            // Add new submissions to cumulative (even during breaks)
+        //            cumulativeTotal += submissionsInBucket;
+
+        //            // Determine actualParts value
+        //            int? actualParts;
+
+        //            if (cumulativeTotal > 0)
+        //            {
+        //                // Once we have production, always show the cumulative value
+        //                productionHasStarted = true;
+        //                actualParts = cumulativeTotal;
+        //            }
+        //            else if (productionHasStarted)
+        //            {
+        //                // After production starts, maintain the cumulative even with 0 new parts
+        //                actualParts = cumulativeTotal;
+        //            }
+        //            else
+        //            {
+        //                // Before any production, show 0
+        //                actualParts = 0;
+        //            }
+
+        //            result.Add(new ChartDataPoint
+        //            {
+        //                Time = targetPoint.Time,
+        //                TargetParts = targetPoint.TargetParts,
+        //                ActualParts = actualParts,
+        //                IsBreak = targetPoint.IsBreak,
+        //                BreakName = targetPoint.BreakName,
+        //                NewPartsInBucket = submissionsInBucket
+        //            });
+
+        //            // Debug logging
+        //            if (submissionsInBucket > 0 || cumulativeTotal > 0)
+        //            {
+        //                Console.WriteLine($"[BuildCombinedChartData] {targetPoint.Time}: New={submissionsInBucket}, Cumulative={cumulativeTotal}, Actual={actualParts}");
+        //            }
+        //        }
+
+        //        Console.WriteLine($"[BuildCombinedChartData] Final cumulative: {cumulativeTotal}");
+        //        Console.WriteLine($"[BuildCombinedChartData] Generated {result.Count} chart points");
+
+        //        return result;
+        //    }
+
+        // Note: ParseFormattedTimeToMinutes helper method is no longer needed with simplified approach
+
+        // ✅ NEW HELPER METHOD: Parse formatted time string back to minutes
+        private int ParseFormattedTimeToMinutes(string formattedTime)
+        {
+            // Example input: "11:55 PM" or "12:10 AM"
+            var parts = formattedTime.Split(new[] { ':', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length != 3)
+            {
+                throw new ArgumentException($"Invalid formatted time: {formattedTime}");
+            }
+
+            int hour = int.Parse(parts[0]);
+            int minute = int.Parse(parts[1]);
+            string meridiem = parts[2];
+
+            // Convert to 24-hour format
+            if (meridiem == "PM" && hour != 12)
+            {
+                hour += 12;
+            }
+            else if (meridiem == "AM" && hour == 12)
+            {
+                hour = 0;
+            }
+
+            return hour * 60 + minute;
         }
 
 
@@ -590,6 +876,7 @@ namespace productionLine.Server.Controllers
         public int Efficiency { get; set; }
         public int RemainingParts { get; set; }
         public DateTime LastUpdate { get; set; }
+        public int InitialCount { get; set; }
     }
 
     public class ChartDataPoint

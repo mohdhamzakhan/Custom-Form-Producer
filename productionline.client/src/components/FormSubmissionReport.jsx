@@ -157,7 +157,53 @@ export default function FormSubmissionReport() {
         }
     };
 
+    //const groupSubmissionsBySubmissionId = () => {
+    //    const grouped = {};
+    //    submissions.forEach(submission => {
+    //        if (!grouped[submission.id]) {
+    //            grouped[submission.id] = {
+    //                id: submission.id,
+    //                submittedAt: submission.submittedAt,
+    //                data: {},
+    //                approvals: submission.approvals,
+    //                form: submission.form
+    //            };
+    //        }
+
+    //        submission.submissionData.forEach(item => {
+    //            if (item.fieldLabel.includes(' (Remark)')) {
+    //                const originalField = item.fieldLabel.replace(' (Remark)', '');
+    //                if (!grouped[submission.id].data[originalField]) {
+    //                    grouped[submission.id].data[originalField] = { value: '', remark: item.fieldValue };
+    //                } else {
+    //                    grouped[submission.id].data[originalField].remark = item.fieldValue;
+    //                }
+    //            } else {
+    //                if (!grouped[submission.id].data[item.fieldLabel]) {
+    //                    grouped[submission.id].data[item.fieldLabel] = { value: item.fieldValue, remark: '' };
+    //                } else {
+    //                    grouped[submission.id].data[item.fieldLabel].value = item.fieldValue;
+    //                }
+    //            }
+    //        });
+    //    });
+
+    //    return Object.values(grouped);
+    //};
+
     const groupSubmissionsBySubmissionId = () => {
+        // For pending-only view, backend already returns one row per submission
+        if (viewMode === "pendingOnly") {
+            return submissions.map(s => ({
+                id: s.id,
+                submittedAt: s.submittedAt,
+                approvals: s.approvals || [],
+                formId: s.formId,
+                formName: s.formName,
+                data: {} // no field-level data needed in the table
+            }));
+        }
+
         const grouped = {};
         submissions.forEach(submission => {
             if (!grouped[submission.id]) {
@@ -170,17 +216,18 @@ export default function FormSubmissionReport() {
                 };
             }
 
-            submission.submissionData.forEach(item => {
-                if (item.fieldLabel.includes(' (Remark)')) {
-                    const originalField = item.fieldLabel.replace(' (Remark)', '');
+            // Safely handle missing / null submissionData
+            (submission.submissionData || []).forEach(item => {
+                if (item.fieldLabel.includes(" (Remark)")) {
+                    const originalField = item.fieldLabel.replace(" (Remark)", "");
                     if (!grouped[submission.id].data[originalField]) {
-                        grouped[submission.id].data[originalField] = { value: '', remark: item.fieldValue };
+                        grouped[submission.id].data[originalField] = { value: "", remark: item.fieldValue };
                     } else {
                         grouped[submission.id].data[originalField].remark = item.fieldValue;
                     }
                 } else {
                     if (!grouped[submission.id].data[item.fieldLabel]) {
-                        grouped[submission.id].data[item.fieldLabel] = { value: item.fieldValue, remark: '' };
+                        grouped[submission.id].data[item.fieldLabel] = { value: item.fieldValue, remark: "" };
                     } else {
                         grouped[submission.id].data[item.fieldLabel].value = item.fieldValue;
                     }
@@ -190,6 +237,7 @@ export default function FormSubmissionReport() {
 
         return Object.values(grouped);
     };
+
 
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -305,6 +353,8 @@ export default function FormSubmissionReport() {
         // Can edit if:
         // 1. No approvals yet, OR
         // 2. Has approvals but none are approved yet (all are pending)
+
+        { console.log("Hamza", submission) }
         if (!submission.approvals || submission.approvals.length === 0) {
             return true;
         }
@@ -439,14 +489,25 @@ export default function FormSubmissionReport() {
                                                 )}
 
                                                 {/* Add Edit button - shows only if submission can be edited */}
+
+
+
                                                 {canEditSubmission(submission) && (
                                                     <button
-                                                        onClick={() => navigate(`/form/${submission.form.name}/${submission.id}`)}
+                                                        id={submission.id}
+                                                        onClick={() => {
+                                                            const formName = submission.formName || selectedFormId || "UNKNOWN_FORM";
+                                                            //(`/form/${formId}/${submission.id}`);
+                                                            navigate(`/form/${formName}/${submission.id}`);
+                                                        }}
                                                         className="ml-2 bg-orange-500 hover:bg-orange-700 text-white font-bold py-1 px-3 rounded text-sm"
                                                     >
                                                         Edit
                                                     </button>
                                                 )}
+
+
+
 
                                                 <button
                                                     onClick={() => viewSubmissionDetails(submission.id)}

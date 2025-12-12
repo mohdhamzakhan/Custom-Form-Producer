@@ -815,14 +815,47 @@ namespace productionLine.Server.Controllers
         }
 
 
+        //[HttpPost("pending-submissions")]
+        //public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
+        //{
+        //    return Ok(await (from s in _context.FormSubmissions.Include((FormSubmission s) => s.Form).ThenInclude((Form f) => f.Approvers).Include((FormSubmission s) => s.Approvals)
+        //            .Include((FormSubmission s) => s.SubmissionData)
+        //                     where s.Approvals.Any((FormApproval a) => userNames.Contains(a.ApproverName) && a.Status == "Pending")
+        //                     select s).ToListAsync());
+        //}
+
         [HttpPost("pending-submissions")]
         public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
         {
-            return Ok(await (from s in _context.FormSubmissions.Include((FormSubmission s) => s.Form).ThenInclude((Form f) => f.Approvers).Include((FormSubmission s) => s.Approvals)
-                    .Include((FormSubmission s) => s.SubmissionData)
-                             where s.Approvals.Any((FormApproval a) => userNames.Contains(a.ApproverName) && a.Status == "Pending")
-                             select s).ToListAsync());
+            if (userNames == null || userNames.Count == 0)
+                return Ok(Array.Empty<PendingSubmissionDto>());
+
+            var submissions = await _context.FormSubmissions
+                .Where(s => s.Approvals.Any(a =>
+                    userNames.Contains(a.ApproverName) &&
+                    a.Status == "Pending"))
+                .OrderByDescending(s => s.SubmittedAt)
+                .Take(100)
+                .Select(s => new PendingSubmissionDto
+                {
+                    Id = s.Id,
+                    SubmittedAt = s.SubmittedAt,
+                    FormName = s.Form.Name,
+                    FormId = s.FormId,              // 👈 use FK
+                    FormLink = s.Form.FormLink,     // 👈 if you want link in URL
+
+                    Approvals = s.Approvals.Select(a => new ApprovalDto
+                    {
+                        ApprovalLevel = a.ApprovalLevel,
+                        ApproverName = a.ApproverName,
+                        Status = a.Status
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            return Ok(submissions);
         }
+
         [HttpGet("linked-data/{formId}")]
         public async Task<IActionResult> GetLinkedData(int formId, [FromQuery] string keyMappings)
         {
