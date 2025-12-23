@@ -103,7 +103,10 @@ export default function EnhancedReportViewer() {
                     id: f.fieldId || f.id,
                     label: f.fieldLabel || f.label,
                     type: f.type || "text",
+                    visible: f.visible || false
                 }));
+
+                console.log("Resolved", resolvedFields)
 
                 // Only add non-column-wise calculated fields to the grid columns
                 calculatedFields.forEach(cf => {
@@ -285,7 +288,7 @@ export default function EnhancedReportViewer() {
                 const { processedData, summaryRows } = processCalculatedFields(
                     res.data,
                     calculatedFields,
-                    fields
+                    fields  // This should include ALL fields, not just visible ones
                 );
 
                 console.log('✅ PROCESSED data length:', processedData.length); // ✅ ADD THIS
@@ -306,8 +309,9 @@ export default function EnhancedReportViewer() {
                 const { processedData, summaryRows } = processCalculatedFields(
                     res.data,
                     calculatedFields,
-                    fields
+                    fields  // This should include ALL fields, not just visible ones
                 );
+
 
                 setReportData(processedData);
                 setSummaryRows(summaryRows);
@@ -328,7 +332,8 @@ export default function EnhancedReportViewer() {
 
     const fetchFilteredReport1 = async () => {
         try {
-            setLoading(true);
+            //setLoading(true); // Show loading
+            setIsRefreshing(true); // Additional loading state
             console.log('=== FETCH FILTERED REPORT DEBUG ===');
             console.log('calculatedFields state:', calculatedFields);
             console.log('fields state:', fields);
@@ -348,7 +353,12 @@ export default function EnhancedReportViewer() {
             setLoading(false);
         } catch (err) {
             setError("Failed to run filtered report: " + (err.message || "Unknown error"));
-            setLoading(false);
+            //setLoading(false); // Hide loading
+            setIsRefreshing(false); // Hide additional loading state
+        }
+        finally {
+            //setLoading(false); // Hide loading
+            setIsRefreshing(false); // Hide additional loading state
         }
     };
 
@@ -616,6 +626,13 @@ export default function EnhancedReportViewer() {
             grouped[row.submissionId].push(row);
         });
 
+        const visibleFields = selectedFields.filter(field => {
+            if (typeof field === 'object') {
+                return field.visible !== false;
+            }
+            const fieldObj = fields.find(f => f.id === field);
+            return fieldObj ? fieldObj.visible !== false : true;
+        });
         return (
             <div className="grouped-view">
                 {Object.entries(grouped).map(([submissionId, rows]) => (
@@ -626,7 +643,7 @@ export default function EnhancedReportViewer() {
                         <table className="report-table">
                             <thead>
                                 <tr>
-                                    {selectedFields.map((field, i) => (
+                                    {visibleFields.map((field, i) => (
                                         <th key={i}>{typeof field === 'object' ? field.label : field}</th>
                                     ))}
                                 </tr>
@@ -634,7 +651,8 @@ export default function EnhancedReportViewer() {
                             <tbody>
                                 {rows.map((row, i) => (
                                     <tr key={i}>
-                                        {selectedFields.map((field, j) => {
+                                        {/* ✅ Only show visible field values */}
+                                        {visibleFields.map((field, j) => {
                                             const fLabel = typeof field === 'object' ? field.label : field;
                                             const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
                                             return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
@@ -1311,6 +1329,7 @@ export default function EnhancedReportViewer() {
         console.log('=== PROCESS CALCULATED FIELDS DEBUG ===');
         console.log('calculatedFields:', calculatedFields);
         console.log('fields:', fields);
+
         if (!calculatedFields || calculatedFields.length === 0) {
             return {
                 processedData: reportData,
@@ -1332,14 +1351,17 @@ export default function EnhancedReportViewer() {
             const newRow = { ...row };
             const calculatedData = [];
 
-            // Only process non-column-wise calculated fields for row data
+            // ✅ IMPORTANT: Process calculated fields with ALL row data (including invisible fields)
+            // The row.data should contain ALL fields, not just visible ones
             for (const calcField of rowwiseFields) {
+                // getFieldValue will search through ALL fields in row.data (visible and hidden)
                 const calculatedValue = evaluateCalculatedField(calcField, row.data, reportData, fields);
 
                 calculatedData.push({
                     fieldLabel: calcField.label,
                     value: formatCalculatedValue(calculatedValue, calcField),
-                    fieldType: 'calculated'
+                    fieldType: 'calculated',
+                    visible: true  // Calculated fields are always visible when they exist
                 });
             }
 
@@ -1363,9 +1385,16 @@ export default function EnhancedReportViewer() {
 
     const renderExpandedTableWithSummary = (reportData, summaryRows, selectedFields, fields) => {
         // Filter selectedFields to exclude any column-wise calculated fields
-        const displayFields = selectedFields.filter(field => {
+        const visibleFields = selectedFields.filter(field => {
+            if (typeof field === 'object') {
+                return field.visible !== false;
+            }
+            const fieldObj = fields.find(f => f.id === field);
+            return fieldObj ? fieldObj.visible !== false : true;
+        });
+
+        const displayFields = visibleFields.filter(field => {
             if (typeof field === 'object' && field.type === 'calculated') {
-                // Check if this calculated field is column-wise
                 const calcField = calculatedFields.find(cf => cf.label === field.label);
                 return !calcField || calcField.calculationType !== 'columnwise';
             }
@@ -1404,7 +1433,7 @@ export default function EnhancedReportViewer() {
                             {summaryRows.length > 0 && (
                                 <>
                                     <tr className="summary-divider">
-                                        <td colSpan={displayFields.length} className="summary-divider-cell">
+                                        <td colSpan={visibleFields.length} className="summary-divider-cell">
                                             <div className="summary-divider-line">
                                                 <span>Summary & Totals</span>
                                             </div>
@@ -1417,7 +1446,7 @@ export default function EnhancedReportViewer() {
                                                 <strong>{summaryRow.label}</strong>
                                                 <div className="summary-type">{summaryRow.type.toUpperCase()}</div>
                                             </td>
-                                            <td className="summary-value" colSpan={displayFields.length - 1}>
+                                            <td className="summary-value" colSpan={visibleFields.length - 1}>
                                                 <span className="summary-result">{summaryRow.value}</span>
                                                 <div className="summary-formula">{summaryRow.formula}</div>
                                             </td>
@@ -1459,74 +1488,7 @@ export default function EnhancedReportViewer() {
         }
     };
 
-    const evaluateExpression = (expression, rowData, fields) => {
-        try {
-            // Replace field references with actual values
-            let processedExpression = expression;
-
-            // Find all field references in quotes
-            const fieldMatches = expression.match(/"([^"]+)"/g);
-            if (fieldMatches) {
-                fieldMatches.forEach(match => {
-                    const fieldName = match.replace(/"/g, '');
-                    const value = getFieldValue(fieldName, rowData, fields);
-                    // Replace the quoted field reference with the numeric value
-                    processedExpression = processedExpression.replace(match, value.toString());
-                });
-            }
-
-            // Clean up the expression - remove any EXPRESSION() wrapper if present
-            if (processedExpression.startsWith('EXPRESSION(') && processedExpression.endsWith(')')) {
-                processedExpression = processedExpression.slice(11, -1);
-            }
-
-            // Handle mathematical functions
-            processedExpression = processedExpression
-                .replace(/sqrt\(/g, 'Math.sqrt(')
-                .replace(/abs\(/g, 'Math.abs(')
-                .replace(/round\(/g, 'Math.round(')
-                .replace(/floor\(/g, 'Math.floor(')
-                .replace(/ceil\(/g, 'Math.ceil(')
-                .replace(/pow\(/g, 'Math.pow(')
-                .replace(/max\(/g, 'Math.max(')
-                .replace(/min\(/g, 'Math.min(')
-                .replace(/\^/g, '**'); // Convert ^ to ** for exponentiation
-
-            // Handle IF statements - simple IF(condition, trueValue, falseValue)
-            const ifMatches = processedExpression.match(/IF\(([^,]+),([^,]+),([^)]+)\)/g);
-            if (ifMatches) {
-                ifMatches.forEach(ifMatch => {
-                    const parts = ifMatch.slice(3, -1).split(',');
-                    if (parts.length === 3) {
-                        const condition = parts[0].trim();
-                        const trueValue = parts[1].trim();
-                        const falseValue = parts[2].trim();
-
-                        // Evaluate the condition
-                        const conditionResult = Function('"use strict"; return (' + condition + ')')();
-                        const result = conditionResult ?
-                            Function('"use strict"; return (' + trueValue + ')')() :
-                            Function('"use strict"; return (' + falseValue + ')')();
-
-                        processedExpression = processedExpression.replace(ifMatch, result.toString());
-                    }
-                });
-            }
-
-            // Safely evaluate the mathematical expression
-            const result = Function('"use strict"; return (' + processedExpression + ')')();
-
-            // Check if result is a valid number
-            if (typeof result === 'number' && !isNaN(result) && isFinite(result)) {
-                return result;
-            }
-
-            return 0;
-        } catch (error) {
-            console.error('Expression evaluation error:', error, 'Expression:', expression);
-            return 0;
-        }
-    };
+    
 
     const evaluateRowwiseCalculation = (formula, rowData, functionType, fields) => {
         // Handle EXPRESSION type
@@ -1862,18 +1824,23 @@ export default function EnhancedReportViewer() {
 
 
     const formatCalculatedValue = (value, calcField) => {
+        // ✅ Handle string results from IF conditions
+        if (typeof value === 'string' && isNaN(parseFloat(value))) {
+            return value; // Return string as-is
+        }
+
         if (value === null || value === undefined || isNaN(value)) {
             console.log('Invalid calculated value:', value, 'for field:', calcField.label);
-            return "0"; // Return "0" instead of "Error" to ensure numeric parsing works
+            return "0";
         }
 
         const { format, precision = 2 } = calcField;
 
         switch (format) {
             case 'currency':
-                return value.toFixed(precision); // Remove currency symbol for charts
+                return value.toFixed(precision);
             case 'percentage':
-                return value.toFixed(precision); // Remove % symbol for charts, add it in display
+                return value.toFixed(precision);
             case 'integer':
                 return Math.round(value).toString();
             case 'decimal':
@@ -1885,6 +1852,36 @@ export default function EnhancedReportViewer() {
     if (loading) return <LoadingDots />;
 
     if (error) return <div className="error">{error}</div>;
+
+    const loadingStyles = `
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+}
+
+.animate-bounce {
+    animation: bounce 1s ease-in-out infinite;
+}
+
+.animate-pulse {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+`;
 
     const darkModeStyles = `
 /* ============================================
@@ -2297,8 +2294,283 @@ html.dark-mode,
 }
 `;
 
+    // ✅ ADD THIS HELPER FUNCTION - Split IF statement parts properly
+    const splitIfParts = (content) => {
+        const parts = [];
+        let current = '';
+        let depth = 0;
+        let inString = false;
+        let stringChar = null;
+
+        for (let i = 0; i < content.length; i++) {
+            const char = content[i];
+
+            if ((char === '"' || char === "'") && content[i - 1] !== '\\') {
+                if (!inString) {
+                    inString = true;
+                    stringChar = char;
+                } else if (char === stringChar) {
+                    inString = false;
+                    stringChar = null;
+                }
+            }
+
+            if (!inString) {
+                if (char === '(') depth++;
+                if (char === ')') depth--;
+
+                if (char === ',' && depth === 0) {
+                    parts.push(current.trim());
+                    current = '';
+                    continue;
+                }
+            }
+
+            current += char;
+        }
+
+        if (current) {
+            parts.push(current.trim());
+        }
+
+        return parts;
+    };
+
+    const evaluateExpression = (expression, rowData, fields) => {
+        try {
+            let processedExpression = expression;
+
+            // ✅ Handle IF conditions BEFORE field replacement to preserve string literals
+            const ifMatches = expression.match(/IF\(([^)]+(?:\([^)]*\))?[^)]*)\)/g);
+            const ifReplacements = {};
+
+            if (ifMatches) {
+                ifMatches.forEach((ifMatch, idx) => {
+                    const placeholder = `__IF_PLACEHOLDER_${idx}__`;
+                    ifReplacements[placeholder] = ifMatch;
+                    processedExpression = processedExpression.replace(ifMatch, placeholder);
+                });
+            }
+
+            // ✅ Build a comprehensive field values map
+            const fieldMatches = expression.match(/"([^"]+)"/g) || [];
+            const fieldValues = {};
+
+            fieldMatches.forEach(match => {
+                const fieldName = match.replace(/"/g, '');
+                let value = null;
+
+                // Find the field data
+                const field = fields.find(f => f.label === fieldName);
+                const fieldData = rowData.find(d => {
+                    if (d.fieldLabel === fieldName) return true;
+                    if (field && d.fieldLabel === field.id) return true;
+                    if (field && field.id.includes(':')) {
+                        const baseFieldId = field.id.split(':')[0];
+                        return d.fieldLabel === baseFieldId;
+                    }
+                    return false;
+                });
+
+                if (fieldData) {
+                    try {
+                        const parsed = JSON.parse(fieldData.value);
+                        if (typeof parsed === 'string') {
+                            value = parsed;
+                        } else if (Array.isArray(parsed)) {
+                            const columnName = fieldName.split('→').pop().trim();
+                            const gridValue = parsed.length > 0 ? parsed[0][columnName] : null;
+                            value = gridValue;
+                        } else {
+                            value = parsed;
+                        }
+                    } catch {
+                        // If not JSON, use the raw value
+                        value = fieldData.value;
+                    }
+                } else {
+                    // Try getFieldValue as fallback
+                    value = getFieldValue(fieldName, rowData, fields);
+                }
+
+                // Store both with and without quotes
+                fieldValues[match] = value; // "Field Name" -> value
+                fieldValues[fieldName] = value; // Field Name -> value
+            });
+
+            console.log('Field values map:', fieldValues); // ✅ DEBUG LOG
+
+            // ✅ IMPROVED: Helper function to evaluate a value (field reference, string literal, or number)
+            const evaluateValue = (val) => {
+                val = val.trim();
+
+                console.log('Evaluating value:', val); // ✅ DEBUG LOG
+
+                // Check if it's a string literal (surrounded by single quotes)
+                if (val.startsWith("'") && val.endsWith("'")) {
+                    const stringValue = val.slice(1, -1);
+                    console.log('String literal:', stringValue); // ✅ DEBUG LOG
+                    return stringValue;
+                }
+
+                // Check if it's a field reference (surrounded by double quotes)
+                if (val.startsWith('"') && val.endsWith('"')) {
+                    const fieldName = val.slice(1, -1);
+                    const fieldValue = fieldValues[fieldName];
+                    console.log('Field reference:', fieldName, '-> value:', fieldValue); // ✅ DEBUG LOG
+
+                    if (fieldValue !== null && fieldValue !== undefined) {
+                        return fieldValue;
+                    }
+
+                    // If not found in map, try to get it directly
+                    const field = fields.find(f => f.label === fieldName);
+                    const fieldData = rowData.find(d => {
+                        if (d.fieldLabel === fieldName) return true;
+                        if (field && d.fieldLabel === field.id) return true;
+                        if (field && field.id.includes(':')) {
+                            const baseFieldId = field.id.split(':')[0];
+                            return d.fieldLabel === baseFieldId;
+                        }
+                        return false;
+                    });
+
+                    if (fieldData) {
+                        try {
+                            const parsed = JSON.parse(fieldData.value);
+                            console.log('Found field data (parsed):', parsed); // ✅ DEBUG LOG
+                            return typeof parsed === 'string' ? parsed : String(parsed);
+                        } catch {
+                            console.log('Found field data (raw):', fieldData.value); // ✅ DEBUG LOG
+                            return fieldData.value;
+                        }
+                    }
+
+                    console.warn('Field not found:', fieldName); // ✅ DEBUG LOG
+                    return fieldName; // Return field name if value not found
+                }
+
+                // Check if it's a number
+                const numValue = parseFloat(val);
+                if (!isNaN(numValue)) {
+                    console.log('Number value:', numValue); // ✅ DEBUG LOG
+                    return numValue;
+                }
+
+                console.log('Returning as-is:', val); // ✅ DEBUG LOG
+                return val;
+            };
+
+            // Restore IF conditions and evaluate them
+            Object.entries(ifReplacements).forEach(([placeholder, ifStatement]) => {
+                // Parse IF(condition, trueValue, falseValue)
+                const ifContent = ifStatement.match(/IF\((.*)\)/)[1];
+                const parts = splitIfParts(ifContent);
+
+                console.log('IF statement parts:', parts); // ✅ DEBUG LOG
+
+                if (parts.length === 3) {
+                    let [condition, trueVal, falseVal] = parts;
+
+                    // Replace field references in condition with actual values
+                    Object.entries(fieldValues).forEach(([fieldRef, value]) => {
+                        if (condition.includes(fieldRef)) {
+                            // For string comparisons, wrap value in quotes
+                            if (typeof value === 'string') {
+                                condition = condition.replace(new RegExp(fieldRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `'${value}'`);
+                            } else if (value === null) {
+                                condition = condition.replace(new RegExp(fieldRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), 'null');
+                            } else {
+                                condition = condition.replace(new RegExp(fieldRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+                            }
+                        }
+                    });
+
+                    console.log('Condition after replacement:', condition); // ✅ DEBUG LOG
+
+                    // Clean up the condition (replace == with ===, handle = vs ==)
+                    condition = condition.replace(/\s*==\s*/g, ' === ').replace(/\s*=\s*(?!=)/g, ' === ');
+
+                    try {
+                        // Evaluate condition safely
+                        const conditionResult = eval(condition.trim());
+                        console.log('Condition result:', conditionResult); // ✅ DEBUG LOG
+
+                        // ✅ Evaluate trueVal and falseVal (could be field references or literals)
+                        let result;
+                        if (conditionResult) {
+                            console.log('Evaluating TRUE branch:', trueVal); // ✅ DEBUG LOG
+                            result = evaluateValue(trueVal);
+                        } else {
+                            console.log('Evaluating FALSE branch:', falseVal); // ✅ DEBUG LOG
+                            result = evaluateValue(falseVal);
+                        }
+
+                        console.log('Final result:', result); // ✅ DEBUG LOG
+
+                        // ✅ Handle the result based on its type
+                        if (typeof result === 'string') {
+                            processedExpression = processedExpression.replace(placeholder, `'${result}'`);
+                        } else {
+                            processedExpression = processedExpression.replace(placeholder, result);
+                        }
+                    } catch (error) {
+                        console.error('IF condition evaluation error:', error, 'Condition:', condition);
+                        const fallbackResult = evaluateValue(falseVal);
+                        if (typeof fallbackResult === 'string') {
+                            processedExpression = processedExpression.replace(placeholder, `'${fallbackResult}'`);
+                        } else {
+                            processedExpression = processedExpression.replace(placeholder, fallbackResult);
+                        }
+                    }
+                }
+            });
+
+            // If the final expression is a string literal, return it directly
+            const stringMatch = processedExpression.match(/^['"](.*)['"]$/);
+            if (stringMatch) {
+                return stringMatch[1];
+            }
+
+            // Replace remaining field references with numeric values
+            Object.entries(fieldValues).forEach(([fieldRef, value]) => {
+                if (processedExpression.includes(fieldRef)) {
+                    const numValue = typeof value === 'number' ? value : parseFloat(value) || 0;
+                    processedExpression = processedExpression.replace(new RegExp(fieldRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), numValue);
+                }
+            });
+
+            // Handle mathematical functions
+            processedExpression = processedExpression
+                .replace(/sqrt\(/g, 'Math.sqrt(')
+                .replace(/abs\(/g, 'Math.abs(')
+                .replace(/round\(/g, 'Math.round(')
+                .replace(/floor\(/g, 'Math.floor(')
+                .replace(/ceil\(/g, 'Math.ceil(')
+                .replace(/pow\(/g, 'Math.pow(')
+                .replace(/max\(/g, 'Math.max(')
+                .replace(/min\(/g, 'Math.min(')
+                .replace(/\^/g, '**');
+
+            // Evaluate the final expression
+            const result = eval(processedExpression);
+
+            // If result is a string, return it as-is
+            if (typeof result === 'string') {
+                return result;
+            }
+
+            // If result is a number, return it
+            return result;
+        } catch (error) {
+            console.error('Expression evaluation error:', error, 'Expression:', expression);
+            return "Error";
+        }
+    };
+
     return (
         <>
+            <style>{loadingStyles}</style>
             <style>{shiftChartStyles + maximizeStyles + darkModeStyles}</style>
             <div
                 className={`report-viewer-wrapper ${isDarkMode ? 'dark-mode' : 'light-mode'}`}
@@ -2406,10 +2678,25 @@ html.dark-mode,
                         </div>
                         <div className="mt-4 text-right">
                             <button
-                                onClick={fetchFilteredReport}
-                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                                onClick={fetchFilteredReport1}
+                                disabled={isRefreshing}
+                                className={`px-4 py-2 rounded font-medium transition-colors ${isRefreshing
+                                        ? 'bg-gray-400 cursor-not-allowed'
+                                        : 'bg-blue-600 hover:bg-blue-700'
+                                    } text-white`}
                             >
-                                ▶️ Run Report
+                                {isRefreshing ? (
+                                    <span className="flex items-center gap-3">
+                                        <span className="relative flex items-center">
+                                            <span className="text-2xl animate-bounce">👨‍💼</span>
+                                            <span className="text-xl ml-1">➡️</span>
+                                            <span className="text-2xl ml-1 animate-pulse">🗄️</span>
+                                        </span>
+                                        <span>Collecting Data from Database...</span>
+                                    </span>
+                                ) : (
+                                    '▶️ Run Report'
+                                )}
                             </button>
                             {Object.keys(runtimeFilters).length > 0 && (
                                 <button

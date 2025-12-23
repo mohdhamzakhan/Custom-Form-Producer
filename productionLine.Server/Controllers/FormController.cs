@@ -219,6 +219,7 @@ namespace productionLine.Server.Controllers
                     existingField.DefaultRowsJson = field.DefaultRowsJson;
                     existingField.AllowAddRows = field.AllowAddRows;
                     existingField.AllowEditQuestions = field.AllowEditQuestions;
+                    
 
 
 

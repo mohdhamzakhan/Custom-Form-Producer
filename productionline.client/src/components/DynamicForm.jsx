@@ -2148,9 +2148,11 @@ export default function DynamicForm() {
             case "grid":
                 const colorScheme = getTableColor(field.id);
 
-                const visibleColumns = (field.columns || []).filter(col => col.visible === false);
+                // Filter to get only visible columns
+                const visibleColumns = (field.columns || []).filter(col => col.visible !== false);
 
-                console.log("Visible Columns", visibleColumns)
+                console.log("Visible Columns", visibleColumns);
+
                 return (
                     <div className="mb-4 w-full">
                         <div className={`overflow-x-auto border-2 ${colorScheme.border} rounded-lg`}>
@@ -2158,7 +2160,7 @@ export default function DynamicForm() {
                                 <thead>
                                     <tr>
                                         <td
-                                            colSpan={field.columns.length + 1}
+                                            colSpan={visibleColumns.length + 1}
                                             className={`${colorScheme.titleBg} py-2 px-4 border-b ${colorScheme.border}`}
                                         >
                                             <label className="block text-gray-700 text-sm font-bold">
@@ -2169,7 +2171,7 @@ export default function DynamicForm() {
                                 </thead>
                                 <thead className={colorScheme.bg}>
                                     <tr>
-                                        {(field.columns || []).map((col, idx) => (
+                                        {visibleColumns.map((col, idx) => (
                                             <th
                                                 key={idx}
                                                 className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`}
@@ -2178,13 +2180,14 @@ export default function DynamicForm() {
                                                 {col.name}
                                             </th>
                                         ))}
-                                        <th className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`} style={{ width: "100px" }}>
-                                            Actions
-                                        </th>
+                                        {visibleColumns.length > 0 && (
+                                            <th className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`} style={{ width: "100px" }}>
+                                                Actions
+                                            </th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody>
-
                                     {(formValues[field.id] || []).map((row, rowIndex) => {
                                         // Auto-populate hidden/disabled columns before rendering
                                         (field.columns || []).forEach(col => {
@@ -2200,9 +2203,10 @@ export default function DynamicForm() {
                                                 }
                                             }
                                         });
+
                                         return (
                                             <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
-                                                {(field.columns || []).map((col, colIdx) => (
+                                                {visibleColumns.map((col, colIdx) => (
                                                     <td
                                                         key={colIdx}
                                                         className="py-2 px-4 border-b border-gray-200"
@@ -2269,7 +2273,6 @@ export default function DynamicForm() {
                                                                     </div>
                                                                 );
                                                             }
-
 
                                                             if (col.type === "timecalculation") {
                                                                 const formula = col.formula || "";
@@ -2348,7 +2351,7 @@ export default function DynamicForm() {
                                                                             maxLength={col.maxLength || undefined}
                                                                             placeholder={
                                                                                 col.minLength || col.maxLength
-                                                                                    ? `${col.minLength || 0}-${col.maxLength || 'âˆž'} chars`
+                                                                                    ? `${col.minLength || 0}-${col.maxLength || '∞'} chars`
                                                                                     : `Enter ${col.name}`
                                                                             }
                                                                         />
@@ -2356,7 +2359,7 @@ export default function DynamicForm() {
                                                                         {/* Character count display */}
                                                                         {(col.minLength || col.maxLength) && (
                                                                             <div className="text-xs text-gray-500 mt-1">
-                                                                                {(row[col.name] || "").length}/{col.maxLength || 'âˆž'} characters
+                                                                                {(row[col.name] || "").length}/{col.maxLength || '∞'} characters
                                                                                 {col.minLength && (
                                                                                     <span className="ml-2">
                                                                                         (Min: {col.minLength})
@@ -2375,13 +2378,17 @@ export default function DynamicForm() {
                                                                 );
                                                             }
 
-
                                                             if (col.type === "dependentDropdown") {
                                                                 const parentValue = row[col.parentColumn] || "";
                                                                 const dependentOptions = parentValue ? (col.dependentOptions?.[parentValue] || []) : [];
 
-                                                                if ((isDisabled || col.visible === false) && dependentOptions.length > 0 && !row[col.name]) {
-                                                                    row[col.name] = dependentOptions[0];
+                                                                // Auto-select first value when field has options
+                                                                if (dependentOptions.length > 0 && !row[col.name]) {
+                                                                    setTimeout(() => {
+                                                                        const firstValue = dependentOptions[0];
+                                                                        const updatedRow = { ...row, [col.name]: firstValue };
+                                                                        handleGridChange(field.id, rowIndex, col.name, firstValue, updatedRow);
+                                                                    }, 0);
                                                                 }
 
                                                                 // Check if the selected option requires remarks
@@ -2397,13 +2404,11 @@ export default function DynamicForm() {
                                                                             onChange={(e) => {
                                                                                 const newValue = e.target.value;
                                                                                 const updatedRow = { ...row, [col.name]: newValue };
-
                                                                                 // Clear remarks if the new selection doesn't require it
                                                                                 const newRemarksKey = `${parentValue}:${newValue}`;
                                                                                 if (!(col.remarksOptions || []).includes(newRemarksKey)) {
                                                                                     updatedRow[remarksFieldName] = "";
                                                                                 }
-
                                                                                 handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
                                                                             }}
                                                                             disabled={!parentValue || isDisabled}
@@ -2421,13 +2426,11 @@ export default function DynamicForm() {
                                                                                 </option>
                                                                             ))}
                                                                         </select>
-
                                                                         {selectedValue && (
                                                                             <div className="text-xs text-gray-600 mt-1">
                                                                                 You selected: <span className="font-semibold">{selectedValue}</span>
                                                                             </div>
                                                                         )}
-
                                                                         {requiresRemarks && (
                                                                             <div className="mt-2">
                                                                                 <label className="block text-xs text-gray-700 mb-1">
@@ -2479,7 +2482,9 @@ export default function DynamicForm() {
 
                                                                                 handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
                                                                             }}
-                                                                            className="border rounded px-2 py-1 w-full"
+                                                                            disabled={isDisabled}
+                                                                            className={`border rounded px-2 py-1 w-full ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
+                                                                                }`}
                                                                             style={{
                                                                                 color: col.textColor || "inherit",
                                                                                 backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit"),
@@ -2493,12 +2498,11 @@ export default function DynamicForm() {
                                                                             ))}
                                                                         </select>
 
-                                                                        {/* âœ… Remarks field appears only if selected option requires it */}
-                                                                        {console.log(col)}
+                                                                        {/* Remarks field appears only if selected option requires it */}
                                                                         {col.remarksOptions?.includes(row[col.name]) && (
                                                                             <input
                                                                                 type="text"
-                                                                                required   // <-- mandatory
+                                                                                required
                                                                                 placeholder={`Enter remarks for ${row[col.name]}`}
                                                                                 value={row[`${col.name}_remarks`] || ""}
                                                                                 onChange={(e) => {
@@ -2542,6 +2546,7 @@ export default function DynamicForm() {
                                                                                     const updatedRow = { ...row, [col.name]: e.target.checked };
                                                                                     handleGridChange(field.id, rowIndex, col.name, e.target.checked, updatedRow);
                                                                                 }}
+                                                                                disabled={isDisabled}
                                                                                 style={{
                                                                                     color: col.textColor || "inherit",
                                                                                 }}
@@ -2550,7 +2555,7 @@ export default function DynamicForm() {
                                                                     );
                                                                 }
 
-                                                                // Handle multi-option checkbox (existing code for checkbox with options)
+                                                                // Handle multi-option checkbox
                                                                 return (
                                                                     <div>
                                                                         {(col.options || []).map((option) => (
@@ -2580,6 +2585,7 @@ export default function DynamicForm() {
                                                                                         const updatedRow = { ...row, [col.name]: updatedValues };
                                                                                         handleGridChange(field.id, rowIndex, col.name, updatedValues, updatedRow);
                                                                                     }}
+                                                                                    disabled={isDisabled}
                                                                                     style={{
                                                                                         color: col.textColor || "inherit",
                                                                                     }}
@@ -2638,7 +2644,7 @@ export default function DynamicForm() {
                                                                         {/* Show out of range warning */}
                                                                         {isOutOfRange && (
                                                                             <div className="text-orange-600 text-xs mt-1">
-                                                                                âš ï¸ Value outside range ({col.min !== null ? `${col.min}` : ""}
+                                                                                ⚠️ Value outside range ({col.min !== null ? `${col.min}` : ""}
                                                                                 {col.min !== null && col.max !== null ? " - " : ""}
                                                                                 {col.max !== null ? `${col.max}` : ""}). Remarks required.
                                                                             </div>
@@ -2716,6 +2722,7 @@ export default function DynamicForm() {
                                                                                 }}
                                                                                 dateFormat="dd/MM/yyyy"
                                                                                 placeholderText="DD/MM/YYYY"
+                                                                                disabled={isDisabled}
                                                                                 style={{
                                                                                     color: col.textColor || "inherit",
                                                                                     backgroundColor: col.backgroundColor || "inherit",
@@ -2748,8 +2755,9 @@ export default function DynamicForm() {
                                                                         type="text"
                                                                         value={row[col.name] || ""}
                                                                         onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                                        disabled={isDisabled}
                                                                         className={`border rounded px-2 py-1 w-full ${formErrors[`${field.id}_${rowIndex}_${col.name}`] ? "border-red-500" : ""
-                                                                            }`}
+                                                                            } ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                                         style={style}
                                                                     />
                                                                     {formErrors[`${field.id}_${rowIndex}_${col.name}`] && (
@@ -2763,25 +2771,26 @@ export default function DynamicForm() {
                                                     </td>
                                                 )
                                                 )}
-                                                <td className="py-2 px-4 border-b border-gray-200" style={{ width: "auto" }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeGridRow(field.id, rowIndex)}
-                                                        disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
-                                                        className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
-                                                            ? 'text-gray-400 cursor-not-allowed'
-                                                            : 'text-red-500 hover:text-red-700'
-                                                            }`}
-                                                        title={
-                                                            (formValues[field.id] || []).length <= (field.min_rows || 0)
-                                                                ? `Minimum ${field.min_rows} rows required`
-                                                                : 'Remove this row'
-                                                        }
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                </td>
-
+                                                {visibleColumns.length > 0 && (
+                                                    <td className="py-2 px-4 border-b border-gray-200" style={{ width: "auto" }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeGridRow(field.id, rowIndex)}
+                                                            disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
+                                                            className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                                ? 'text-gray-400 cursor-not-allowed'
+                                                                : 'text-red-500 hover:text-red-700'
+                                                                }`}
+                                                            title={
+                                                                (formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                                    ? `Minimum ${field.min_rows} rows required`
+                                                                    : 'Remove this row'
+                                                            }
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </td>
+                                                )}
                                             </tr>
                                         );
                                     })}
@@ -2793,7 +2802,7 @@ export default function DynamicForm() {
                                 type="button"
                                 onClick={() => addGridRow(field.id, field.columns)}
                                 className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
-                                title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || 'âˆž'})`}
+                                title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || '∞'})`}
                             >
                                 Add Row {field.maxRows ? `(${(formValues[field.id] || []).length}/${field.maxRows})` : ''}
                             </button>

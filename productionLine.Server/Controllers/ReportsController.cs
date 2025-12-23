@@ -188,7 +188,8 @@ namespace productionLine.Server.Controllers
                     {
                         FieldId = f.FieldId,
                         FieldLabel = f.FieldLabel,
-                        Order = index
+                        Order = index,
+                        Visible = f.Visible ?? true
                     }).ToList();
 
                     template.Filters = dto.Filters.Select(f => new ReportFilter
@@ -225,7 +226,8 @@ namespace productionLine.Server.Controllers
                         {
                             FieldId = f.FieldId,
                             FieldLabel = f.FieldLabel,
-                            Order = index
+                            Order = index,
+                            Visible = f.Visible ?? true
                         }).ToList(),
 
                         Filters = dto.Filters.Select(f => new ReportFilter
@@ -288,6 +290,8 @@ namespace productionLine.Server.Controllers
 
             var filtered = ApplyFilters(template.Filters, formSubmissions, runtimeValues);
 
+            var allFields = template.Fields.ToList();
+
             var result = new List<object>();
 
             foreach (var sub in filtered)
@@ -298,13 +302,13 @@ namespace productionLine.Server.Controllers
                 if (hasGridFields)
                 {
                     // Handle grid expansion - create multiple rows
-                    var gridData = GetExpandedGridData(sub, template.Fields, formFields);
+                    var gridData = GetExpandedGridData(sub, allFields, formFields);
                     result.AddRange(gridData);
                 }
                 else
                 {
                     // Handle normal single-row data
-                    var singleRow = CreateSingleRow(sub, template.Fields, formFields);
+                    var singleRow = CreateSingleRow(sub, allFields, formFields);
                     result.Add(singleRow);
                 }
             }
@@ -376,7 +380,8 @@ namespace productionLine.Server.Controllers
                     rowData.Add(new
                     {
                         fieldLabel = field.FieldLabel,
-                        value = normalValues.ContainsKey(field.FieldLabel) ? normalValues[field.FieldLabel] : "-"
+                        value = normalValues.ContainsKey(field.FieldLabel) ? normalValues[field.FieldLabel] : "-",
+                        visible = field.Visible  // ✅ ADD visibility flag
                     });
                 }
 
@@ -397,7 +402,8 @@ namespace productionLine.Server.Controllers
                         rowData.Add(new
                         {
                             fieldLabel = field.FieldLabel,
-                            value = value
+                            value = value,
+                            visible = field.Visible  // ✅ ADD visibility flag
                         });
                     }
                 }
@@ -440,8 +446,6 @@ namespace productionLine.Server.Controllers
                 return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
             }
         }
-
-
         private object CreateSingleRow(FormSubmission sub, ICollection<ReportField> reportFields, List<FormField> formFields)
         {
             return new
@@ -464,12 +468,12 @@ namespace productionLine.Server.Controllers
                     return new
                     {
                         fieldLabel = reportField.FieldLabel,
-                        value = value
+                        value = value,
+                        visible = reportField.Visible
                     };
                 }).ToList()
             };
         }
-
         public class SharedUser
         {
             [JsonPropertyName("id")]
@@ -484,8 +488,6 @@ namespace productionLine.Server.Controllers
             [JsonPropertyName("email")]
             public string Email { get; set; }
         }
-
-
         private List<FormSubmission> ApplyFilters(
     List<ReportFilter> filters,
     List<FormSubmission> submissions,
@@ -638,6 +640,7 @@ namespace productionLine.Server.Controllers
 
         [HttpGet("template/{reportId}")]
         public async Task<IActionResult> GetTemplate(int reportId)
+        
         {
             var template = await _context.ReportTemplates
                 .Include(t => t.Fields)
@@ -693,7 +696,8 @@ namespace productionLine.Server.Controllers
                     f.Id,
                     f.FieldId,
                     f.FieldLabel,
-                    f.Order
+                    f.Order,
+                    f.Visible  // ✅ ADD THIS
                 }).ToList(),
                 filters = template.Filters.Select(filter =>
                 {

@@ -65,6 +65,7 @@ public class ReportFieldDto
     public string FieldId { get; set; }           // ✅ New
     public string FieldLabel { get; set; }
     public int Order { get; set; }
+    public bool? Visible { get; set; }
 }
 
 public class ReportFilterDto

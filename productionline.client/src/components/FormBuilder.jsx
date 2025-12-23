@@ -940,12 +940,15 @@ const FormBuilder = () => {
                         formId: baseForm.id,
                         order: field.order,
 
+                        // VISIBILITY PROPERTIES - Add these for all fields
+                        visible: field.visible !== undefined ? field.visible : true,
+                        disabled: field.disabled || false,
+
                         // CRITICAL: Provide form reference WITH rowVersion
                         form: {
                             id: baseForm.id,
                             name: baseForm.name,
                             formLink: baseForm.formLink,
-                            // FIX: Include rowVersion in each field's form reference
                             rowVersion: existingRowVersion,
                             createdBy: currentUser,
                             createdAt: currentUtc,
@@ -990,7 +993,6 @@ const FormBuilder = () => {
                         resultDecimal: field.resultDecimal ?? false,
 
                         // Handle field references - set to null to avoid circular reference issues
-                        // Handle field references - set to null to avoid circular reference issues
                         fieldReferences: null,
 
                         // Handle remark triggers - WITH REQUIRED FormField REFERENCE
@@ -1013,6 +1015,10 @@ const FormBuilder = () => {
                                     formId: baseForm.id,
                                     order: field.order,
 
+                                    // Include visibility in nested field reference
+                                    visible: field.visible !== undefined ? field.visible : true,
+                                    disabled: field.disabled || false,
+
                                     // Include essential field properties
                                     options: Array.isArray(field.options) ? field.options : [],
                                     min: field.min ?? null,
@@ -1032,7 +1038,6 @@ const FormBuilder = () => {
                                         updatedAt: currentUtc,
                                         linkedFormId: linkedForm?.id || null
                                     }
-                                    // IMPORTANT: Do NOT include remarkTriggers here to prevent circular reference
                                 }
                             }))
                             : []
@@ -1122,6 +1127,20 @@ const FormBuilder = () => {
                                 endTime: column.endTime || "",
                                 remarksOptions: column.remarksOptions || [],
                                 requireRemarks: column.requireRemarks || [],
+
+                                // VISIBILITY PROPERTIES - Add these for all columns
+                                visible: column.visible !== undefined ? column.visible : true,
+                                disabled: column.disabled || false,
+
+                                // ADDITIONAL LABEL STYLING
+                                labelText: column.labelText || '',
+                                labelStyle: column.labelStyle || 'normal',
+                                textAlign: column.textAlign || 'left',
+
+                                // TEXTBOX VALIDATION
+                                minLength: column.minLength || null,
+                                maxLength: column.maxLength || null,
+                                lengthValidationMessage: column.lengthValidationMessage || ''
                             };
 
                             // Handle linked textbox columns in grids
@@ -1163,111 +1182,8 @@ const FormBuilder = () => {
                         }
                     }
 
-
-                    // Handle grid fields
-                    //if (field.type === "grid" && field.columns) {
-                    //    const cleanColumns = field.columns.map(column => {
-                    //        // In the saveForm function, update the cleanColumn creation (around line 800-900):
-
-                    //        const cleanColumn = {
-                    //            id: column.id,
-                    //            name: column.name,
-                    //            type: column.type,
-                    //            width: column.width,
-                    //            required: column.required || false,
-                    //            options: Array.isArray(column.options) ? column.options : [],
-                    //            labelText: column.labelText || '',
-                    //            labelStyle: column.labelStyle || 'normal',
-                    //            textAlign: column.textAlign || 'left',
-                    //            textColor: column.textColor || "000000",
-                    //            backgroundColor: column.backgroundColor || "ffffff",
-                    //            minLength: column.minLength || null,
-                    //            maxLength: column.maxLength || null,
-                    //            lengthValidationMessage: column.lengthValidationMessage || '',
-                    //            visible: column.visible,
-                    //            disabled: column.disabled,
-
-
-                    //            // CRITICAL FIX: Add formula for calculation columns
-                    //            formula: column.formula || "",  // <-- ADD THIS LINE
-
-                    //            // Also add other numeric and calculation-related fields
-                    //            min: column.min !== undefined && column.min !== null && column.min !== "" ? parseFloat(column.min) : 0,
-                    //            max: column.max !== undefined && column.max !== null && column.max !== "" ? parseFloat(column.max) : null,
-                    //            decimal: column.decimal !== undefined ? column.decimal : null,
-                    //            parentColumn: column.parentColumn || "",
-                    //            dependentOptions: column.dependentOptions || {},
-                    //            startTime: column.startTime || "",
-                    //            endTime: column.endTime || "",
-                    //            /*remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],*/
-                    //            remarksOptions: Array.isArray(column.remarksOptions) ? column.remarksOptions : [],
-
-                    //            // Handle linkedTextbox columns in grids
-                    //            ...(column.type === "linkedTextbox" && {
-                    //                linkedFormId: column.linkedFormId || (linkedForm?.id) || null,
-                    //                linkedFieldId: column.linkedFieldId,
-                    //                displayMode: column.displayMode || "readonly",
-                    //                displayFormat: column.displayFormat || "value",
-                    //                allowManualEntry: column.allowManualEntry || false,
-                    //                showLookupButton: column.showLookupButton !== false,
-
-                    //                // Clean key field mappings for columns
-                    //                keyFieldMappings: (column.keyFieldMappings || []).map(mapping => ({
-                    //                    currentFormField: mapping.currentField,
-                    //                    linkedFormField: mapping.linkedField,
-                    //                    currentFieldType: mapping.currentField?.includes(".") ? "gridColumn" : "field",
-                    //                    linkedFieldType: mapping.linkedField?.includes(".") ? "gridColumn" : "field",
-                    //                    currentParentFieldId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[0] : null,
-                    //                    currentColumnId: mapping.currentField?.includes(".") ? mapping.currentField.split(".")[1] : null,
-                    //                    linkedParentFieldId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[0] : null,
-                    //                    linkedColumnId: mapping.linkedField?.includes(".") ? mapping.linkedField.split(".")[1] : null,
-                    //                })),
-                    //                keyFieldMappingsJson: JSON.stringify(columnMappings)
-                    //            })
-                    //        };
-
-
-                    //        // Handle linkedTextbox columns in grids
-                    //        if (column.type === "linkedTextbox") {
-                    //            cleanColumn.linkedFormId = column.linkedFormId || linkedForm?.id || null;
-                    //            cleanColumn.linkedFieldId = column.linkedFieldId;
-                    //            cleanColumn.displayMode = column.displayMode || "readonly";
-                    //            cleanColumn.displayFormat = column.displayFormat || "{value}";
-                    //            cleanColumn.allowManualEntry = column.allowManualEntry || false;
-                    //            cleanColumn.showLookupButton = column.showLookupButton !== false;
-
-                    //            // Clean key field mappings for columns
-                    //            const columnMappings = (column.keyFieldMappings || []).map(mapping => ({
-                    //                currentFormField: mapping.currentField,
-                    //                linkedFormField: mapping.linkedField,
-                    //                currentFieldType: mapping.currentField?.includes('.') ? 'gridColumn' : 'field',
-                    //                linkedFieldType: mapping.linkedField?.includes('.') ? 'gridColumn' : 'field',
-                    //                currentParentFieldId: mapping.currentField?.includes('.')
-                    //                    ? mapping.currentField.split('.')[0] : null,
-                    //                currentColumnId: mapping.currentField?.includes('.')
-                    //                    ? mapping.currentField.split('.')[1] : null,
-                    //                linkedParentFieldId: mapping.linkedField?.includes('.')
-                    //                    ? mapping.linkedField.split('.')[0] : null,
-                    //                linkedColumnId: mapping.linkedField?.includes('.')
-                    //                    ? mapping.linkedField.split('.')[1] : null,
-                    //            }));
-
-                    //            cleanColumn.keyFieldMappings = columnMappings;
-                    //            cleanColumn.keyFieldMappingsJson = JSON.stringify(columnMappings);
-                    //        }
-
-                    //        return cleanColumn;
-                    //    });
-
-                    //    cleanField.columns = cleanColumns;
-                    //    cleanField.columnsJson = JSON.stringify(cleanColumns);
-                    //    cleanField.initialRows = field.initialRows || 3;
-                    //    cleanField.minRows = field.minRows || 1;
-                    //    cleanField.maxRows = field.maxRows || 10;
-                    //}
-
                     if (field.type === "calculation") {
-                        fieldObj.formula = field.formula.replace(/\{([^}]+)\}/g, (match, fieldName) => {
+                        cleanField.formula = field.formula.replace(/\{([^}]+)\}/g, (match, fieldName) => {
                             const referencedField = formFields.find(f => f.name === fieldName);
                             return referencedField ? referencedField.id : match;
                         });

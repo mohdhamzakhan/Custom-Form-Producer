@@ -70,6 +70,9 @@ namespace productionLine.Server.Model
 
         [Column("ORDER")]
         public int Order { get; set; }
+
+        [Column("VISIBLE", TypeName = "NUMBER(1)")]  // ✅ ADD THIS
+        public bool Visible { get; set; } = true;  // Default to visible
     }
 
     [Table("FF_REPORTFILTER")]
