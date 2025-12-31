@@ -1,10 +1,12 @@
 ﻿import { useEffect, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
+import { processGroupedData, applyRowLevelCalculations } from './groupingDataProcessor';  // ADD THIS
 import ReportCharts from "./ReportCharts";
 import { APP_CONSTANTS } from "./store";
 import "../report_viewer_styles.css";
 import LoadingDots from './LoadingDots';
+import * as XLSX from 'xlsx';
 
 
 export default function EnhancedReportViewer() {
@@ -27,6 +29,8 @@ export default function EnhancedReportViewer() {
     const [maximizedChart, setMaximizedChart] = useState(null);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false); // Add this state
+    const [groupingConfig, setGroupingConfig] = useState([]);  // ADD THIS
+    const [isGrouped, setIsGrouped] = useState(false);         // ADD THIS
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -34,6 +38,8 @@ export default function EnhancedReportViewer() {
         const saved = localStorage.getItem('darkMode');
         return saved === 'true';
     });
+    const [isExporting, setIsExporting] = useState(false);
+    const [showBlankRows, setShowBlankRows] = useState(false);
 
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -169,6 +175,9 @@ export default function EnhancedReportViewer() {
                     });
                 }
 
+                const loadedGroupingConfig = res.data.groupingConfig || [];
+                setGroupingConfig(res.data.groupingConfig || []);
+                setIsGrouped((res.data.groupingConfig || []).length > 0);
                 setChartConfigs(charts);
 
                 setLoading(false);
@@ -523,9 +532,88 @@ export default function EnhancedReportViewer() {
 
         return value;
     };
+    const exportStyles = `
+.export-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border: 2px solid #059669;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
 
+.export-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.export-btn:disabled {
+    background: #9ca3af;
+    border-color: #6b7280;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.export-btn.exporting {
+    background: #f59e0b;
+    border-color: #d97706;
+}
+
+.dark-mode .export-btn {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    border-color: #047857;
+}
+
+.dark-mode .export-btn:hover:not(:disabled) {
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);
+}
+
+/* Blank Rows Toggle Button */
+.blank-rows-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    color: white;
+    border: 2px solid #4b5563;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.blank-rows-toggle:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+}
+
+.blank-rows-toggle.active {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border-color: #dc2626;
+}
+
+.blank-rows-toggle.active:hover {
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.dark-mode .blank-rows-toggle {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    border-color: #374151;
+}
+
+.dark-mode .blank-rows-toggle.active {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    border-color: #b91c1c;
+}
+`;
     const renderSummaryStats = () => {
-        if (reportData.length === 0) return null;
+        if (filteredReportData.length === 0) return null; 
         const totalSubmissions = new Set(reportData.map(r => r.submissionId)).size;
         const totalItems = reportData.length;
         const chartsCount = chartConfigs.length;
@@ -549,18 +637,422 @@ export default function EnhancedReportViewer() {
             </div>
         );
     };
+    const filteredReportData = useMemo(() => {
+        console.log('🔍 Filtering report data...', {
+            totalRows: reportData?.length,
+            showBlankRows,
+            isGrouped,
+            groupingConfig: groupingConfig?.length
+        });
 
+        if (!reportData || reportData.length === 0) return [];
+
+        // If user wants to show blank rows, return all data
+        if (showBlankRows) {
+            console.log('✅ Showing all rows (showBlankRows = true)');
+            return reportData;
+        }
+
+        const filtered = reportData.filter(row => {
+            // Always keep group headers and footers
+            if (row.type === 'group-header' || row.type === 'group-footer') {
+                return true;
+            }
+
+            // For data rows, check if they have meaningful data
+            if (row.type === 'data-row' || !row.type) {
+                if (!row.data || row.data.length === 0) {
+                    console.log('❌ Removing row - no data array');
+                    return false;
+                }
+
+                // Separate calculated fields from regular fields
+                const regularFields = row.data.filter(cell => cell.fieldType !== 'calculated');
+                const calculatedFields = row.data.filter(cell => cell.fieldType === 'calculated');
+
+                console.log('📊 Checking row:', {
+                    submissionId: row.submissionId,
+                    regularFieldCount: regularFields.length,
+                    calculatedFieldCount: calculatedFields.length
+                });
+
+                // Check if regular fields have any meaningful data
+                const hasRegularData = regularFields.some(cell => {
+                    const value = cell.value;
+
+                    // Check for empty/null/dash values
+                    if (value === null ||
+                        value === undefined ||
+                        value === '' ||
+                        value === '-' ||
+                        value === '—' ||
+                        value === 'null' ||
+                        value === 'NULL') {
+                        return false;
+                    }
+
+                    // Check if value is "0" or 0
+                    if (value === '0' || value === 0) {
+                        return false;
+                    }
+
+                    // Check if it's a stringified zero
+                    try {
+                        const parsed = JSON.parse(value);
+                        if (parsed === 0 || parsed === '0') {
+                            return false;
+                        }
+                    } catch {
+                        // Not JSON, continue checking
+                    }
+
+                    return true;
+                });
+
+                // Check if calculated fields have meaningful non-zero values
+                const hasNonZeroCalculatedData = calculatedFields.some(cell => {
+                    const value = cell.value;
+
+                    if (value === null ||
+                        value === undefined ||
+                        value === '' ||
+                        value === '-' ||
+                        value === '—' ||
+                        value === '0' ||
+                        value === '0.00' ||
+                        value === 0) {
+                        return false;
+                    }
+
+                    // Check if it's a number string like "0.00"
+                    const numValue = parseFloat(value);
+                    if (!isNaN(numValue) && numValue === 0) {
+                        return false;
+                    }
+
+                    return true;
+                });
+
+                const keepRow = hasRegularData || hasNonZeroCalculatedData;
+
+                if (!keepRow) {
+                    console.log('❌ Removing blank row:', row.submissionId);
+                } else {
+                    console.log('✅ Keeping row:', row.submissionId);
+                }
+
+                return keepRow;
+            }
+
+            return true;
+        });
+
+        console.log('🎯 Filtering complete:', {
+            original: reportData.length,
+            filtered: filtered.length,
+            removed: reportData.length - filtered.length
+        });
+
+        return filtered;
+    }, [reportData, showBlankRows, isGrouped, groupingConfig]);
+    const exportToExcel = async () => {
+        try {
+            setIsExporting(true);
+
+            const wb = XLSX.utils.book_new();
+
+            // ===== SHEET 1: DATA TABLE =====
+            const visibleFields = selectedFields.filter(field => {
+                if (typeof field === 'object') {
+                    return field.visible !== false;
+                }
+                const fieldObj = fields.find(f => f.id === field);
+                return fieldObj ? fieldObj.visible !== false : true;
+            });
+
+            // Prepare table data
+            const tableData = [];
+
+            // Add headers
+            const headers = visibleFields.map(fieldId => {
+                const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                const cleanedLabel = field?.label?.includes("→")
+                    ? field.label.split("→").pop().trim()
+                    : field?.label || fieldId;
+                return cleanedLabel;
+            });
+
+            // Add calculated field headers
+            calculatedFields
+                .filter(cf => cf.calculationType !== 'columnwise')
+                .forEach(cf => headers.push(cf.label));
+
+            tableData.push(headers);
+
+            // Add data rows (using filtered data to exclude blanks)
+            filteredReportData.forEach(row => {
+                if (row.type === 'group-header') {
+                    const groupRow = Array(headers.length).fill('');
+                    groupRow[0] = `📁 ${row.groupField}: ${row.groupValue} (${row.rowCount} items)`;
+                    tableData.push(groupRow);
+                } else if (row.type === 'group-footer') {
+                    const footerRow = Array(headers.length).fill('');
+                    footerRow[0] = `📊 Subtotal: ${row.groupValue}`;
+
+                    // Add aggregations
+                    calculatedFields
+                        .filter(cf => cf.calculationType !== 'columnwise')
+                        .forEach((cf, i) => {
+                            const aggKey = `calc_${cf.id}`;
+                            const agg = row.aggregations?.[aggKey];
+                            if (agg) {
+                                footerRow[visibleFields.length + i] = `${agg.label}: ${agg.value.toFixed(2)}`;
+                            }
+                        });
+
+                    tableData.push(footerRow);
+                } else if (row.type === 'data-row' || !row.type) {
+                    const dataRow = [];
+
+                    // Regular fields
+                    visibleFields.forEach(fieldId => {
+                        const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                        const fieldData = row.data?.find(d => d.fieldLabel === field?.label);
+                        let value = fieldData?.value || '';
+
+                        // Clean up the value for Excel
+                        try {
+                            const parsed = JSON.parse(value);
+                            if (Array.isArray(parsed)) {
+                                value = parsed.join(', ');
+                            } else if (typeof parsed === 'object') {
+                                value = JSON.stringify(parsed);
+                            } else {
+                                value = parsed;
+                            }
+                        } catch {
+                            // Use as-is
+                        }
+
+                        dataRow.push(value === '—' ? '' : value);
+                    });
+
+                    // Calculated fields
+                    calculatedFields
+                        .filter(cf => cf.calculationType !== 'columnwise')
+                        .forEach(cf => {
+                            const calcData = row.data?.find(d => d.fieldLabel === cf.label);
+                            dataRow.push(calcData?.value || '');
+                        });
+
+                    tableData.push(dataRow);
+                }
+            });
+
+            // Add summary rows if present
+            if (summaryRows.length > 0) {
+                tableData.push([]); // Empty row separator
+                tableData.push(['SUMMARY & TOTALS']);
+                tableData.push([]);
+
+                summaryRows.forEach(summary => {
+                    tableData.push([summary.label, summary.value, summary.formula]);
+                });
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet(tableData);
+
+            // Style the header row
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+                const address = XLSX.utils.encode_col(C) + "1";
+                if (!ws[address]) continue;
+                ws[address].s = {
+                    font: { bold: true },
+                    fill: { fgColor: { rgb: "4472C4" } },
+                    alignment: { horizontal: "center" }
+                };
+            }
+
+            // Auto-size columns
+            const colWidths = headers.map(h => ({ wch: Math.max(h.length + 2, 15) }));
+            ws['!cols'] = colWidths;
+
+            XLSX.utils.book_append_sheet(wb, ws, "Report Data");
+
+            // ===== SHEET 2: CHART DATA =====
+            if (chartData && chartData.length > 0) {
+                const chartDataForExcel = [];
+
+                // Get all unique keys from chartData
+                const allKeys = [...new Set(chartData.flatMap(item => Object.keys(item)))];
+
+                // Add headers
+                chartDataForExcel.push(allKeys);
+
+                // Add data
+                chartData.forEach(item => {
+                    const row = allKeys.map(key => item[key] || '');
+                    chartDataForExcel.push(row);
+                });
+
+                const chartWs = XLSX.utils.aoa_to_sheet(chartDataForExcel);
+
+                // Style headers
+                for (let C = 0; C < allKeys.length; ++C) {
+                    const address = XLSX.utils.encode_col(C) + "1";
+                    if (!chartWs[address]) continue;
+                    chartWs[address].s = {
+                        font: { bold: true },
+                        fill: { fgColor: { rgb: "70AD47" } },
+                        alignment: { horizontal: "center" }
+                    };
+                }
+
+                // Auto-size columns
+                const chartColWidths = allKeys.map(h => ({ wch: Math.max(String(h).length + 2, 12) }));
+                chartWs['!cols'] = chartColWidths;
+
+                XLSX.utils.book_append_sheet(wb, chartWs, "Chart Data");
+
+                // ===== SHEET 3: CHART CONFIGURATIONS =====
+                const chartConfigData = [
+                    ['Chart Configurations'],
+                    [],
+                    ['Chart #', 'Title', 'Type', 'Metrics', 'X-Field']
+                ];
+
+                chartConfigs.forEach((chart, index) => {
+                    chartConfigData.push([
+                        index + 1,
+                        chart.title || `Chart ${index + 1}`,
+                        chart.type,
+                        (chart.metrics || []).join(', '),
+                        chart.xField || ''
+                    ]);
+                });
+
+                const configWs = XLSX.utils.aoa_to_sheet(chartConfigData);
+
+                // Style headers
+                const configRange = XLSX.utils.decode_range(configWs['!ref']);
+                for (let C = configRange.s.c; C <= configRange.e.c; ++C) {
+                    const address = XLSX.utils.encode_col(C) + "3";
+                    if (!configWs[address]) continue;
+                    configWs[address].s = {
+                        font: { bold: true },
+                        fill: { fgColor: { rgb: "FFC000" } },
+                        alignment: { horizontal: "center" }
+                    };
+                }
+
+                XLSX.utils.book_append_sheet(wb, configWs, "Chart Info");
+            }
+
+            // ===== SHEET 4: SUMMARY STATISTICS =====
+            const statsData = [
+                ['Report Summary Statistics'],
+                [],
+                ['Metric', 'Value'],
+                ['Total Submissions', new Set(filteredReportData.map(r => r.submissionId)).size],
+                ['Total Data Rows', filteredReportData.filter(r => r.type === 'data-row' || !r.type).length],
+                ['Total Charts', chartConfigs.length],
+                ['Generated On', new Date().toLocaleString()],
+                ['Report Template ID', templateId],
+                [],
+                ['Filters Applied'],
+            ];
+
+            Object.entries(runtimeFilters).forEach(([key, value]) => {
+                if (value) {
+                    const field = fields.find(f => f.id === key);
+                    statsData.push([field?.label || key, value]);
+                }
+            });
+
+            const statsWs = XLSX.utils.aoa_to_sheet(statsData);
+
+            // Style title
+            statsWs['A1'].s = {
+                font: { bold: true, sz: 14 },
+                fill: { fgColor: { rgb: "5B9BD5" } },
+                alignment: { horizontal: "center" }
+            };
+
+            // Merge title cell
+            statsWs['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+
+            XLSX.utils.book_append_sheet(wb, statsWs, "Summary Stats");
+
+            // Generate filename
+            const fileName = `Report_${templateId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+            // Write file
+            XLSX.writeFile(wb, fileName);
+
+            console.log('✅ Excel export completed successfully');
+
+        } catch (error) {
+            console.error('❌ Excel export error:', error);
+            setError('Failed to export to Excel: ' + error.message);
+        } finally {
+            setIsExporting(false);
+        }
+    };
     const renderViewControls = () => {
-        console.log('🎨 Rendering view controls, isDarkMode:', isDarkMode); // Debug log
-
         return (
             <div className="view-controls">
-                {/* Dark Mode Toggle - MUST BE FIRST */}
+
+                {/* Debug Info (optional - remove in production) */}
+                <div style={{
+                    background: '#fef3c7',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    border: '1px solid #f59e0b'
+                }}>
+                    📊 Total: {reportData.length} |
+                    ✅ Filtered: {filteredReportData.length} |
+                    🗑️ Hidden: {reportData.length - filteredReportData.length} |
+                    {isGrouped ? ' 🏷️ GROUPED' : ' 📋 FLAT'}
+                </div>
+                {/* Export Button - First */}
+                <button
+                    onClick={exportToExcel}
+                    disabled={isExporting || filteredReportData.length === 0}
+                    className={`export-btn ${isExporting ? 'exporting' : ''}`}
+                    title="Export to Excel with charts"
+                >
+                    {isExporting ? (
+                        <span className="flex items-center gap-2">
+                            <span className="animate-spin">⏳</span>
+                            Exporting...
+                        </span>
+                    ) : (
+                        <span className="flex items-center gap-2">
+                            📊 Export to Excel
+                        </span>
+                    )}
+                </button>
+
+                {/* Toggle Blank Rows Button */}
                 <button
                     onClick={() => {
-                        console.log('🖱️ Dark mode button clicked'); // Debug log
-                        toggleDarkMode();
+                        console.log('🔄 Toggling showBlankRows from:', showBlankRows);
+                        setShowBlankRows(!showBlankRows);
                     }}
+                    className={`blank-rows-toggle ${!showBlankRows ? 'active' : ''}`}
+                    title={showBlankRows ? "Hide blank rows" : "Show blank rows"}
+                >
+                    {showBlankRows ? '👁️ Show All' : '🧹 Hide Blanks'}
+                    <span className="ml-1 text-xs font-normal">
+                        ({filteredReportData.length} rows)
+                    </span>
+                </button>
+
+                {/* Dark Mode Toggle */}
+                <button
+                    onClick={toggleDarkMode}
                     className={`dark-mode-toggle ${isDarkMode ? 'active' : ''}`}
                     style={{
                         backgroundColor: isDarkMode ? '#fbbf24' : '#374151',
@@ -575,7 +1067,7 @@ export default function EnhancedReportViewer() {
                     {isDarkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
                 </button>
 
-                {/* Rest of your existing buttons */}
+                {/* Rest of existing buttons */}
                 <button
                     onClick={() => setDisplayMode("table")}
                     className={displayMode === 'table' ? 'active' : ''}
@@ -594,6 +1086,14 @@ export default function EnhancedReportViewer() {
                 >
                     🎯 Dashboard
                 </button>
+                {groupingConfig.length > 0 && (
+                    <button
+                        onClick={() => setIsGrouped(!isGrouped)}
+                        className={isGrouped ? 'active' : ''}
+                    >
+                        🏷️ {isGrouped ? 'Grouped' : 'Flat'} View
+                    </button>
+                )}
 
                 {displayMode === 'table' && (
                     <>
@@ -614,14 +1114,166 @@ export default function EnhancedReportViewer() {
             </div>
         );
     };
-
     const renderExpandedTable = () => {
-        return renderExpandedTableWithSummary(reportData, summaryRows, selectedFields, fields);
+        console.log('📋 renderExpandedTable called', {
+            isGrouped,
+            groupingConfigLength: groupingConfig.length,
+            filteredDataLength: filteredReportData.length
+        });
+
+        if (isGrouped && groupingConfig.length > 0) {
+            console.log('🏷️ Rendering grouped table view');
+            return renderNewGroupedTable();
+        }
+
+        console.log('📊 Rendering flat table view');
+        return renderExpandedTableWithSummary(filteredReportData, summaryRows, selectedFields, fields);
+    };
+
+    const groupingStyles = `
+.group-header-row {
+    background: linear-gradient(to right, #f3f4f6, #e5e7eb);
+    font-weight: 600;
+    border-top: 2px solid #9ca3af;
+}
+
+.group-footer-row {
+    background: #fef3c7;
+    font-weight: 500;
+    border-top: 1px solid #fbbf24;
+    border-bottom: 2px solid #f59e0b;
+}
+
+.group-header-row td,
+.group-footer-row td {
+    padding: 12px 16px;
+}
+`;
+
+    const renderNewGroupedTable = () => {
+        const visibleFields = selectedFields.filter(field => {
+            if (typeof field === 'object') {
+                return field.visible !== false;
+            }
+            const fieldObj = fields.find(f => f.id === field);
+            return fieldObj ? fieldObj.visible !== false : true;
+        });
+
+        console.log('🏷️ Rendering grouped table');
+        console.log('visibleFields:', visibleFields);
+        console.log('filteredReportData:', filteredReportData);
+
+        return (
+            <>
+                <style>{groupingStyles}</style>
+                <div className="table-container">
+                    <table className="report-table">
+                        <thead>
+                            <tr>
+                                {visibleFields.map((fieldId, i) => {
+                                    const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                    const cleanedLabel = field?.label?.includes("→")
+                                        ? field.label.split("→").pop().trim()
+                                        : field?.label;
+                                    return <th key={i}>{cleanedLabel}</th>;
+                                })}
+                                {/* Add calculated field headers */}
+                                {/*{calculatedFields*/}
+                                {/*    .filter(cf => cf.calculationType !== 'columnwise')*/}
+                                {/*    .map((cf, i) => (*/}
+                                {/*        <th key={`calc-${i}`} className="text-blue-600">*/}
+                                {/*            {cf.label}*/}
+                                {/*        </th>*/}
+                                {/*    ))}*/}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredReportData.map((row, idx) => {
+                                console.log('🔄 Rendering row:', { idx, type: row.type, data: row });
+
+                                if (row.type === 'group-header') {
+                                    return (
+                                        <tr key={`group-header-${idx}`} className="group-header-row">
+                                            <td
+                                                colSpan={visibleFields.length + calculatedFields.filter(cf => cf.calculationType !== 'columnwise').length}
+                                                style={{ paddingLeft: `${row.level * 30}px` }}
+                                            >
+                                                📁 <strong>{row.groupField}:</strong> {row.groupValue}
+                                                <span className="text-gray-500 ml-2">({row.rowCount} items)</span>
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+                                else if (row.type === 'group-footer') {
+                                    return (
+                                        <tr key={`group-footer-${idx}`} className="group-footer-row">
+                                            <td
+                                                colSpan={1}
+                                                style={{ paddingLeft: `${row.level * 30}px` }}
+                                            >
+                                                <strong>📊 Subtotal:</strong> {row.groupValue}
+                                            </td>
+                                            {/* Empty cells for regular fields */}
+                                            <td colSpan={visibleFields.length - 1}></td>
+                                            {/* Show aggregation values in calculated field columns */}
+                                            {calculatedFields
+                                                .filter(cf => cf.calculationType !== 'columnwise')
+                                                .map((cf, i) => {
+                                                    const aggKey = `calc_${cf.id}`;
+                                                    const agg = row.aggregations?.[aggKey];
+                                                    return (
+                                                        <td key={`agg-${i}`} className="text-blue-700 font-bold">
+                                                            {agg ? `${agg.label}: ${agg.value.toFixed(2)}` : '—'}
+                                                        </td>
+                                                    );
+                                                })}
+                                        </tr>
+                                    );
+                                }
+                                else if (row.type === 'data-row') {
+                                    return (
+                                        <tr key={`data-row-${idx}-${row.submissionId}`} className="hover:bg-gray-50">
+                                            {/* Regular field values */}
+                                            {visibleFields.map((fieldId, j) => {
+                                                const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                                const fieldData = row.data?.find(d => d.fieldLabel === field?.label);
+                                                return (
+                                                    <td
+                                                        key={`field-${j}`}
+                                                        style={{
+                                                            paddingLeft: row.level > 0 ? `${row.level * 30}px` : '16px'
+                                                        }}
+                                                    >
+                                                        {formatCellValue(fieldData?.value, field)}
+                                                    </td>
+                                                );
+                                            })}
+                                            {/* Calculated field values */}
+                                            {/*{calculatedFields*/}
+                                            {/*    .filter(cf => cf.calculationType !== 'columnwise')*/}
+                                            {/*    .map((cf, i) => {*/}
+                                            {/*        const calcData = row.data?.find(d => d.fieldLabel === cf.label);*/}
+                                            {/*        return (*/}
+                                            {/*            <td key={`calc-${i}`} className="font-medium text-blue-700">*/}
+                                            {/*                {calcData?.value || '—'}*/}
+                                            {/*            </td>*/}
+                                            {/*        );*/}
+                                            {/*    })}*/}
+                                        </tr>
+                                    );
+                                }
+                                return null;
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </>
+        );
     };
 
     const renderGroupedTable = () => {
         const grouped = {};
-        reportData.forEach(row => {
+        filteredReportData.forEach(row => {
             if (!grouped[row.submissionId]) grouped[row.submissionId] = [];
             grouped[row.submissionId].push(row);
         });
@@ -1327,6 +1979,44 @@ export default function EnhancedReportViewer() {
 
     const processCalculatedFields = (reportData, calculatedFields, fields) => {
         console.log('=== PROCESS CALCULATED FIELDS DEBUG ===');
+        console.log('isGrouped:', isGrouped);
+        console.log('groupingConfig:', groupingConfig);
+
+
+        if (isGrouped && groupingConfig.length > 0) {
+            console.log('🏷️ Processing with grouping...');
+
+            const { flattenedData } = processGroupedData(
+                reportData,
+                groupingConfig,
+                fields,
+                calculatedFields
+            );
+
+            console.log('📊 Flattened data from grouping:', flattenedData);
+
+            const withCalculations = applyRowLevelCalculations(
+                flattenedData,
+                calculatedFields,
+                fields
+            );
+
+            console.log('✅ Final processed data with calculations:', withCalculations);
+
+            return {
+                processedData: withCalculations,
+                summaryRows: [] // Summaries handled by grouping
+            };
+        }
+
+        if (!calculatedFields || calculatedFields.length === 0) {
+            return {
+                processedData: reportData,
+                summaryRows: []
+            };
+        }
+
+        console.log('📋 Processing without grouping (flat view)...');
         console.log('calculatedFields:', calculatedFields);
         console.log('fields:', fields);
 
@@ -2570,7 +3260,7 @@ html.dark-mode,
 
     return (
         <>
-            <style>{loadingStyles}</style>
+            <style>{loadingStyles + exportStyles}</style>
             <style>{shiftChartStyles + maximizeStyles + darkModeStyles}</style>
             <div
                 className={`report-viewer-wrapper ${isDarkMode ? 'dark-mode' : 'light-mode'}`}

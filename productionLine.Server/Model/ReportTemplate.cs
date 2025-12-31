@@ -49,6 +49,9 @@ namespace productionLine.Server.Model
 
         [Column("DELETEDBY")]
         public string? DeletedBy { get; set; }
+
+        [Column("GROUPINGCONFIG", TypeName = "CLOB")]
+        public string? GroupingConfig { get; set; }
     }
 
     [Table("FF_REPORTFIELD")]

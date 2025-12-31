@@ -10,6 +10,7 @@ import MultiChartBuilder from './MultiChartBuilder'; // Import the new component
 import EnhancedCalculatedFieldsEditor from './CalculatedFieldsEditor';
 import { toast } from 'react-toastify';
 import { GripVertical, Eye, EyeOff } from "lucide-react";
+import { EnhancedGroupingEditor } from './EnhancedGroupingEditor'; // ADD THIS
 
 
 // AD Search component
@@ -163,6 +164,7 @@ export default function EnhancedReportDesigner() {
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
     const [availableRoles, setAvailableRoles] = useState([]);
+    const [groupingConfig, setGroupingConfig] = useState([]);  // ADD THIS
     const [selectedUsers, setSelectedUsers] = useState([]);
     const [submissionData, setSubmissionData] = useState([]);
     //UPDATED: Replace single chartConfig with multiple chart configurations
@@ -323,6 +325,7 @@ export default function EnhancedReportDesigner() {
             // If data.chartConfig is null/undefined, charts remains empty array []
 
             console.log(charts)
+            setGroupingConfig(data.groupingConfig || []);
             setChartConfigs(charts);
         });
     }, [reportId]);
@@ -676,7 +679,8 @@ export default function EnhancedReportDesigner() {
                 // ✅ For non-shift charts, shift properties are NOT added at all
 
                 return baseConfig;
-            })
+            }),
+            GroupingConfig: groupingConfig
         };
 
         // ✅ FIXED: Correct debugging - use the right property name
@@ -1927,8 +1931,13 @@ export default function EnhancedReportDesigner() {
                             calculatedFields={calculatedFields}
                             data={submissionData} // Add this line
                         />
-
-
+                        <EnhancedGroupingEditor
+                            groupingConfig={groupingConfig}
+                            setGroupingConfig={setGroupingConfig}
+                            selectedFields={selectedFields}
+                            fields={fields}
+                            calculatedFields={calculatedFields}
+                        />
 
 
 

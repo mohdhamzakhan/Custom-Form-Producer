@@ -14,6 +14,40 @@ public class ReportTemplateDto
     public List<ReportFilterDto> Filters { get; set; }
     public List<CalculatedField> CalculatedFields { get; set; }     // ✅ NEW
     public List<ChartConfig>? ChartConfigs { get; set; } // ✅ strongly typed                        // ✅ NEW
+    public List<GroupingConfig> GroupingConfig { get; set; }
+}
+
+public class GroupingConfig
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("fieldId")]
+    public Guid FieldId { get; set; }
+
+    [JsonPropertyName("order")]
+    public int Order { get; set; }
+
+    [JsonPropertyName("sortDirection")]
+    public string SortDirection { get; set; }
+
+    [JsonPropertyName("showSubtotals")]
+    public bool ShowSubtotals { get; set; }
+
+    [JsonPropertyName("aggregations")]
+    public List<AggregationConfig> Aggregations { get; set; } = new();
+}
+
+public class AggregationConfig
+{
+    [JsonPropertyName("valueKind")]
+    public List<string> ValueKind { get; set; } = new();
+    [JsonPropertyName("fieldId")]
+    public string FieldId { get; set; }
+    [JsonPropertyName("label")]
+    public string Label { get; set; }
+    [JsonPropertyName("function")]
+    public string Function { get; set; }
 }
 
 public class ChartConfig

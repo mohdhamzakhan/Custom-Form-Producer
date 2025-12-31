@@ -27,7 +27,7 @@ const EnhancedCalculatedFieldsEditor = ({
             description: "Calculate across columns in the same row - Results show for each individual row",
             icon: <Rows className="w-4 h-4" />,
             functions: ["ADD", "SUBTRACT", "MULTIPLY", "DIVIDE", "PERCENTAGE", "CONCATENATE", "EXPRESSION"],
-            hint: "💡 Use for calculations like Total = Quantity × Price for each row or complex expressions"
+            hint: "💡 Use for calculations like Total = Quantity × Price"
         },
         columnwise: {
             label: "⬇️ Column-wise Calculations",
@@ -98,6 +98,14 @@ const EnhancedCalculatedFieldsEditor = ({
             example: 'EXPRESSION("sqrt(\"Area\") + (\"Length\" * \"Width\")")  → Complex calculation result',
             resultLocation: "Each row shows calculated expression result",
             useCase: "Perfect for complex formulas like compound interest, geometric calculations, conditional logic"
+        },
+        // Add these to FORMULA_TEMPLATES
+        
+        "GROUP_COUNT": {
+            template: 'GROUP_COUNT("{field}")',
+            description: "Count rows in current group",
+            example: 'IF(GROUP_COUNT("Orders") > 5, "Frequent", "Occasional")',
+            category: "rowwise"
         },
 
         // Column-wise examples

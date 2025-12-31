@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using productionLine.Server.DTO;
 using productionLine.Server.Model;
 using System.DirectoryServices.AccountManagement;
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
@@ -219,7 +220,7 @@ namespace productionLine.Server.Controllers
                     existingField.DefaultRowsJson = field.DefaultRowsJson;
                     existingField.AllowAddRows = field.AllowAddRows;
                     existingField.AllowEditQuestions = field.AllowEditQuestions;
-                    
+
 
 
 
@@ -410,15 +411,15 @@ namespace productionLine.Server.Controllers
                     KeyFieldMappingsJson = f.KeyFieldMappingsJson,
                     KeyFieldMappings = f.KeyFieldMappings,
                     IMAGEOPTIONS = f.IMAGEOPTIONS,
-                    Order=f.Order,
-                    ImageData=f.IMAGEOPTIONS,
+                    Order = f.Order,
+                    ImageData = f.IMAGEOPTIONS,
                     minLength = f.minLength,
                     maxLength = f.maxLength,
                     lengthValidationMessage = f.lengthValidationMessage,
                     AllowAddRows = f.AllowAddRows,
                     AllowEditQuestions = f.AllowEditQuestions,
-                    DefaultRowsJson=f.DefaultRowsJson,
-                    DefaultRows=f.DefaultRows,
+                    DefaultRowsJson = f.DefaultRowsJson,
+                    DefaultRows = f.DefaultRows,
 
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
@@ -466,9 +467,9 @@ namespace productionLine.Server.Controllers
                         lengthValidationMessage = ct.lengthValidationMessage,
                         maxLength = ct.maxLength,
                         minLength = ct.minLength,
-                        disabled =ct.disable,
+                        disabled = ct.disable,
                         visible = ct.visible
-                        
+
 
                     }).ToList() ?? new List<GridColumnDto>()),
 
@@ -484,32 +485,63 @@ namespace productionLine.Server.Controllers
         }
 
         [HttpPost("{formId}/submit")]
-        public async Task<IActionResult> SubmitForm(int formId, [FromBody] FormSubmissionDTO submissionDTO)
+        public async Task<IActionResult> SubmitForm(
+    int formId,
+    [FromBody] FormSubmissionDTO submissionDTO)
         {
             if (formId != submissionDTO.FormId)
-            {
                 return BadRequest("Form ID in URL does not match the one in submission data");
-            }
+
             if (submissionDTO.SubmissionData == null || !submissionDTO.SubmissionData.Any())
-            {
                 return BadRequest("No form data provided");
-            }
-            Form form = await _context.Forms.Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level)).FirstOrDefaultAsync((Form f) => f.Id == formId);
-            if (form == null)
+
+            // =========================
+            // SAFE SUBMITTED DATE LOGIC
+            // =========================
+            DateTime submittedAt = DateTime.Now;
+
+            if (!string.IsNullOrWhiteSpace(submissionDTO.SubmittedAt))
             {
-                return NotFound("Form not found");
+                var formats = new[]
+   {
+        "dd-MM-yyyy HH:mm:ss",
+        "dd-MM-yyyy HH:mm"
+    };
+                DateTime parsed;
+                if (DateTime.TryParseExact(
+                    submissionDTO.SubmittedAt.Trim(),
+        formats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out parsed))
+                {
+                    submittedAt = parsed;
+                }
             }
+
+            Form form = await _context.Forms
+                .Include(f => f.Approvers.OrderBy(a => a.Level))
+                .FirstOrDefaultAsync(f => f.Id == formId);
+
+            if (form == null)
+                return NotFound("Form not found");
+
             FormSubmission formSubmission;
+
             if (submissionDTO.SubmissionId.HasValue && submissionDTO.SubmissionId.Value > 0)
             {
-                formSubmission = await _context.FormSubmissions.Include((FormSubmission s) => s.SubmissionData).Include((FormSubmission s) => s.Approvals).FirstOrDefaultAsync((FormSubmission s) => s.Id == submissionDTO.SubmissionId.Value);
+                formSubmission = await _context.FormSubmissions
+                    .Include(s => s.SubmissionData)
+                    .Include(s => s.Approvals)
+                    .FirstOrDefaultAsync(s => s.Id == submissionDTO.SubmissionId.Value);
+
                 if (formSubmission == null)
-                {
                     return NotFound("Submission not found");
-                }
+
                 _context.FormSubmissionData.RemoveRange(formSubmission.SubmissionData);
                 _context.FormApprovals.RemoveRange(formSubmission.Approvals);
-                formSubmission.SubmittedAt = DateTime.Now;
+
+                formSubmission.SubmittedAt = submittedAt;
                 formSubmission.SubmissionData = new List<FormSubmissionData>();
                 formSubmission.Approvals = new List<FormApproval>();
             }
@@ -518,13 +550,15 @@ namespace productionLine.Server.Controllers
                 formSubmission = new FormSubmission
                 {
                     FormId = formId,
-                    SubmittedAt = DateTime.Now,
+                    SubmittedAt = submittedAt,
                     SubmissionData = new List<FormSubmissionData>(),
                     Approvals = new List<FormApproval>()
                 };
+
                 _context.FormSubmissions.Add(formSubmission);
             }
-            foreach (FormSubmissionDataDTO data in submissionDTO.SubmissionData)
+
+            foreach (var data in submissionDTO.SubmissionData)
             {
                 formSubmission.SubmissionData.Add(new FormSubmissionData
                 {
@@ -532,11 +566,14 @@ namespace productionLine.Server.Controllers
                     FieldValue = data.FieldValue
                 });
             }
+
             await _context.SaveChangesAsync();
-            if (form.Approvers == null || form.Approvers.Count == 0)
+
+            if (form.Approvers == null || !form.Approvers.Any())
             {
                 formSubmission.Approvals.Add(new FormApproval
                 {
+                    FormSubmissionId = formSubmission.Id,
                     ApprovalLevel = 0,
                     ApproverId = 0,
                     ApproverName = "System Approval",
@@ -547,7 +584,7 @@ namespace productionLine.Server.Controllers
             }
             else
             {
-                foreach (FormApprover approver in form.Approvers)
+                foreach (var approver in form.Approvers)
                 {
                     formSubmission.Approvals.Add(new FormApproval
                     {
@@ -559,13 +596,18 @@ namespace productionLine.Server.Controllers
                     });
                 }
             }
+
             await _context.SaveChangesAsync();
+
             return Ok(new
             {
                 id = formSubmission.Id,
-                message = (submissionDTO.SubmissionId.HasValue ? "Form updated successfully" : "Form submitted successfully")
+                message = submissionDTO.SubmissionId.HasValue
+                    ? "Form updated successfully"
+                    : "Form submitted successfully"
             });
         }
+
 
         [HttpGet("fields")]
         public async Task<IActionResult> GetFields([FromQuery] int formId)

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using productionLine.Server.DTO;
+using productionLine.Server.Migrations;
 using productionLine.Server.Model;
 using productionLine.Server.Service;
 using System.Text.Json;
@@ -207,6 +208,9 @@ namespace productionLine.Server.Controllers
                     template.ChartConfig = dto.ChartConfigs?.Any() == true
                         ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions)
                         : null;
+                    template.GroupingConfig = dto.GroupingConfig?.Any() == true
+                        ? JsonSerializer.Serialize(dto.GroupingConfig, jsonOptions)
+                        : null;
                 }
                 else
                 {
@@ -244,6 +248,9 @@ namespace productionLine.Server.Controllers
 
                         ChartConfig = dto.ChartConfigs?.Any() == true
                             ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions)
+                            : null,
+                        GroupingConfig = dto.GroupingConfig?.Any() == true
+                            ? JsonSerializer.Serialize(dto.GroupingConfig, jsonOptions)
                             : null
                     };
 
@@ -263,7 +270,6 @@ namespace productionLine.Server.Controllers
                 return StatusCode(500, new { message = $"Error saving template: {ex.Message}" });
             }
         }
-
 
         [HttpPost("run/{templateId}")]
         public async Task<IActionResult> RunReport(int templateId, [FromBody] Dictionary<string, string> runtimeValues)
@@ -636,11 +642,9 @@ namespace productionLine.Server.Controllers
             }
         }
 
-
-
         [HttpGet("template/{reportId}")]
         public async Task<IActionResult> GetTemplate(int reportId)
-        
+
         {
             var template = await _context.ReportTemplates
                 .Include(t => t.Fields)
@@ -685,99 +689,107 @@ namespace productionLine.Server.Controllers
             var gridFormFields = await _context.FormFields
                 .Where(ff => gridFieldIds.Contains(ff.Id) && ff.Type.ToLower() == "grid")
                 .ToDictionaryAsync(ff => ff.Id, ff => ff);
-
-            return Ok(new
+            try
             {
-                id = template.Id,
-                name = template.Name,
-                formId = template.FormId,
-                fields = template.Fields.Select(f => new
+                return Ok(new
                 {
-                    f.Id,
-                    f.FieldId,
-                    f.FieldLabel,
-                    f.Order,
-                    f.Visible  // ✅ ADD THIS
-                }).ToList(),
-                filters = template.Filters.Select(filter =>
-                {
-                    FormField formField = null;
-                    List<string> options = null;
-                    string fieldType = null;
-
-                    if (!string.IsNullOrEmpty(filter.FieldLabel))
+                    id = template.Id,
+                    name = template.Name,
+                    formId = template.FormId,
+                    fields = template.Fields.Select(f => new
                     {
-                        // Handle grid field reference (gridFieldId:columnId)
-                        if (filter.FieldLabel.Contains(':'))
+                        f.Id,
+                        f.FieldId,
+                        f.FieldLabel,
+                        f.Order,
+                        f.Visible  // ✅ ADD THIS
+                    }).ToList(),
+                    filters = template.Filters.Select(filter =>
+                    {
+                        FormField formField = null;
+                        List<string> options = null;
+                        string fieldType = null;
+
+                        if (!string.IsNullOrEmpty(filter.FieldLabel))
                         {
-                            var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
-                            if (parts.Length >= 2 &&
-                                Guid.TryParse(parts[0], out Guid gridFieldId) &&
-                                Guid.TryParse(parts[1], out Guid columnId))
+                            // Handle grid field reference (gridFieldId:columnId)
+                            if (filter.FieldLabel.Contains(':'))
                             {
-                                if (gridFormFields.TryGetValue(gridFieldId, out var gridField) &&
-                                    gridField.Columns != null)
+                                var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length >= 2 &&
+                                    Guid.TryParse(parts[0], out Guid gridFieldId) &&
+                                    Guid.TryParse(parts[1], out Guid columnId))
                                 {
-                                    // Find the specific column in the grid
-                                    var column = gridField.Columns.FirstOrDefault(c =>
-                                        Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
-
-                                    if (column != null)
+                                    if (gridFormFields.TryGetValue(gridFieldId, out var gridField) &&
+                                        gridField.Columns != null)
                                     {
-                                        fieldType = column.Type?.ToLower();
+                                        // Find the specific column in the grid
+                                        var column = gridField.Columns.FirstOrDefault(c =>
+                                            Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
 
-                                        // Extract options for dropdown, checkbox, or radio columns
-                                        if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
-                                            column.Options != null && column.Options.Any())
+                                        if (column != null)
                                         {
-                                            options = column.Options;
+                                            fieldType = column.Type?.ToLower();
+
+                                            // Extract options for dropdown, checkbox, or radio columns
+                                            if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
+                                                column.Options != null && column.Options.Any())
+                                            {
+                                                options = column.Options;
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                        // Handle regular field reference
-                        else if (Guid.TryParse(filter.FieldLabel, out Guid fieldId))
-                        {
-                            if (formFields.TryGetValue(fieldId, out formField))
+                            // Handle regular field reference
+                            else if (Guid.TryParse(filter.FieldLabel, out Guid fieldId))
                             {
-                                fieldType = formField.Type?.ToLower();
-
-                                // Extract options for dropdown, checkbox, or radio fields
-                                if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
-                                    !string.IsNullOrEmpty(formField.OptionsJson))
+                                if (formFields.TryGetValue(fieldId, out formField))
                                 {
-                                    options = JsonSerializer.Deserialize<List<string>>(formField.OptionsJson);
+                                    fieldType = formField.Type?.ToLower();
+
+                                    // Extract options for dropdown, checkbox, or radio fields
+                                    if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
+                                        !string.IsNullOrEmpty(formField.OptionsJson))
+                                    {
+                                        options = JsonSerializer.Deserialize<List<string>>(formField.OptionsJson);
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    return new
-                    {
-                        filter.Id,
-                        filter.FieldLabel,
-                        filter.Operator,
-                        filter.Value,
-                        filter.Type,
-                        // Add options data for dropdown, checkbox, and radio filters
-                        options = options,
-                        // Add field type information for frontend rendering
-                        fieldType = fieldType
-                    };
-                }).ToList(),
-                sharedWithRole = !string.IsNullOrEmpty(template.SharedWithRole)
-                    ? JsonSerializer.Deserialize<List<SharedUser>>(template.SharedWithRole)
-                    : new List<SharedUser>(),
-                calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
-                    ? JsonSerializer.Deserialize<List<CalculatedField>>(template.CalculatedFields)
-                    : new List<CalculatedField>(),
-                chartConfig = !string.IsNullOrEmpty(template.ChartConfig)
-                    ? JsonSerializer.Deserialize<List<ChartConfig>>(template.ChartConfig)
-                    : new List<ChartConfig>()
-            });
+                        return new
+                        {
+                            filter.Id,
+                            filter.FieldLabel,
+                            filter.Operator,
+                            filter.Value,
+                            filter.Type,
+                            // Add options data for dropdown, checkbox, and radio filters
+                            options = options,
+                            // Add field type information for frontend rendering
+                            fieldType = fieldType
+                        };
+                    }).ToList(),
+                    sharedWithRole = !string.IsNullOrEmpty(template.SharedWithRole)
+                        ? JsonSerializer.Deserialize<List<SharedUser>>(template.SharedWithRole)
+                        : new List<SharedUser>(),
+                    calculatedFields = !string.IsNullOrEmpty(template.CalculatedFields)
+                        ? JsonSerializer.Deserialize<List<CalculatedField>>(template.CalculatedFields)
+                        : new List<CalculatedField>(),
+                    chartConfig = !string.IsNullOrEmpty(template.ChartConfig)
+                        ? JsonSerializer.Deserialize<List<ChartConfig>>(template.ChartConfig)
+                        : new List<ChartConfig>(),
+                    groupingConfig = !string.IsNullOrEmpty(template.GroupingConfig)
+                        ? JsonSerializer.Deserialize<List<GroupingConfig>>(template.GroupingConfig)
+                        : new List<GroupingConfig>()
+
+                });
+            }
+            catch(Exception ex) {
+                return NotFound();
+            }
         }
-
 
         [HttpGet("list")]
         public async Task<IActionResult> GetReportsList(string username, bool includeShared = true)
@@ -813,7 +825,6 @@ namespace productionLine.Server.Controllers
             }
         }
 
-
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteReport(int id)
         {
@@ -831,6 +842,7 @@ namespace productionLine.Server.Controllers
 
             return NoContent();
         }
+
         [HttpGet("dropdown-options/{templateId}/{fieldLabel}")]
         public async Task<IActionResult> GetDropdownOptions(int templateId, string fieldLabel)
         {

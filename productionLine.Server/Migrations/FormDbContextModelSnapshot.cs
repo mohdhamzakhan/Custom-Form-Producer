@@ -743,7 +743,7 @@ namespace productionLine.Server.Migrations
                         .HasColumnName("TEMPLATEID");
 
                     b.Property<bool>("Visible")
-                        .HasColumnType("BOOLEAN")
+                        .HasColumnType("NUMBER(1)")
                         .HasColumnName("VISIBLE");
 
                     b.HasKey("Id");
@@ -826,6 +826,10 @@ namespace productionLine.Server.Migrations
                     b.Property<int>("FormId")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FORMID");
+
+                    b.Property<string>("GroupingConfig")
+                        .HasColumnType("CLOB")
+                        .HasColumnName("GROUPINGCONFIG");
 
                     b.Property<int>("IncludeApprovals")
                         .HasColumnType("NUMBER(10)")
