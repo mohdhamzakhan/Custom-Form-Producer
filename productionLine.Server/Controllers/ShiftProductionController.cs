@@ -311,6 +311,86 @@ namespace productionLine.Server.Controllers
 
 
 
+        //    private List<ChartDataPoint> CalculateTargetLine(
+        //int targetParts,
+        //double cycleTimeSeconds,
+        //string startTime,
+        //string endTime,
+        //List<BreakConfig> breaks)
+        //    {
+        //        var partsPerSecond = 1.0 / cycleTimeSeconds;
+        //        var partsPerInterval = partsPerSecond * 300; // 5-minute intervals
+
+        //        var startMinutes = ParseTimeToMinutes(startTime);
+        //        var endMinutes = ParseTimeToMinutes(endTime);
+
+        //        // Handle overnight shifts
+        //        if (endMinutes <= startMinutes)
+        //        {
+        //            endMinutes += 24 * 60;
+        //        }
+
+        //        // ✅ Pre-process breaks with names
+        //        var breakRanges = breaks
+        //            .Where(b => !string.IsNullOrWhiteSpace(b.StartTime) && !string.IsNullOrWhiteSpace(b.EndTime))
+        //            .Select(b => {
+        //                try
+        //                {
+        //                    return new
+        //                    {
+        //                        Start = ParseTimeToMinutes(b.StartTime),
+        //                        End = ParseTimeToMinutes(b.EndTime),
+        //                        Name = b.Name ?? "Break",  // ✅ Include break name
+        //                        IsValid = true
+        //                    };
+        //                }
+        //                catch (Exception ex)
+        //                {
+        //                    Console.WriteLine($"[CalculateTargetLine] Skipping invalid break: {b.Name} - {ex.Message}");
+        //                    return new { Start = 0, End = 0, Name = "", IsValid = false };
+        //                }
+        //            })
+        //            .Where(b => b.IsValid)
+        //            .ToList();
+
+        //        Console.WriteLine($"[CalculateTargetLine] Using {breakRanges.Count} valid breaks out of {breaks.Count} total");
+
+        //        var targetData = new List<ChartDataPoint>();
+        //        var cumulativeParts = 0.0;
+
+        //        // Generate data points every 5 minutes
+        //        for (int minutes = startMinutes; minutes <= endMinutes; minutes += 5)
+        //        {
+        //            var adjustedMinutes = minutes >= 24 * 60 ? minutes - 24 * 60 : minutes;
+
+        //            // ✅ Check if current time is during a break and get break name
+        //            var currentBreak = breakRanges.FirstOrDefault(range =>
+        //                adjustedMinutes >= range.Start && adjustedMinutes <= range.End
+        //            );
+
+        //            var isDuringBreak = currentBreak != null;
+        //            var breakName = isDuringBreak ? currentBreak.Name : null;
+
+        //            // Only add parts if not during break
+        //            if (!isDuringBreak)
+        //            {
+        //                cumulativeParts += partsPerInterval;
+        //            }
+
+        //            targetData.Add(new ChartDataPoint
+        //            {
+        //                Time = FormatTime(adjustedMinutes),
+        //                TargetParts = (int)Math.Round(Math.Min(cumulativeParts, targetParts)),
+        //                ActualParts = 0,
+        //                IsBreak = isDuringBreak,
+        //                BreakName = breakName,  // ✅ Set break name
+        //                NewPartsInBucket = 0
+        //            });
+        //        }
+
+        //        return targetData;
+        //    }
+
         private List<ChartDataPoint> CalculateTargetLine(
     int targetParts,
     double cycleTimeSeconds,
@@ -320,7 +400,6 @@ namespace productionLine.Server.Controllers
         {
             var partsPerSecond = 1.0 / cycleTimeSeconds;
             var partsPerInterval = partsPerSecond * 300; // 5-minute intervals
-
             var startMinutes = ParseTimeToMinutes(startTime);
             var endMinutes = ParseTimeToMinutes(endTime);
 
@@ -340,7 +419,7 @@ namespace productionLine.Server.Controllers
                         {
                             Start = ParseTimeToMinutes(b.StartTime),
                             End = ParseTimeToMinutes(b.EndTime),
-                            Name = b.Name ?? "Break",  // ✅ Include break name
+                            Name = b.Name ?? "Break",
                             IsValid = true
                         };
                     }
@@ -371,21 +450,23 @@ namespace productionLine.Server.Controllers
                 var isDuringBreak = currentBreak != null;
                 var breakName = isDuringBreak ? currentBreak.Name : null;
 
-                // Only add parts if not during break
-                if (!isDuringBreak)
-                {
-                    cumulativeParts += partsPerInterval;
-                }
-
+                // ✅ FIX: Add the data point FIRST with current cumulative (which is 0 at start)
                 targetData.Add(new ChartDataPoint
                 {
                     Time = FormatTime(adjustedMinutes),
                     TargetParts = (int)Math.Round(Math.Min(cumulativeParts, targetParts)),
                     ActualParts = 0,
                     IsBreak = isDuringBreak,
-                    BreakName = breakName,  // ✅ Set break name
+                    BreakName = breakName,
                     NewPartsInBucket = 0
                 });
+
+                // ✅ FIX: THEN increment cumulative parts for the NEXT interval
+                // Only add parts if not during break
+                if (!isDuringBreak)
+                {
+                    cumulativeParts += partsPerInterval;
+                }
             }
 
             return targetData;
@@ -464,9 +545,9 @@ namespace productionLine.Server.Controllers
                 shiftStartBucket = ParseTimeToMinutes(firstTargetTime);
                 shiftEndBucket = ParseTimeToMinutes(lastTargetTime);
 
-                Console.WriteLine($"[BuildCombinedChartData] Shift start: {shiftStartBucket} ({firstTargetTime})");
-                Console.WriteLine($"[BuildCombinedChartData] Shift end: {shiftEndBucket} ({lastTargetTime})");
-                Console.WriteLine($"[BuildCombinedChartData] Is overnight shift: {shiftStartBucket > shiftEndBucket}");
+                //Console.WriteLine($"[BuildCombinedChartData] Shift start: {shiftStartBucket} ({firstTargetTime})");
+                //Console.WriteLine($"[BuildCombinedChartData] Shift end: {shiftEndBucket} ({lastTargetTime})");
+                //Console.WriteLine($"[BuildCombinedChartData] Is overnight shift: {shiftStartBucket > shiftEndBucket}");
             }
 
             // Helper to parse formatted time string back to minutes
@@ -519,9 +600,9 @@ namespace productionLine.Server.Controllers
                     lastSubmissionBucket = buckets.OrderBy(b => b).Last();
                 }
 
-                Console.WriteLine($"[BuildCombinedChartData] Total submissions: {submissions.Count}");
-                Console.WriteLine($"[BuildCombinedChartData] First submission bucket: {firstSubmissionBucket} ({FormatTime(firstSubmissionBucket.Value)})");
-                Console.WriteLine($"[BuildCombinedChartData] Last submission bucket: {lastSubmissionBucket} ({FormatTime(lastSubmissionBucket.Value)})");
+                //Console.WriteLine($"[BuildCombinedChartData] Total submissions: {submissions.Count}");
+                //Console.WriteLine($"[BuildCombinedChartData] First submission bucket: {firstSubmissionBucket} ({FormatTime(firstSubmissionBucket.Value)})");
+                //Console.WriteLine($"[BuildCombinedChartData] Last submission bucket: {lastSubmissionBucket} ({FormatTime(lastSubmissionBucket.Value)})");
             }
 
             // ✅ FIXED: Improved window logic that properly handles overnight shifts
@@ -543,7 +624,7 @@ namespace productionLine.Server.Controllers
                     // Debug logging for overnight shifts
                     if (value >= 1415 || value <= 15) // Around midnight
                     {
-                        Console.WriteLine($"[IsWithinWindow] Overnight: start={start}, end={end}, value={value}, result={result}");
+                        //Console.WriteLine($"[IsWithinWindow] Overnight: start={start}, end={end}, value={value}, result={result}");
                     }
 
                     return result;

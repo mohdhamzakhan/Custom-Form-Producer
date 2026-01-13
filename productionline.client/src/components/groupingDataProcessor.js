@@ -431,15 +431,31 @@ const evaluateRowCalculation = (calcField, rowData, fields) => {
         const field = fields.find(f => f.label === fieldLabel);
 
         if (field) {
-            const fieldData = rowData?.find(d => d.fieldLabel === field.label);
+            const baseFieldId = field.id.split(':')[0];
+            // ✅ FIXED: Handle submission.submissionData structure
+            const fieldData = submission.submissionData?.find(d => d.fieldLabel === baseFieldId);
+
+            let value = null;
+
             if (fieldData) {
                 try {
-                    const parsed = JSON.parse(fieldData.value || "0");
-                    values.push(parseFloat(parsed) || 0);
+                    const parsed = JSON.parse(fieldData.fieldValue || "null");
+                    if (Array.isArray(parsed)) {
+                        const columnName = field.label.split('→').pop().trim();
+                        // ✅ FIX: Sum ALL rows, not just first
+                        value = parsed.reduce((sum, row) => {
+                            const cellValue = parseFloat(row[columnName]) || 0;
+                            return sum + cellValue;
+                        }, 0);
+                    } else {
+                        value = parsed;
+                    }
                 } catch {
-                    values.push(parseFloat(fieldData.value || "0") || 0);
+                    value = fieldData.fieldValue;
                 }
             }
+            fieldValues[match] = value;
+            fieldValues[fieldLabel] = value;
         }
     });
 

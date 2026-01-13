@@ -963,13 +963,43 @@ export default function EnhancedReportDesigner() {
         const fieldMatches = formula.match(/"([^"]+)"/g) || [];
         const fieldValues = {};
 
+        //fieldMatches.forEach(match => {
+        //    const fieldLabel = match.replace(/"/g, '');
+        //    const field = fields.find(f => f.label === fieldLabel);
+
+        //    if (field) {
+        //        const baseFieldId = field.id.split(':')[0];
+        //        // ✅ FIXED: Handle submission.submissionData structure
+        //        const fieldData = submission.submissionData?.find(d => d.fieldLabel === baseFieldId);
+
+        //        let value = null;
+
+        //        if (fieldData) {
+        //            try {
+        //                const parsed = JSON.parse(fieldData.fieldValue || "null");
+        //                if (Array.isArray(parsed)) {
+        //                    const columnName = field.label.split('→').pop().trim();
+        //                    value = parsed.length > 0 ? parsed[0][columnName] : null;
+        //                } else {
+        //                    value = parsed;
+        //                }
+        //            } catch {
+        //                value = fieldData.fieldValue;
+        //            }
+        //        }
+
+        //        fieldValues[match] = value;
+        //        fieldValues[fieldLabel] = value;
+        //    }
+        //});
+
+        // In CalculatedFieldsEditor.jsx
         fieldMatches.forEach(match => {
             const fieldLabel = match.replace(/"/g, '');
             const field = fields.find(f => f.label === fieldLabel);
 
             if (field) {
                 const baseFieldId = field.id.split(':')[0];
-                // ✅ FIXED: Handle submission.submissionData structure
                 const fieldData = submission.submissionData?.find(d => d.fieldLabel === baseFieldId);
 
                 let value = null;
@@ -979,7 +1009,21 @@ export default function EnhancedReportDesigner() {
                         const parsed = JSON.parse(fieldData.fieldValue || "null");
                         if (Array.isArray(parsed)) {
                             const columnName = field.label.split('→').pop().trim();
-                            value = parsed.length > 0 ? parsed[0][columnName] : null;
+
+                            // ✅ DEBUG LOGS - Check if this executes
+                            console.log('=== GRID FIELD DETECTED ===');
+                            console.log('Field:', fieldLabel);
+                            console.log('Grid data:', parsed);
+                            console.log('Column name:', columnName);
+
+                            // ✅ FIX: Sum ALL rows in the grid, not just first
+                            value = parsed.reduce((sum, row) => {
+                                const cellValue = parseFloat(row[columnName]) || 0;
+                                console.log('Row value:', row[columnName], '→ parsed:', cellValue);
+                                return sum + cellValue;
+                            }, 0);
+
+                            console.log('Total sum for', columnName, ':', value);
                         } else {
                             value = parsed;
                         }
@@ -993,7 +1037,12 @@ export default function EnhancedReportDesigner() {
             }
         });
 
+
+        console.log('=== EXPRESSION DEBUG ===');
+        console.log('Field matches found:', fieldMatches);
         console.log('Field values map:', fieldValues);
+        console.log('Original expression:', expression);
+
 
         // ✅ Helper function to evaluate a value (field reference, string literal, or number)
         const evaluateValue = (val) => {
@@ -1012,7 +1061,7 @@ export default function EnhancedReportDesigner() {
             if (val.startsWith('"') && val.endsWith('"')) {
                 const fieldName = val.slice(1, -1);
                 const fieldValue = fieldValues[fieldName];
-                console.log('Field reference:', fieldName, '-> value:', fieldValue);
+                console.log('Field reference:', fieldName, '-> value:', fieldValue); // ✅ CHECK THIS LOG
 
                 if (fieldValue !== null && fieldValue !== undefined) {
                     return fieldValue;
@@ -1029,8 +1078,12 @@ export default function EnhancedReportDesigner() {
                             const parsed = JSON.parse(fieldData.fieldValue || "null");
                             if (Array.isArray(parsed)) {
                                 const columnName = fieldName.split('→').pop().trim();
-                                const value = parsed.length > 0 ? parsed[0][columnName] : null;
-                                console.log('Found field data (grid):', value);
+                                // ✅ FIX: Sum ALL rows here too
+                                const value = parsed.reduce((sum, row) => {
+                                    const cellValue = parseFloat(row[columnName]) || 0;
+                                    return sum + cellValue;
+                                }, 0);
+                                console.log('Found field data (grid sum):', value);
                                 return value;
                             }
                             console.log('Found field data (parsed):', parsed);
@@ -1226,6 +1279,36 @@ export default function EnhancedReportDesigner() {
     const calculateRowwiseValue = (calcField, submission, fields, precision) => {
         const formula = calcField.formula;
         let computedFormula = formula;
+
+
+        console.log('=== ROWWISE CALCULATION DEBUG ===');
+        console.log('Calc Field:', calcField.label);
+        console.log('Formula:', calcField.formula);
+        console.log('Function Type:', calcField.functionType); // ✅ ADD THIS
+        console.log('Submission:', submission);
+
+        // Find the downtime field data
+        const downtimeFieldId = '49ba8fa9-291d-4228-855e-8ab76501770f';
+        const downtimeFieldData = submission.submissionData?.find(d => d.fieldLabel === downtimeFieldId);
+
+        if (downtimeFieldData) {
+            console.log('✅ Found downtime field');
+            console.log('Raw value:', downtimeFieldData.fieldValue);
+            try {
+                const parsed = JSON.parse(downtimeFieldData.fieldValue);
+                console.log('Parsed value:', parsed);
+                console.log('Is Array?', Array.isArray(parsed));
+                if (Array.isArray(parsed)) {
+                    console.log('Array length:', parsed.length);
+                    console.log('First row:', parsed[0]);
+                }
+            } catch (e) {
+                console.log('Parse error:', e);
+            }
+        } else {
+            console.log('❌ Downtime field NOT found');
+            console.log('Available fields:', submission.submissionData?.map(d => d.fieldLabel));
+        }
 
         // ✅ ADD: Handle EXPRESSION function type for IF conditions
         if (calcField.functionType === 'EXPRESSION') {

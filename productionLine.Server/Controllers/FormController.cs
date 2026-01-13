@@ -169,9 +169,9 @@ namespace productionLine.Server.Controllers
             {
                 if (field.Type == "dropdown" || field.Type == "checkbox")
                 {
-                    Console.WriteLine($"Field {field.Label}:");
-                    Console.WriteLine($"  RequiresRemarksJson: {field.RequiresRemarksJson}");
-                    Console.WriteLine($"  RequiresRemarks count: {field.RequiresRemarks?.Count ?? 0}");
+                    //Console.WriteLine($"Field {field.Label}:");
+                    //Console.WriteLine($"  RequiresRemarksJson: {field.RequiresRemarksJson}");
+                    //Console.WriteLine($"  RequiresRemarks count: {field.RequiresRemarks?.Count ?? 0}");
                 }
 
                 FormField existingField = existingForm.Fields.FirstOrDefault((FormField f) => f.Id == field.Id);
@@ -500,13 +500,64 @@ namespace productionLine.Server.Controllers
             // =========================
             DateTime submittedAt = DateTime.Now;
 
+            //Console.WriteLine("SubmittedAt Raw Value: " + submissionDTO.SubmittedAt);
             if (!string.IsNullOrWhiteSpace(submissionDTO.SubmittedAt))
             {
                 var formats = new[]
-   {
-        "dd-MM-yyyy HH:mm:ss",
-        "dd-MM-yyyy HH:mm"
-    };
+{
+    // =========================
+    // ISO 8601 (BEST / STANDARD)
+    // =========================
+    "yyyy-MM-ddTHH:mm:ss",
+    "yyyy-MM-ddTHH:mm:ssZ",
+    "yyyy-MM-ddTHH:mm:ss.fff",
+    "yyyy-MM-ddTHH:mm:ss.fffZ",
+    "yyyy-MM-dd HH:mm:ss",
+    "yyyy-MM-dd HH:mm",
+
+    // =========================
+    // Slash-based (very common)
+    // =========================
+    "yyyy/MM/dd HH:mm:ss",
+    "yyyy/MM/dd HH:mm",
+    "dd/MM/yyyy HH:mm:ss",
+    "dd/MM/yyyy HH:mm",
+    "MM/dd/yyyy HH:mm:ss",
+    "MM/dd/yyyy HH:mm",
+
+    // =========================
+    // Dash-based (legacy systems)
+    // =========================
+    "dd-MM-yyyy HH:mm:ss",
+    "dd-MM-yyyy HH:mm",
+    "MM-dd-yyyy HH:mm:ss",
+    "MM-dd-yyyy HH:mm",
+
+    // =========================
+    // Two-digit year (dangerous but common)
+    // =========================
+    "dd/MM/yy HH:mm:ss",
+    "dd/MM/yy HH:mm",
+    "dd-MM-yy HH:mm:ss",
+    "dd-MM-yy HH:mm",
+
+    // =========================
+    // Date only (no time)
+    // =========================
+    "yyyy-MM-dd",
+    "yyyy/MM/dd",
+    "dd/MM/yyyy",
+    "dd-MM-yyyy",
+    "MM/dd/yyyy",
+    "MM-dd-yyyy",
+
+    // =========================
+    // Time only (rare but possible)
+    // =========================
+    "HH:mm:ss",
+    "HH:mm"
+};
+
                 DateTime parsed;
                 if (DateTime.TryParseExact(
                     submissionDTO.SubmittedAt.Trim(),
@@ -518,6 +569,7 @@ namespace productionLine.Server.Controllers
                     submittedAt = parsed;
                 }
             }
+
 
             Form form = await _context.Forms
                 .Include(f => f.Approvers.OrderBy(a => a.Level))
@@ -942,7 +994,7 @@ namespace productionLine.Server.Controllers
                     catch (Exception ex)
                     {
                         // Log the error but continue processing
-                        Console.WriteLine($"Error parsing columns for field {field.Id}: {ex.Message}");
+                        //Console.WriteLine($"Error parsing columns for field {field.Id}: {ex.Message}");
                     }
                 }
 

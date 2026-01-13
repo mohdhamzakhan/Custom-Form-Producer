@@ -74,9 +74,8 @@ function App() {
                     <Route
                         path="/submissions/:submissionId"
                         element={
-                            <ProtectedRoute>
                                 <SubmissionDetail />
-                            </ProtectedRoute>
+ 
                         }
                     />
                     <Route
