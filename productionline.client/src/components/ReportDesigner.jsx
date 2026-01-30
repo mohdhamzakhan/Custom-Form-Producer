@@ -291,6 +291,7 @@ export default function EnhancedReportDesigner() {
                     // Handle array of charts
                     charts = data.chartConfig.map(chart => ({
                         ...chart,
+                        showChart: chart.showChart !== false,
                         position: {
                             row: chart.position?.Row ?? chart.position?.row ?? 0,
                             col: chart.position?.Col ?? chart.position?.col ?? 0,
@@ -610,6 +611,7 @@ export default function EnhancedReportDesigner() {
                     id: chart.id,
                     title: chart.title,
                     type: chart.type,
+                    showChart: chart.showChart !== false,
                     metrics: chart.metrics.map(metricId => {
                         const field = fields.find(f => f.id === metricId);
                         return field ? field.label : metricId;
@@ -645,7 +647,8 @@ export default function EnhancedReportDesigner() {
                             name: chart.shiftConfigs[0].name,
                             breaks: chart.shiftConfigs[0].breaks || [],
                             modelNumber: chart.shiftConfigs[0].modelNumber || "",
-                            message: chart.shiftConfigs[0].message || ""
+                            message: chart.shiftConfigs[0].message || "",
+                            showChart: chart.shiftConfigs[0].showChart || true
                         };
 
                         // ✅ OPTIONAL: Multiple shift configurations
@@ -1527,6 +1530,7 @@ export default function EnhancedReportDesigner() {
             id: chart.id,
             title: chart.title,
             type: chart.type,
+            showChart: chart.showChart !== false,
             // Convert field IDs to field labels for storage
             metrics: chart.metrics.map(metricId => {
                 const field = fields.find(f => f.id === metricId);
@@ -1629,6 +1633,18 @@ export default function EnhancedReportDesigner() {
 }
 `;
 
+    const allFieldIds = fields.map(f => f.id);
+    const allSelected = allFieldIds.length > 0 && allFieldIds.every(id => selectedFields.includes(id));
+    const someSelected = allFieldIds.some(id => selectedFields.includes(id));
+
+    const toggleSelectAllFields = () => {
+        if (allSelected) {
+            setSelectedFields([]);
+        } else {
+            setSelectedFields(allFieldIds);
+        }
+    };
+
 
     return (
         <>
@@ -1656,8 +1672,24 @@ export default function EnhancedReportDesigner() {
                             }
                         </div>
 
-                        {leftPanelExpanded.availableFields && (
+                        {selectedFormId && leftPanelExpanded.availableFields && (
                             <div className="px-4 pb-4">
+                                {/* Select All */}
+                                <label className="flex items-center p-2 mb-2 border rounded cursor-pointer bg-gray-50">
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        ref={(el) => {
+                                            if (el) el.indeterminate = !allSelected && someSelected;
+                                        }}
+                                        onChange={toggleSelectAllFields}
+                                        className="mr-3"
+                                    />
+                                    <span className="text-sm font-medium">
+                                        {allSelected ? "Deselect All" : "Select All"}
+                                    </span>
+                                </label>
+
                                 <div className="space-y-2 max-h-60 overflow-y-auto">
                                     {fields.map((field, idx) => (
                                         <label
@@ -1679,6 +1711,7 @@ export default function EnhancedReportDesigner() {
                                 </div>
                             </div>
                         )}
+
                     </div>
 
                     {/* Selected Fields with Reordering */}

@@ -203,6 +203,17 @@ const FormBuilder = () => {
     };
     const navigate = useNavigate();
 
+    const [showFloatingActions, setShowFloatingActions] = useState(false);
+
+    useEffect(() => {
+        const onScroll = () => {
+            setShowFloatingActions(window.scrollY > 250);
+        };
+
+        window.addEventListener("scroll", onScroll);
+        return () => window.removeEventListener("scroll", onScroll);
+    }, []);
+
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
 
@@ -1981,9 +1992,34 @@ const FormBuilder = () => {
                             </button>
                         </div>
                     </div>
+                    {/* Floating Action Buttons */}
+                    {showFloatingActions && (
+                        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 transition-all">
+                            <button
+                                onClick={() => setShowCopyFormat((prev) => !prev)}
+                                className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-green-600"
+                            >
+                                <Copy size={16} />
+                                Copy
+                            </button>
 
+                            <button
+                                onClick={saveForm}
+                                className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-600"
+                            >
+                                <Save size={16} />
+                                Save
+                            </button>
 
-
+                            <button
+                                onClick={handleClearForm}
+                                className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-red-600"
+                            >
+                                <Trash size={16} />
+                                Clear
+                            </button>
+                        </div>
+                    )}
                     {/* Copy Format Section */}
                     {showCopyFormat && (
                         <div className="mb-6 bg-green-50 p-4 rounded border">

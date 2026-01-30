@@ -40,6 +40,7 @@ export default function EnhancedReportViewer() {
     });
     const [isExporting, setIsExporting] = useState(false);
     const [showBlankRows, setShowBlankRows] = useState(false);
+    const [showChart, setShowChart] = useState(true);
 
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -105,8 +106,14 @@ export default function EnhancedReportViewer() {
                 console.log(res.data.filters)
 
                 const calculatedFields = res.data.calculatedFields || [];
-                setCalculatedFields(calculatedFields);
 
+                // ✅ ADD THESE DEBUG LOGS
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('🔧 CALCULATED FIELDS LOADED:', calculatedFields.length);
+                console.log('📋 Full config:', JSON.stringify(calculatedFields, null, 2));
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+                setCalculatedFields(calculatedFields);
                 console.log(calculatedFields)
 
                 const resolvedFields = (res.data.fields || []).map(f => ({
@@ -161,7 +168,9 @@ export default function EnhancedReportViewer() {
                         position: chart.position || { row: 0, col: 0, width: 12, height: 6 },
                         comboConfig: chart.comboConfig || { barMetrics: [], lineMetrics: [] },
                         // ✅ CRITICAL FIX: Properly load shiftConfigs from database
-                        shiftConfigs: chart.shiftConfigs || (chart.shiftConfig ? [chart.shiftConfig] : null)
+                        shiftConfigs: chart.shiftConfigs || (chart.shiftConfig ? [chart.shiftConfig] : null),
+                        showChart: chart.showChart ?? true 
+
                     }));
                 }
 
@@ -183,7 +192,6 @@ export default function EnhancedReportViewer() {
                 setGroupingConfig(res.data.groupingConfig || []);
                 setIsGrouped((res.data.groupingConfig || []).length > 0);
                 setChartConfigs(charts);
-
                 setLoading(false);
 
                 // FIX: Pass the calculatedFields directly instead of relying on state
@@ -256,7 +264,8 @@ export default function EnhancedReportViewer() {
 
     useEffect(() => {
         const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
-
+        
+        console.log("show Chart", showChart)
         if (shiftCharts.length > 0 && !maximizedChart) {
             console.log('🔍 Auto-maximizing first shift chart');
             // Auto-maximize the first shift chart
@@ -624,7 +633,7 @@ export default function EnhancedReportViewer() {
 `;
 
     const renderSummaryStats = () => {
-        if (filteredReportData.length === 0) return null; 
+        if (filteredReportData.length === 0) return null;
         const totalSubmissions = new Set(reportData.map(r => r.submissionId)).size;
         const totalItems = reportData.length;
         const chartsCount = chartConfigs.length;
@@ -1024,13 +1033,13 @@ export default function EnhancedReportViewer() {
                             onClick={() => setViewMode("expanded")}
                             className={viewMode === 'expanded' ? 'active' : ''}
                         >
-                            📋 Expanded
+                            📋 Grouped
                         </button>
                         <button
                             onClick={() => setViewMode("grouped")}
                             className={viewMode === 'grouped' ? 'active' : ''}
                         >
-                            📑 Grouped
+                            📑 Expanded
                         </button>
                     </>
                 )}
@@ -1039,8 +1048,12 @@ export default function EnhancedReportViewer() {
     };
 
     const renderExpandedTable = () => {
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('📋 renderExpandedTable called');
+        console.log('📊 summaryRows from state:', summaryRows);
+        console.log('📊 summaryRows.length:', summaryRows.length);
         console.log('filteredDataLength:', filteredReportData.length);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         // Check if we have multiple rows per submission
         const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
@@ -1053,51 +1066,21 @@ export default function EnhancedReportViewer() {
         // ✅ ALWAYS use aggregated view if multiple rows exist
         if (hasMultipleRowsPerSubmission) {
             console.log('🎯 Using AGGREGATED view (one row per submission)');
+            console.log('⚠️ WARNING: Aggregated view does NOT show summary rows!');
             return renderNewGroupedTable();
         }
 
-        console.log('📊 Using FLAT view (already one row per submission)');
+        console.log('📊 Using FLAT view - WILL SHOW SUMMARY ROWS');
         return renderExpandedTableWithSummary(filteredReportData, summaryRows, selectedFields, fields);
     };
-
-    const groupingStyles = `
-.group-header-row {
-    background: linear-gradient(to right, #f3f4f6, #e5e7eb);
-    background: linear-gradient(to right, #f3f4f6, #e5e7eb);
-    font-weight: 600;
-    border-top: 2px solid #9ca3af;
-}
-
-.group-footer-row {
-    background: #fef3c7;
-    font-weight: 500;
-    border-top: 1px solid #fbbf24;
-    border-bottom: 2px solid #f59e0b;
-}
-
-.group-header-row td,
-.group-footer-row td {
-    padding: 12px 16px;
-}
-.report-table td {
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.grid-text-cell {
-    max-width: 300px !important;
-    white-space: normal !important;
-    word-break: break-word !important;
-}
-`;
+    const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
     const renderNewGroupedTable = () => {
         const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
 
         console.log('📊 RENDER NEW GROUPED TABLE');
         console.log('Total submissions:', submissions.length);
+        console.log('📊 summaryRows:', summaryRows);
 
         // ✅ FILTER FOR VISIBLE FIELDS ONLY
         const visibleFields = selectedFields.filter(fieldId => {
@@ -1120,307 +1103,234 @@ export default function EnhancedReportViewer() {
         console.log('Visible fields:', visibleFields.length);
 
         return (
-            <div className="table-container">
-                <table className="report-table" style={{ borderCollapse: 'collapse', width: '100%' }}>
-                    <thead>
-                        <tr>
-                            {visibleFields.map((fieldId, i) => {
-                                const field = fields.find(f => f.id === (fieldId.id || fieldId));
-                                const cleanedLabel = field?.label?.includes("→")
-                                    ? field.label.split("→").pop().trim()
-                                    : field?.label || fieldId;
+            <>
+                <style>{summaryRowsCSS}</style>
+                <div className="table-container" style={{
+                    position: 'relative',
+                    maxHeight: '70vh',
+                    overflow: 'auto'
+                }}>
+                    <table className="report-table" style={{
+                        borderCollapse: 'collapse',
+                        width: '100%',
+                        position: 'relative'
+                    }}>
+                        <thead style={{
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 100,
+                            backgroundColor: isDarkMode ? '#374151' : '#f3f4f6'
+                        }}>
+                            <tr>
+                                {visibleFields.map((fieldId, i) => {
+                                    const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                    const cleanedLabel = field?.label?.includes("→")
+                                        ? field.label.split("→").pop().trim()
+                                        : field?.label || fieldId;
+                                    return (
+                                        <th key={i} style={{
+                                            border: '1px solid #ccc',
+                                            padding: '12px',
+                                            backgroundColor: '#f3f4f6',
+                                            fontWeight: '600',
+                                            position: 'sticky',
+                                            top: 0,
+                                            zIndex: 100,  /* ✅ Keep at 100 */
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                        }}>
+                                            {cleanedLabel}
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {submissions.map((subId, idx) => {
                                 return (
-                                    <th key={i} style={{
-                                        border: '1px solid #ccc',
-                                        padding: '12px',
-                                        backgroundColor: '#f3f4f6',
-                                        fontWeight: '600',
-                                        position: 'sticky',
-                                        top: 0,
-                                        zIndex: 10
+                                    <tr key={idx} style={{
+                                        background: idx % 2
+                                            ? (isDarkMode ? '#1f2937' : '#f9fafb')
+                                            : (isDarkMode ? '#111827' : 'white')
                                     }}>
-                                        {cleanedLabel}
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {submissions.map((subId, idx) => {
-                            return (
-                                <tr key={idx} style={{
-                                    background: idx % 2 ? '#f9fafb' : 'white'
-                                }}>
-                                    {visibleFields.map((fieldId, j) => {
-                                        const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                        {visibleFields.map((fieldId, j) => {
+                                            const field = fields.find(f => f.id === (fieldId.id || fieldId));
 
-                                        // 🔥 CHECK IF THIS IS A CALCULATED FIELD
-                                        const isCalculatedField = field?.type === 'calculated' ||
-                                            calculatedFields.some(cf => cf.label === field?.label);
+                                            // 🔥 CHECK IF THIS IS A CALCULATED FIELD
+                                            const isCalculatedField = field?.type === 'calculated' ||
+                                                calculatedFields.some(cf => cf.label === field?.label);
 
-                                        if (isCalculatedField) {
+                                            if (isCalculatedField) {
+                                                const rows = filteredReportData.filter(r => r.submissionId === subId);
+                                                const firstRowCalcValue = rows[0]?.data?.find(d => d.fieldLabel === field?.label)?.value;
+
+                                                return (
+                                                    <td key={j} style={{
+                                                        border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
+                                                        padding: '12px',
+                                                        maxWidth: '300px',
+                                                        backgroundColor: isDarkMode ? '#422006' : '#fef3c7',
+                                                        color: isDarkMode ? '#fde68a' : '#78350f',
+                                                        fontWeight: '500'
+                                                    }}>
+                                                        {firstRowCalcValue || '—'}
+                                                    </td>
+                                                );
+                                            }
+
+                                            // 🔥 REGULAR FIELDS: AGGREGATE
                                             const rows = filteredReportData.filter(r => r.submissionId === subId);
-                                            const firstRowCalcValue = rows[0]?.data?.find(d => d.fieldLabel === field?.label)?.value;
 
-                                            return (
-                                                <td key={j} style={{
-                                                    border: '1px solid #e5e7eb',
-                                                    padding: '12px',
-                                                    maxWidth: '300px',
-                                                    backgroundColor: '#fef3c7',
-                                                    fontWeight: '500'
-                                                }}>
-                                                    {firstRowCalcValue || '—'}
-                                                </td>
-                                            );
-                                        }
+                                            const allValues = rows
+                                                .map(row => {
+                                                    const cell = row.data?.find(d => d.fieldLabel === field?.label);
+                                                    return cell?.value;
+                                                })
+                                                .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '');
 
-                                        // 🔥 REGULAR FIELDS: AGGREGATE
-                                        const rows = filteredReportData.filter(r => r.submissionId === subId);
+                                            let displayValue = '—';
+                                            let isTextField = false;
 
-                                        const allValues = rows
-                                            .map(row => {
-                                                const cell = row.data?.find(d => d.fieldLabel === field?.label);
-                                                return cell?.value;
-                                            })
-                                            .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '');
+                                            if (allValues.length > 0) {
+                                                const hasDatePattern = allValues.some(v =>
+                                                    String(v).match(/^\d{4}-\d{2}-\d{2}/) ||
+                                                    String(v).includes('T') ||
+                                                    String(v).match(/^\d{2}\/\d{2}\/\d{4}/)
+                                                );
 
-                                        let displayValue = '—';
-                                        let isTextField = false; // ✅ DECLARE HERE - outside the if block
+                                                const hasTextIndicators = allValues.some(v => {
+                                                    const str = String(v);
+                                                    return str.includes(' ') ||
+                                                        str.includes('PM') ||
+                                                        str.includes('AM') ||
+                                                        str.includes('Line') ||
+                                                        str.includes('M/C') ||
+                                                        /[a-zA-Z]{3,}/.test(str) ||
+                                                        str.length > 15;
+                                                });
 
-                                        if (allValues.length > 0) {
-                                            // 🔥 IMPROVED: Smart type detection
-                                            const hasDatePattern = allValues.some(v =>
-                                                String(v).match(/^\d{4}-\d{2}-\d{2}/) ||
-                                                String(v).includes('T') ||
-                                                String(v).match(/^\d{2}\/\d{2}\/\d{4}/)
-                                            );
+                                                isTextField = hasDatePattern || hasTextIndicators;
 
-                                            const hasTextIndicators = allValues.some(v => {
-                                                const str = String(v);
-                                                return str.includes(' ') ||
-                                                    str.includes('PM') ||
-                                                    str.includes('AM') ||
-                                                    str.includes('Line') ||
-                                                    str.includes('M/C') ||
-                                                    /[a-zA-Z]{3,}/.test(str) ||
-                                                    str.length > 15;
-                                            });
-
-                                            isTextField = hasDatePattern || hasTextIndicators; // ✅ ASSIGN HERE
-
-                                            if (isTextField) {
-                                                // TEXT MODE
-                                                const unique = [...new Set(allValues)];
-                                                displayValue = unique.length === 1 ? unique[0] : unique.join(' | ');
-                                            } else {
-                                                // NUMERIC MODE
-                                                const numericValues = allValues
-                                                    .map(v => parseFloat(v))
-                                                    .filter(v => !isNaN(v) && isFinite(v));
-
-                                                if (numericValues.length === allValues.length && numericValues.length > 0) {
-                                                    displayValue = numericValues.reduce((sum, v) => sum + v, 0);
-
-                                                    if (field?.label?.toLowerCase().includes('efficiency') ||
-                                                        field?.label?.toLowerCase().includes('percentage')) {
-                                                        displayValue = displayValue.toFixed(2);
-                                                    } else if (numericValues.every(v => Number.isInteger(v))) {
-                                                        displayValue = Math.round(displayValue);
-                                                    } else {
-                                                        displayValue = displayValue.toFixed(2);
-                                                    }
-                                                } else {
+                                                if (isTextField) {
                                                     const unique = [...new Set(allValues)];
                                                     displayValue = unique.length === 1 ? unique[0] : unique.join(' | ');
+                                                } else {
+                                                    const numericValues = allValues
+                                                        .map(v => parseFloat(v))
+                                                        .filter(v => !isNaN(v) && isFinite(v));
+
+                                                    if (numericValues.length === allValues.length && numericValues.length > 0) {
+                                                        displayValue = numericValues.reduce((sum, v) => sum + v, 0);
+
+                                                        if (field?.label?.toLowerCase().includes('efficiency') ||
+                                                            field?.label?.toLowerCase().includes('percentage')) {
+                                                            displayValue = displayValue.toFixed(2);
+                                                        } else if (numericValues.every(v => Number.isInteger(v))) {
+                                                            displayValue = Math.round(displayValue);
+                                                        } else {
+                                                            displayValue = displayValue.toFixed(2);
+                                                        }
+                                                    } else {
+                                                        const unique = [...new Set(allValues)];
+                                                        displayValue = unique.length === 1 ? unique[0] : unique.join(' | ');
+                                                    }
                                                 }
                                             }
-                                        }
 
-                                        // ✅ NOW isTextField IS IN SCOPE HERE
-                                        return (
-                                            <td
-                                                key={j}
-                                                className={allValues.length > 1 ? 'cell-with-tooltip' : ''}
-                                                style={{
-                                                    border: '1px solid #e5e7eb',
-                                                    padding: '12px',
-                                                    maxWidth: '300px',
-                                                    wordWrap: 'break-word',
-                                                    position: 'relative'
-                                                }}
-                                            >
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    <span>{displayValue}</span>
-                                                    {allValues.length > 1 && (
-                                                        <span className="aggregated-badge">
-                                                            {allValues.length} rows
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                {/* Show calculation detail below for numeric aggregations */}
-                                                {allValues.length > 1 && !isTextField && (
-                                                    <div className="calculation-detail">
-                                                        <span>∑</span>
-                                                        <span>{allValues.join(' + ')}</span>
-                                                    </div>
-                                                )}
-
-                                                {/* Show source detail for text concatenations */}
-                                                {allValues.length > 1 && isTextField && (
-                                                    <div className="calculation-detail">
-                                                        <span>🔗</span>
-                                                        <span>from {allValues.length} sources</span>
-                                                    </div>
-                                                )}
-
-                                                {/* Hover tooltip */}
-                                                {allValues.length > 1 && (
-                                                    <div className="tooltip-content">
-                                                        {isTextField ? (
-                                                            <div>
-                                                                <strong>Combined values:</strong><br />
-                                                                {allValues.map((v, i) => (
-                                                                    <div key={i}>• {v}</div>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <div>
-                                                                <strong>Sum calculation:</strong><br />
-                                                                {allValues.join(' + ')} = {displayValue}
-                                                            </div>
+                                            return (
+                                                <td
+                                                    key={j}
+                                                    className={allValues.length > 1 ? 'cell-with-tooltip' : ''}
+                                                    onMouseMove={(e) =>
+                                                        setTooltipPos({ x: e.clientX + 10, y: e.clientY - 10 })
+                                                    }
+                                                    style={{
+                                                        border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
+                                                        padding: '12px',
+                                                        maxWidth: '300px',
+                                                        wordWrap: 'break-word',
+                                                        position: 'relative',
+                                                        backgroundColor: isDarkMode ? '#1f2937' : 'white',
+                                                        color: isDarkMode ? '#d1d5db' : '#1f2937'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <span>{displayValue}</span>
+                                                        {allValues.length > 1 && (
+                                                            <span className="aggregated-badge">
+                                                                {allValues.length} rows
+                                                            </span>
                                                         )}
                                                     </div>
-                                                )}
+
+                                                    {allValues.length > 1 && !isTextField && (
+                                                        <div className="calculation-detail">
+                                                            <span>∑</span>
+                                                            <span>{allValues.join(' + ')}</span>
+                                                        </div>
+                                                    )}
+
+                                                    {allValues.length > 1 && isTextField && (
+                                                        <div className="calculation-detail">
+                                                            <span>🔗</span>
+                                                            <span>from {allValues.length} sources</span>
+                                                        </div>
+                                                    )}
+
+                                                    {allValues.length > 1 && (
+                                                        <div className="tooltip-content">
+                                                            {isTextField ? (
+                                                                <div>
+                                                                    <strong>Combined values:</strong><br />
+                                                                    {allValues.map((v, i) => (
+                                                                        <div key={i}>• {v}</div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div>
+                                                                    <strong>Sum calculation:</strong><br />
+                                                                    {allValues.join(' + ')} = {displayValue}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                );
+                            })}
+
+                            {/* ✅ ADD SUMMARY ROWS SECTION */}
+                            {summaryRows.length > 0 && (
+                                <>
+                                    {console.log('✅ Rendering summary rows in aggregated view:', summaryRows.length)}
+                                    <tr className="summary-divider">
+                                        <td colSpan={visibleFields.length} className="summary-divider-cell">
+                                            <div className="summary-divider-line">
+                                                <span>Summary & Totals</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    {summaryRows.map((summaryRow, index) => (
+                                        <tr key={`summary-${index}`} className="summary-row">
+                                            <td className="summary-label">
+                                                <strong>{summaryRow.label}</strong>
+                                                <div className="summary-type">{summaryRow.type.toUpperCase()}</div>
                                             </td>
-                                        );
-                                    })}
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
+                                            <td className="summary-value" colSpan={visibleFields.length - 1}>
+                                                <span className="summary-result">{summaryRow.value}</span>
+                                                <div className="summary-formula">{summaryRow.formula}</div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </>
         );
-    };
-
-    const debugSubmissionData = (submissionId) => {
-        console.log('═══════════════════════════════════════');
-        console.log(`🔍 DEBUG SUBMISSION: ${submissionId}`);
-        console.log('═══════════════════════════════════════');
-
-        const rows = filteredReportData.filter(r => r.submissionId === submissionId);
-        console.log(`Total rows found: ${rows.length}`);
-
-        rows.forEach((row, idx) => {
-            console.log(`\n--- ROW ${idx + 1} ---`);
-            console.log('Submission ID:', row.submissionId);
-            console.log('Data fields count:', row.data?.length);
-
-            // Show first 5 fields
-            row.data?.slice(0, 5).forEach(cell => {
-                console.log(`  ${cell.fieldLabel}: "${cell.value}"`);
-            });
-
-            // Show Down Time Duration specifically
-            const downtime = row.data?.find(d => d.fieldLabel === 'Down Time Details → Down Time Duration');
-            if (downtime) {
-                console.log(`  ⏱️ Down Time Duration: "${downtime.value}"`);
-            }
-        });
-
-        console.log('═══════════════════════════════════════\n');
-    };
-
-    const getAggregatedFieldValue = (fieldLabel, submissionId, allData, fields) => {
-        console.log(`\n🔍 Aggregating "${fieldLabel}" for submission ${submissionId}`);
-
-        // Get all rows for this submission
-        const rows = allData.filter(r => r.submissionId === submissionId);
-        console.log(`  Found ${rows.length} rows`);
-
-        // Collect all values for this field (including empty ones for analysis)
-        const allCells = rows.map(row => {
-            const cell = row.data?.find(d => d.fieldLabel === fieldLabel);
-            return cell?.value;
-        });
-
-        // Filter out truly empty values (—, null, empty string)
-        const nonEmptyValues = allCells.filter(v =>
-            v &&
-            v !== '-' &&
-            v !== '—' &&
-            v !== 'null' &&
-            v !== '' &&
-            String(v).trim() !== ''
-        );
-
-        console.log(`  All cells:`, allCells);
-        console.log(`  Non-empty values:`, nonEmptyValues);
-
-        // If ALL values are empty, return empty marker
-        if (nonEmptyValues.length === 0) return '—';
-
-        // 🔥 SMART DETECTION: Determine if field is numeric or text
-        const isNumericField = nonEmptyValues.every(v => {
-            const num = parseFloat(v);
-            return !isNaN(num) && isFinite(num) && String(v).length < 10; // Not too long
-        });
-
-        console.log(`  Is numeric field: ${isNumericField}`);
-
-        // ============ NUMERIC MODE ============
-        if (isNumericField) {
-            const numericValues = nonEmptyValues
-                .map(v => parseFloat(v))
-                .filter(v => !isNaN(v) && isFinite(v));
-
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((total, val) => total + val, 0);
-                console.log(`  ✅ NUMERIC SUM: ${sum}`);
-
-                // Format based on field type
-                if (fieldLabel.toLowerCase().includes('efficiency') ||
-                    fieldLabel.toLowerCase().includes('percentage')) {
-                    return sum.toFixed(2);
-                }
-
-                // Check if all values are integers
-                const allIntegers = numericValues.every(v => Number.isInteger(v));
-                return allIntegers ? Math.round(sum) : sum.toFixed(2);
-            }
-        }
-
-        // ============ TEXT MODE ============
-        // Get unique non-empty values
-        const uniqueValues = [...new Set(
-            nonEmptyValues.map(v => String(v).trim())
-        )].filter(v => v !== '');
-
-        console.log(`  Unique values:`, uniqueValues);
-
-        if (uniqueValues.length === 0) return '—';
-
-        if (uniqueValues.length === 1) {
-            // All same → show once
-            console.log(`  ✅ TEXT (same): "${uniqueValues[0]}"`);
-            return uniqueValues[0];
-        }
-
-        // Different values → Check if they should be concatenated
-        // Don't concatenate if all are very similar (like timestamps)
-        const shouldConcatenate = uniqueValues.length <= 10; // Limit to avoid huge strings
-
-        if (shouldConcatenate) {
-            const concatenated = uniqueValues.join(' | ');
-            console.log(`  ✅ TEXT (concat): "${concatenated}"`);
-            return concatenated;
-        }
-
-        // Too many unique values - just show first one with count
-        console.log(`  ✅ TEXT (first + count): "${uniqueValues[0]} (+${uniqueValues.length - 1} more)"`);
-        return `${uniqueValues[0]} (+${uniqueValues.length - 1} more)`;
     };
     const renderGroupedTable = () => {
         const grouped = {};
@@ -1469,8 +1379,6 @@ export default function EnhancedReportViewer() {
             </div>
         );
     };
-
-
     const renderChartsView = () => {
         const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
         const regularCharts = chartConfigs.filter(chart => chart.type !== 'shift');
@@ -1535,10 +1443,10 @@ export default function EnhancedReportViewer() {
                                 <button
                                     onClick={() => setSelectedShiftPeriod('current')}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'current'
-                                            ? 'bg-blue-600 text-white'
-                                            : isDarkMode
-                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'  // ✅ DARK MODE
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'  // ✅ LIGHT MODE
+                                        ? 'bg-blue-600 text-white'
+                                        : isDarkMode
+                                            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'  // ✅ DARK MODE
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'  // ✅ LIGHT MODE
                                         }`}
                                 >
                                     Current Shift ({getCurrentShift()})
@@ -1547,10 +1455,10 @@ export default function EnhancedReportViewer() {
                                 <button
                                     onClick={() => setSelectedShiftPeriod('A')}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'A'
-                                            ? 'bg-blue-600 text-white'
-                                            : isDarkMode
-                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        ? 'bg-blue-600 text-white'
+                                        : isDarkMode
+                                            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                 >
                                     Shift A
@@ -1558,10 +1466,10 @@ export default function EnhancedReportViewer() {
                                 <button
                                     onClick={() => setSelectedShiftPeriod('B')}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'B'
-                                            ? 'bg-blue-600 text-white'
-                                            : isDarkMode
-                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        ? 'bg-blue-600 text-white'
+                                        : isDarkMode
+                                            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                 >
                                     Shift B
@@ -1569,10 +1477,10 @@ export default function EnhancedReportViewer() {
                                 <button
                                     onClick={() => setSelectedShiftPeriod('C')}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'C'
-                                            ? 'bg-blue-600 text-white'
-                                            : isDarkMode
-                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        ? 'bg-blue-600 text-white'
+                                        : isDarkMode
+                                            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                 >
                                     Shift C
@@ -1580,10 +1488,10 @@ export default function EnhancedReportViewer() {
                                 <button
                                     onClick={() => setSelectedShiftPeriod('fullday')}
                                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedShiftPeriod === 'fullday'
-                                            ? 'bg-green-600 text-white'
-                                            : isDarkMode
-                                                ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        ? 'bg-green-600 text-white'
+                                        : isDarkMode
+                                            ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                         }`}
                                 >
                                     Full Day (24h)
@@ -1620,7 +1528,7 @@ export default function EnhancedReportViewer() {
                                     {console.log('chartData length:', chartData.length)}
                                     {console.log('chartData sample:', chartData.slice(0, 2))}
                                     {console.log('Is shift chart?', chart.type === 'shift')}
-                                    {console.log('Data being passed to ReportCharts:', chartData)}
+                                    {console.log('chart showChart?', chart.showChart)}
 
                                     <ReportCharts
                                         data={chartData}
@@ -1643,6 +1551,7 @@ export default function EnhancedReportViewer() {
                                         onDateChange={handleDateChange}  // ✅ ADD THIS
                                         onToggleDatePicker={() => setShowDatePicker(!showDatePicker)}  // ✅ ADD THIS
                                         isDarkMode={isDarkMode} // ✅ ADD THIS PROP
+                                        showChart={chart.showChart ?? true}
                                     />
                                 </div>
                             ))
@@ -1654,7 +1563,7 @@ export default function EnhancedReportViewer() {
         // Regular charts rendering (no shift charts)
         return (
             <div className="charts-grid space-y-6">
-                {chartConfigs.map((chart, index) => (
+                {chartConfigs.map((chart, index) => (                   
                     <div key={`${chart.id}-${index}`} className="chart-container">
                         <ReportCharts
                             data={chartData}
@@ -1666,111 +1575,21 @@ export default function EnhancedReportViewer() {
                             comboConfig={chart.comboConfig}
                             calculatedFields={calculatedFields}
                             shiftConfigs={chart.shiftConfigs}
+                            showChart={chart.showChart !== false} 
                         />
                     </div>
                 ))}
             </div>
         );
     };
-    const maximizeStyles1 = `
-.maximized-mode {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: white;
-    z-index: 1000;
-    overflow-y: auto;
-    padding: 20px;
-}
-
-.chart-maximized {
-    width: calc(100vw - 40px) !important;
-    height: calc(100vh - 120px) !important;
-    min-height: 85vh !important;
-}
-
-.chart-header-controls {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 12px;
-}
-
-.maximize-chart-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    color: #4b5563;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.maximize-chart-btn:hover {
-    background: #e5e7eb;
-    color: #374151;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.maximize-controls-overlay {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 1001;
-}
-
-.maximize-controls {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-}
-
-.refresh-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    background: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.refresh-btn:hover {
-    background: #2563eb;
-}
-
-.minimize-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    background: #ef4444;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.minimize-btn:hover {
-    background: #dc2626;
-}
-`;
     const tooltipStyles = `
 .cell-with-tooltip {
     position: relative;
     cursor: help;
+}
+
+.cell-with-tooltip:hover {
+    z-index: 9999 !important;  /* ✅ ADD THIS - Bring cell to front on hover */
 }
 
 .cell-with-tooltip:hover .tooltip-content {
@@ -1781,30 +1600,34 @@ export default function EnhancedReportViewer() {
 .tooltip-content {
     visibility: hidden;
     opacity: 0;
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;   /* ✅ IMPORTANT - stays fixed */
     background-color: #1f2937;
     color: white;
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
     white-space: nowrap;
-    z-index: 1000;
-    margin-bottom: 5px;
-    transition: opacity 0.2s;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    z-index: 999999 !important;  /* ✅ INCREASED - Much higher z-index */
+    transition: opacity 0.15s;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);  /* ✅ ADD shadow for better visibility */
+}
+
+/* ✅ ADD THIS - Position tooltip dynamically */
+.tooltip-content {
+    left: var(--tooltip-x, 0px);
+    top: var(--tooltip-y, 0px);
+    transform: translate(10px, -50%);  /* Offset from cursor */
 }
 
 .tooltip-content::after {
     content: "";
     position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 50%;
+    left: -5px;
+    transform: translateY(-50%);
     border: 5px solid transparent;
-    border-top-color: #1f2937;
+    border-right-color: #1f2937;
 }
 
 .calculation-detail {
@@ -1827,10 +1650,17 @@ export default function EnhancedReportViewer() {
     font-weight: 600;
     margin-left: 4px;
 }
+
+/* ✅ ADD THIS - Dark mode support for tooltip */
+.dark-mode .tooltip-content {
+    background-color: #374151;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.dark-mode .tooltip-content::after {
+    border-right-color: #374151;
+}
 `;
-
-    // Update your style block to include both styles
-
     // Add this before your return statement (around line 720)
     const maximizeStyles = `
 .maximized-mode {
@@ -2037,6 +1867,7 @@ export default function EnhancedReportViewer() {
                                 showConfiguration={false}
                                 // ✅ CRITICAL FIX: Pass shiftConfigs here too!
                                 shiftConfigs={chart.shiftConfigs}
+                                showChart={chart.showChart !== false} 
                             />
                         </div>
                     ))}
@@ -2082,6 +1913,8 @@ export default function EnhancedReportViewer() {
     };
 
     const renderActiveFilters = () => {
+
+        console.log("All Fields", fields)
         const active = filters
             .filter(f => runtimeFilters[f.fieldLabel] && runtimeFilters[f.fieldLabel] !== "")
             .map(f => {
@@ -2187,10 +2020,12 @@ export default function EnhancedReportViewer() {
 `;
 
     const processCalculatedFields = (reportData, calculatedFields, fields) => {
-        console.log('=== PROCESS CALCULATED FIELDS DEBUG ===');
-        console.log('🚨 isGrouped:', isGrouped);                    // ← ADD
-        console.log('🚨 groupingConfig.length:', groupingConfig.length); // ← ADD
-        console.log('🚨 calculatedFields:', calculatedFields.length);   // ← ADD
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🔄 PROCESS CALCULATED FIELDS CALLED');
+        console.log('📊 reportData.length:', reportData.length);
+        console.log('🧮 calculatedFields.length:', calculatedFields.length);
+        console.log('📋 fields.length:', fields.length);
+
         if (reportData.length > 0) {
             console.log('🔍 INSPECTING FIRST ROW STRUCTURE:');
             console.log('Submission ID:', reportData[0].submissionId);
@@ -2238,13 +2073,6 @@ export default function EnhancedReportViewer() {
             }));
 
             return { processedData: finalData, summaryRows: [] };
-
-            //console.log('✅ Final processed data with calculations:', withCalculations);
-
-            //return {
-            //    processedData: withCalculations,
-            //    summaryRows: [] // Summaries handled by grouping
-            //};
         }
 
         if (!calculatedFields || calculatedFields.length === 0) {
@@ -2268,7 +2096,7 @@ export default function EnhancedReportViewer() {
         const processedData = [];
         const summaryRows = [];
 
-        // Filter out column-wise fields from being added to row data
+        // ✅ Filter out column-wise fields from being added to row data
         const rowwiseFields = calculatedFields.filter(cf => cf.calculationType !== 'columnwise');
         const columnwiseFields = calculatedFields.filter(cf => cf.calculationType === 'columnwise');
 
@@ -2277,35 +2105,30 @@ export default function EnhancedReportViewer() {
 
         // 🔥 BULLETPROOF CALCULATION - REPLACE THE ENTIRE FOR LOOP
         // Inside processCalculatedFields, around line 730
+
+        // Sort calculated fields by dependency
+        const sortedCalculatedFields = sortCalculatedFieldsByDependency(rowwiseFields);
+
+        console.log('🔄 Sorted calculated fields:', sortedCalculatedFields.map(cf => cf.label));
+
         for (const row of reportData) {
             console.log(`🔥 PROCESSING ROW ${row.submissionId}`);
 
-            // Get ALL field values FIRST (passing full context)
             const fieldValues = {};
             row.data.forEach(cell => {
-                // 🔥 PASS allReportData and submissionId for aggregation
                 fieldValues[cell.fieldLabel] = getFieldValue(
                     cell.fieldLabel,
                     row.data,
                     fields,
-                    reportData,  // ← ADD THIS
-                    row.submissionId  // ← ADD THIS
+                    reportData,
+                    row.submissionId
                 );
             });
 
-            console.log('📊 FIELD VALUES:', fieldValues);
-
-            // 🔥 ADD CALCULATED FIELDS (with context)
-            // 🔥 ADD CALCULATED FIELDS (with context and debugging)
-            const calculatedData = calculatedFields.map(calcField => {
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            // ✅ ONLY ADD ROWWISE CALCULATED FIELDS (not columnwise)
+            const calculatedData = rowwiseFields.map(calcField => {  // ← CHANGED: use rowwiseFields
                 console.log(`🔥 CALCULATING FIELD: ${calcField.label}`);
-                console.log('📋 Calculation Type:', calcField.calculationType);
-                console.log('🔧 Function Type:', calcField.functionType);
-                console.log('📐 Formula:', calcField.formula);
-                console.log('🆔 Submission ID:', row.submissionId);
 
-                // Use context-aware evaluation
                 const value = evaluateCalculatedFieldWithContext(
                     calcField,
                     row.data,
@@ -2314,42 +2137,33 @@ export default function EnhancedReportViewer() {
                     row.submissionId
                 );
 
-                console.log(`✅ RAW RESULT:`, value, `(type: ${typeof value})`);
-
                 const formattedValue = formatCalculatedValue(value, calcField);
-                console.log(`✨ FORMATTED RESULT:`, formattedValue);
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
                 return {
                     fieldLabel: calcField.label,
                     value: formattedValue,
+                    rawValue: value,
                     fieldType: 'calculated'
                 };
             });
-            // ✅ MERGE calculated + original data
+
             const newRow = {
                 ...row,
-                data: [...row.data, ...calculatedData]
+                data: [...row.data, ...calculatedData]  // Only rowwise fields
             };
 
-            console.log('🔎 DEBUG ROW DATA for submission:', row.submissionId);
-            row.data.forEach(cell => {
-                if (cell.fieldLabel.includes('9686fd45-f92c-428e-add7-898962e5d14b')) {
-                    console.log('  Found Production Details field:', {
-                        fieldLabel: cell.fieldLabel,
-                        value: cell.value,
-                        fieldType: cell.fieldType
-                    });
-                }
-            });
-
             processedData.push(newRow);
-            console.log(`✅ ROW FINAL data.length:`, newRow.data.length);
         }
-
-        // Process column-wise fields for summary rows only
+        // ✅ Process column-wise fields ONLY for summary rows
         for (const calcField of columnwiseFields) {
+            console.log(`📊 Processing columnwise field: ${calcField.label}`);
+            console.log(`📋 Formula: ${calcField.formula}`);
+            console.log(`🔧 Function type: ${calcField.functionType}`);
+
             const summaryValue = calculateColumnwiseSummary(calcField, reportData, fields);
+
+            console.log(`✅ Summary value calculated: ${summaryValue}`);
+
             summaryRows.push({
                 label: calcField.label,
                 value: formatCalculatedValue(summaryValue, calcField),
@@ -2358,7 +2172,44 @@ export default function EnhancedReportViewer() {
             });
         }
 
+        console.log(`📊 Final summaryRows:`, summaryRows);
+
         return { processedData, summaryRows };
+    };
+
+    const sortCalculatedFieldsByDependency = (calculatedFields) => {
+        const sorted = [];
+        const remaining = [...calculatedFields];
+
+        while (remaining.length > 0) {
+            const independentFields = remaining.filter(cf => {
+                // Check if this field references any other calculated fields
+                const fieldRefs = extractFieldReferences(cf.formula);
+                const referencesCalculated = fieldRefs.some(ref =>
+                    calculatedFields.some(other => other.label === ref && other.id !== cf.id)
+                );
+
+                // If it doesn't reference calculated fields, or references already sorted ones
+                return !referencesCalculated || fieldRefs.every(ref =>
+                    sorted.some(s => s.label === ref) ||
+                    !calculatedFields.some(c => c.label === ref)
+                );
+            });
+
+            if (independentFields.length === 0) {
+                // Circular dependency or unresolvable - add all remaining
+                console.warn('⚠️ Circular dependency detected in calculated fields');
+                sorted.push(...remaining);
+                break;
+            }
+
+            sorted.push(...independentFields);
+            remaining.splice(0, remaining.length,
+                ...remaining.filter(r => !independentFields.includes(r))
+            );
+        }
+
+        return sorted;
     };
 
     const evaluateCalculatedFieldWithContext = (calcField, rowData, allReportData, fields, submissionId) => {
@@ -2389,14 +2240,26 @@ export default function EnhancedReportViewer() {
 
     const evaluateRowwiseWithContext = (formula, rowData, functionType, fields, allReportData, submissionId) => {
         // Handle EXPRESSION type
+
+        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🔧 EVALUATING ROWWISE CALCULATION');
+        console.log('📝 Formula:', formula);
+        console.log('🔧 Function:', functionType);
+        console.log('🆔 Submission:', submissionId);
+
         if (functionType === 'EXPRESSION') {
             return evaluateExpressionWithContext(formula, rowData, fields, 2, 'rowwise', allReportData, submissionId);
         }
 
         // Handle other function types (existing logic with context)
         const fieldRefs = extractFieldReferences(formula);
+        console.log('📋 Field references:', fieldRefs);
+
+        // Get values for each field
         const values = fieldRefs.map(fieldName => {
-            return getFieldValue(fieldName, rowData, fields, allReportData, submissionId);  // ← PASS CONTEXT
+            const value = getFieldValue(fieldName, rowData, fields, allReportData, submissionId);
+            console.log(`  "${fieldName}" → ${value}`);
+            return value;
         });
 
         switch (functionType) {
@@ -2634,7 +2497,12 @@ export default function EnhancedReportViewer() {
     };
 
     const renderExpandedTableWithSummary = (reportData, summaryRows, selectedFields, fields) => {
-        // Filter selectedFields to exclude any column-wise calculated fields
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🎨 RENDERING TABLE WITH SUMMARY');
+        console.log('📊 summaryRows length:', summaryRows.length);
+        console.log('📋 summaryRows:', summaryRows);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
         const visibleFields = selectedFields.filter(field => {
             if (typeof field === 'object') {
                 return field.visible !== false;
@@ -2654,20 +2522,13 @@ export default function EnhancedReportViewer() {
         return (
             <>
                 <style>{summaryRowsCSS}</style>
-                <div className="table-container">
-                    <table className="report-table">
-                        <thead>
-                            <tr>
-                                {displayFields.map((field, i) => {
-                                    const label = typeof field === 'object' ? field.label : field;
-                                    const cleanedLabel = label.includes("→")
-                                        ? label.split("→").pop().trim()
-                                        : label;
-
-                                    return <th key={i}>{cleanedLabel}</th>;
-                                })}
-                            </tr>
-                        </thead>
+                <div className="table-container" style={{
+                    position: 'relative',
+                    maxHeight: '70vh',
+                    overflow: 'auto'
+                }}>
+                    <table className="report-table" style={{ position: 'relative' }}>
+                        {/* ... thead ... */}
 
                         <tbody>
                             {reportData.map((row, i) => (
@@ -2680,28 +2541,36 @@ export default function EnhancedReportViewer() {
                                 </tr>
                             ))}
 
+                            {/* ✅ ADD DEBUG LOG HERE */}
+                            {console.log('🔍 Checking summary rows:', summaryRows.length > 0)}
+
+                            {/* ✅ SUMMARY ROWS SECTION */}
                             {summaryRows.length > 0 && (
                                 <>
+                                    {console.log('✅ Rendering summary rows section')}
                                     <tr className="summary-divider">
-                                        <td colSpan={visibleFields.length} className="summary-divider-cell">
+                                        <td colSpan={displayFields.length} className="summary-divider-cell">
                                             <div className="summary-divider-line">
                                                 <span>Summary & Totals</span>
                                             </div>
                                         </td>
                                     </tr>
 
-                                    {summaryRows.map((summaryRow, index) => (
-                                        <tr key={`summary-${index}`} className="summary-row">
-                                            <td className="summary-label">
-                                                <strong>{summaryRow.label}</strong>
-                                                <div className="summary-type">{summaryRow.type.toUpperCase()}</div>
-                                            </td>
-                                            <td className="summary-value" colSpan={visibleFields.length - 1}>
-                                                <span className="summary-result">{summaryRow.value}</span>
-                                                <div className="summary-formula">{summaryRow.formula}</div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {summaryRows.map((summaryRow, index) => {
+                                        console.log(`📊 Rendering summary row ${index}:`, summaryRow);
+                                        return (
+                                            <tr key={`summary-${index}`} className="summary-row">
+                                                <td className="summary-label">
+                                                    <strong>{summaryRow.label}</strong>
+                                                    <div className="summary-type">{summaryRow.type.toUpperCase()}</div>
+                                                </td>
+                                                <td className="summary-value" colSpan={displayFields.length - 1}>
+                                                    <span className="summary-result">{summaryRow.value}</span>
+                                                    <div className="summary-formula">{summaryRow.formula}</div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </>
                             )}
                         </tbody>
@@ -2831,12 +2700,44 @@ export default function EnhancedReportViewer() {
     const calculateColumnwiseSummary = (calcField, allReportData, fields) => {
         const { formula, functionType, calculationType } = calcField;
 
-        // Handle EXPRESSION type for column-wise calculations
+        // ✅ ADD THIS CHECK - Handle EXPRESSION type for column-wise
         if (functionType === 'EXPRESSION') {
-            return evaluateColumnwiseExpression(formula, allReportData, fields);
+            console.log('📊 Processing columnwise EXPRESSION:', formula);
+
+            // Remove EXPRESSION wrapper if present
+            let cleanFormula = formula.trim();
+            if (cleanFormula.startsWith('EXPRESSION(') && cleanFormula.endsWith(')')) {
+                cleanFormula = cleanFormula.slice(11, -1);
+            }
+
+            // Extract field reference
+            const fieldMatches = cleanFormula.match(/"([^"]+)"/g);
+            if (!fieldMatches || fieldMatches.length === 0) {
+                console.error('❌ No field reference found in columnwise EXPRESSION');
+                return 0;
+            }
+
+            const fieldName = fieldMatches[0].replace(/"/g, '');
+            console.log('📋 Extracting field:', fieldName);
+
+            // Get all values for this field
+            const allValues = allReportData
+                .map(row => getFieldValue(fieldName, row.data, fields))
+                .filter(val => !isNaN(val) && val !== null && val !== undefined && val !== '');
+
+            console.log('📊 Collected values:', allValues);
+
+            // Sum all values (default aggregation for columnwise)
+            const sum = allValues.reduce((total, val) => {
+                const numValue = parseFloat(val);
+                return total + (isNaN(numValue) ? 0 : numValue);
+            }, 0);
+
+            console.log('✅ Columnwise sum:', sum);
+            return sum;
         }
 
-        // Handle predefined functions
+        // Handle predefined functions (existing code continues...)
         const fieldRefs = extractFieldReferences(formula);
         if (fieldRefs.length === 0) return 0;
 
@@ -2868,19 +2769,16 @@ export default function EnhancedReportViewer() {
                 return allValues.length > 0 ? Math.max(...allValues) : 0;
 
             case 'PERCENT_OF_TOTAL':
-                return 100; // This represents the total percentage
+                return 100;
 
             case 'RANK':
-                // For ranking in summary, show the count of ranked items
                 return allValues.length;
 
             case 'MOVING_AVG':
-                // For moving average summary, return overall average
                 if (allValues.length === 0) return 0;
                 return allValues.reduce((sum, val) => sum + val, 0) / allValues.length;
 
             case 'DIFFERENCE':
-                // For difference summary, return total change from first to last
                 if (allValues.length < 2) return 0;
                 return allValues[allValues.length - 1] - allValues[0];
 
@@ -2984,6 +2882,8 @@ export default function EnhancedReportViewer() {
     };
 
     const extractFieldReferences = (formula) => {
+        console.log('🔍 Extracting field references from:', formula);
+
         const regex = /"([^"]+)"/g;
         const matches = [];
         let match;
@@ -2992,71 +2892,239 @@ export default function EnhancedReportViewer() {
             matches.push(match[1]);
         }
 
+        console.log('📋 Found field references:', matches);
         return matches;
     };
 
-    const getFieldValue = (fieldName, rowData, fields, allReportData = [], currentSubmissionId = null) => {
-        console.log(`\n🔍 getFieldValue called for: "${fieldName}"`);
-        console.log(`   Submission ID: ${currentSubmissionId}`);
+    const getFieldValue = (fieldName, rowData, fields, allReportData = [], submissionId = null) => {
+        console.log(`\n┌─────────────────────────────────────────────────────────┐`);
+        console.log(`│ 🔍 GET FIELD VALUE`);
+        console.log(`│ Field requested: "${fieldName}"`);
+        console.log(`│ Submission ID: ${submissionId}`);
+        console.log(`└─────────────────────────────────────────────────────────┘`);
 
-        const isGridField = fieldName.includes('→');
+        if (!rowData || !Array.isArray(rowData)) {
+            console.log(`   ❌ Invalid rowData`);
+            return 0;
+        }
 
-        // ================= MULTI-ROW AGGREGATION MODE =================
-        // 🔥 NEW: Even non-grid fields should aggregate across multiple rows with same submissionId
-        if (currentSubmissionId && allReportData.length > 0) {
-            const matchingRows = allReportData.filter(r => r.submissionId === currentSubmissionId);
+        // ---------------------------------------------------------------
+        // STEP 1: Try exact label match
+        // ---------------------------------------------------------------
+        console.log(`\n   🔍 STEP 1: Trying exact label match...`);
+        let fieldData = rowData.find(d => d.fieldLabel === fieldName);
 
-            if (matchingRows.length > 1) {
-                console.log(`  🔍 Found ${matchingRows.length} rows for submission ${currentSubmissionId}`);
+        if (fieldData) {
+            console.log(`   ✅ Exact match found!`);
 
-                // Collect ALL non-empty values
-                const allValues = matchingRows
-                    .map(row => {
-                        const fieldData = row.data?.find(d => d.fieldLabel === fieldName);
-                        return fieldData?.value;
+            if (fieldData.fieldType === 'calculated' && fieldData.rawValue !== undefined) {
+                console.log(`   📦 Using raw value: ${fieldData.rawValue}`);
+                return parseFieldValue(fieldData.rawValue);
+            }
+
+            console.log(`   📦 Value: "${fieldData.value}"`);
+            return parseFieldValue(fieldData.value);
+        }
+
+        // ---------------------------------------------------------------
+        // STEP 2: Try field lookup by ID
+        // ---------------------------------------------------------------
+        console.log(`\n   🔍 STEP 2: Trying field lookup by ID...`);
+        const field = fields.find(f => f.label === fieldName || f.id === fieldName);
+
+        if (field) {
+            console.log(`   ✅ Field found in registry!`);
+            console.log(`   🆔 Field ID: ${field.id}`);
+            console.log(`   🏷️  Field Label: ${field.label}`);
+
+            // ---------------------------------------------------------------
+            // STEP 2.1: Try base ID match
+            // ---------------------------------------------------------------
+            console.log(`\n   🔍 STEP 2.1: Trying base ID match...`);
+            fieldData = rowData.find(d => d.fieldLabel.includes(field.id));
+
+            if (fieldData) {
+                console.log(`   ✅ Base ID match found!`);
+                return parseFieldValue(fieldData.value);
+            }
+
+            // ---------------------------------------------------------------
+            // STEP 2.2: Try qualified label match (with →)
+            // ---------------------------------------------------------------
+            console.log(`\n   🔍 STEP 2.2: Trying qualified label match...`);
+            fieldData = rowData.find(d => {
+                if (d.fieldLabel.includes('→')) {
+                    const cleanLabel = d.fieldLabel.split('→').pop().trim();
+                    return cleanLabel === field.label;
+                }
+                return false;
+            });
+
+            if (fieldData) {
+                console.log(`   ✅ Qualified label match found!`);
+                return parseFieldValue(fieldData.value);
+            }
+
+            // ---------------------------------------------------------------
+            // STEP 2.3: Try calculated field match  ✅ NEW FIX
+            // ---------------------------------------------------------------
+            console.log(`\n   🔍 STEP 2.3: Trying calculated field match...`);
+            fieldData = rowData.find(d =>
+                d.fieldType === 'calculated' && d.fieldLabel === fieldName
+            );
+
+            if (fieldData) {
+                console.log(`   ✅ Calculated field match found!`);
+                console.log(`   📦 Value: "${fieldData.value}"`);
+                return parseFieldValue(fieldData.value);
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // STEP 3: Try partial label match
+        // ---------------------------------------------------------------
+        console.log(`\n   🔍 STEP 3: Trying partial label match...`);
+        fieldData = rowData.find(d => d.fieldLabel.includes(fieldName));
+
+        if (fieldData) {
+            console.log(`   ✅ Partial match found!`);
+            return parseFieldValue(fieldData.value);
+        }
+
+        // ---------------------------------------------------------------
+        // STEP 4: Handle GROUPSUM/aggregation functions
+        // ---------------------------------------------------------------
+        if (submissionId && allReportData && allReportData.length > 0) {
+            console.log(`\n   🔍 STEP 4: Attempting aggregation for submission ${submissionId}...`);
+
+            const submissionRows = allReportData.filter(row => row.submissionId === submissionId);
+            console.log(`   📊 Found ${submissionRows.length} rows for this submission`);
+
+            if (submissionRows.length > 0) {
+                console.log(`\n   🔄 Aggregating values from ${submissionRows.length} rows...`);
+
+                const allValues = submissionRows
+                    .map((row, idx) => {
+                        console.log(`\n   📄 Checking row ${idx + 1}/${submissionRows.length}:`);
+
+                        const fieldData = row.data.find(d => {
+                            const matches = d.fieldLabel === fieldName ||
+                                d.fieldLabel.includes(fieldName) ||
+                                (d.fieldLabel.includes('→') && d.fieldLabel.split('→').pop().trim() === fieldName);
+
+                            if (matches) {
+                                console.log(`      ✅ Match found: "${d.fieldLabel}"`);
+                            }
+                            return matches;
+                        });
+
+                        if (fieldData) {
+                            console.log(`      📦 Value found: "${fieldData.value}"`);
+                            return fieldData.value;
+                        } else {
+                            console.log(`      ❌ No match in this row`);
+                            return null;
+                        }
                     })
-                    .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '');
+                    .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '' && v !== null);
 
-                console.log(`  📊 All values for "${fieldName}":`, allValues);
+                console.log(`\n   📊 Collected ${allValues.length} non-empty values:`, allValues);
 
-                if (allValues.length === 0) return '—';
+                if (allValues.length === 0) {
+                    console.log(`   ❌ No valid values found in any row`);
+                    console.log(`└─────────────────────────────────────────────────────────┘`);
+                    return 0;
+                }
 
-                // 🔥 SMART TYPE DETECTION
+                // Determine if values are numeric or text
                 const allNumeric = allValues.every(v => {
                     const num = parseFloat(v);
                     return !isNaN(num) && isFinite(num);
                 });
 
                 if (allNumeric) {
-                    // NUMERIC: Sum values
-                    const sum = allValues.reduce((total, v) => total + parseFloat(v), 0);
-                    console.log(`  ✅ NUMERIC SUM: ${sum}`);
+                    // NUMERIC AGGREGATION: Sum all values
+                    const sum = allValues.reduce((total, v) => {
+                        const numValue = parseFloat(v);
+                        console.log(`      ${total} + ${numValue} = ${total + numValue}`);
+                        return total + numValue;
+                    }, 0);
+
+                    console.log(`\n   ✅ NUMERIC AGGREGATION RESULT: ${sum}`);
+                    console.log(`   📐 Calculation: ${allValues.join(' + ')} = ${sum}`);
+                    console.log(`└─────────────────────────────────────────────────────────┘`);
                     return sum;
+                } else {
+                    // TEXT AGGREGATION: Return first value or concatenate
+                    const unique = [...new Set(allValues)];
+                    const result = unique.length === 1 ? unique[0] : unique.join(' | ');
+                    console.log(`\n   ✅ TEXT AGGREGATION RESULT: "${result}"`);
+                    console.log(`└─────────────────────────────────────────────────────────┘`);
+                    return result;
                 }
-
-                // TEXT: Get unique values
-                const uniqueValues = [...new Set(allValues.map(v => String(v).trim()))];
-
-                if (uniqueValues.length === 1) {
-                    console.log(`  ✅ TEXT (same): "${uniqueValues[0]}"`);
-                    return uniqueValues[0];
-                }
-
-                const concatenated = uniqueValues.join(' | ');
-                console.log(`  ✅ TEXT (concat): "${concatenated}"`);
-                return concatenated;
             }
         }
 
-        // ================= SINGLE ROW MODE (fallback) =================
-        const fieldData = rowData.find(d => d.fieldLabel === fieldName);
-        if (!fieldData || fieldData.value === '-' || fieldData.value === 'null' || fieldData.value === '') {
-            return '—';
+        // ---------------------------------------------------------------
+        // FINAL: Field not found
+        // ---------------------------------------------------------------
+        console.log(`\n   ❌ FIELD NOT FOUND: "${fieldName}"`);
+        console.log(`   📋 Available fields in rowData:`);
+        rowData.forEach((d, i) => {
+            console.log(`      ${i + 1}. "${d.fieldLabel}" = "${d.value}"`);
+        });
+        console.log(`└─────────────────────────────────────────────────────────┘`);
+        return 0;
+    };
+
+    // Helper function to parse field values
+    // Helper function to parse field values - UPDATED VERSION
+    const parseFieldValue = (value) => {
+        if (value === null || value === undefined || value === '' || value === '-' || value === '—') {
+            return 0;
         }
 
-        const num = parseFloat(fieldData.value);
-        return isNaN(num) ? fieldData.value.trim() : num;
+        // ✅ NEW: Handle percentage strings
+        if (typeof value === 'string' && value.includes('%')) {
+            const cleanValue = value.replace(/[%,\s]/g, '');
+            const numValue = parseFloat(cleanValue);
+            if (!isNaN(numValue) && isFinite(numValue)) {
+                return numValue; // Return 93.55, not "93.55%"
+            }
+        }
+
+        // ✅ NEW: Handle currency/formatted numbers
+        if (typeof value === 'string' && value.match(/^[\$,\s]*[\d,.]+$/)) {
+            const cleanValue = value.replace(/[,$\s]/g, '');
+            const numValue = parseFloat(cleanValue);
+            if (!isNaN(numValue) && isFinite(numValue)) {
+                return numValue;
+            }
+        }
+
+        // Try to parse as number
+        const numValue = parseFloat(value);
+        if (!isNaN(numValue) && isFinite(numValue)) {
+            return numValue;
+        }
+
+        // Try to parse JSON array and sum numeric values
+        try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                const numericValues = parsed.map(v => parseFloat(v)).filter(v => !isNaN(v) && isFinite(v));
+                if (numericValues.length > 0) {
+                    return numericValues.reduce((sum, v) => sum + v, 0);
+                }
+            }
+        } catch (e) {
+            // Not JSON, return as is
+        }
+
+        return value;
     };
+
+
     const handleMaximizeChart = (chartId) => {
         setMaximizedChart(chartId);
         // Immediate refresh when maximizing
@@ -3567,48 +3635,6 @@ html.dark-mode,
 }
 `;
 
-    // ✅ ADD THIS HELPER FUNCTION - Split IF statement parts properly
-    //const splitIfParts = (content) => {
-    //    const parts = [];
-    //    let current = '';
-    //    let depth = 0;
-    //    let inString = false;
-    //    let stringChar = null;
-
-    //    for (let i = 0; i < content.length; i++) {
-    //        const char = content[i];
-
-    //        if ((char === '"' || char === "'") && content[i - 1] !== '\\') {
-    //            if (!inString) {
-    //                inString = true;
-    //                stringChar = char;
-    //            } else if (char === stringChar) {
-    //                inString = false;
-    //                stringChar = null;
-    //            }
-    //        }
-
-    //        if (!inString) {
-    //            if (char === '(') depth++;
-    //            if (char === ')') depth--;
-
-    //            if (char === ',' && depth === 0) {
-    //                parts.push(current.trim());
-    //                current = '';
-    //                continue;
-    //            }
-    //        }
-
-    //        current += char;
-    //    }
-
-    //    if (current) {
-    //        parts.push(current.trim());
-    //    }
-
-    //    return parts;
-    //};
-
     const evaluateExpression = (expression, rowData, fields) => {
         try {
             let processedExpression = expression;
@@ -3837,6 +3863,7 @@ html.dark-mode,
         }
     };
 
+
     return (
         <>
             <style>{loadingStyles + exportStyles + tooltipStyles}</style>
@@ -3950,8 +3977,8 @@ html.dark-mode,
                                 onClick={fetchFilteredReport1}
                                 disabled={isRefreshing}
                                 className={`px-4 py-2 rounded font-medium transition-colors ${isRefreshing
-                                        ? 'bg-gray-400 cursor-not-allowed'
-                                        : 'bg-blue-600 hover:bg-blue-700'
+                                    ? 'bg-gray-400 cursor-not-allowed'
+                                    : 'bg-blue-600 hover:bg-blue-700'
                                     } text-white`}
                             >
                                 {isRefreshing ? (

@@ -12,7 +12,7 @@ const EnhancedCalculatedFieldsEditor = ({
     const [isExpanded, setIsExpanded] = useState(false);
     const [showFormulaHelper, setShowFormulaHelper] = useState({});
     const [showExpressionHelper, setShowExpressionHelper] = useState({});
-
+    const [fieldSearchTerms, setFieldSearchTerms] = useState({});
 
     const CALCULATION_TYPES = {
         aggregate: {
@@ -176,9 +176,22 @@ const EnhancedCalculatedFieldsEditor = ({
         if (fieldMatches) {
             fieldMatches.forEach(match => {
                 const fieldName = match.replace(/"/g, '');
-                const fieldExists = availableFields.some(f => f.label === fieldName);
+
+                // Check if it's a regular field
+                const fieldExists = availableFields.some(f => {
+                    const cleanLabel = f.label.replace('📊 ', '');
+                    return cleanLabel === fieldName;
+                });
+
                 if (!fieldExists) {
-                    warnings.push(`Field "${fieldName}" not found in selected fields`);
+                    // Check if it's a calculated field
+                    const isCalculatedField = calculatedFields.some(cf =>
+                        cf.label === fieldName && cf.label.trim() !== ''
+                    );
+
+                    if (!isCalculatedField) {
+                        warnings.push(`Field "${fieldName}" not found in selected fields or calculated fields`);
+                    }
                 }
             });
         }
@@ -530,19 +543,37 @@ const EnhancedCalculatedFieldsEditor = ({
         setCalculatedFields(prev => (prev || []).filter(field => field.id !== id));
     };
 
-    const getAvailableFields = () => {
+    const getAvailableFields = (currentFieldId = null) => {
         if (!selectedFields || !fields) return [];
 
-        return selectedFields.map(fieldId => {
+        // regular selected fields
+        const regularFields = selectedFields.map(fieldId => {
             const field = fields.find(f => f.id === fieldId);
             return {
                 id: fieldId,
                 label: field?.label || fieldId,
-                type: field?.type || 'text'
+                type: field?.type || 'text',
+                isCalculated: false
             };
         });
-    };
 
+        // calculated fields (EXCEPT the one being edited)
+        const calcFields = calculatedFields
+            .filter(cf =>
+                cf.label &&
+                cf.label.trim() !== '' &&
+                cf.id !== currentFieldId   // ✅ EXCLUDE SELF
+            )
+            .map(cf => ({
+                id: `calc_${cf.id}`,
+                label: `📊 ${cf.label}`,
+                type: cf.format || 'decimal',
+                isCalculated: true,
+                calculatedField: cf
+            }));
+
+        return [...regularFields, ...calcFields];
+    };
 
     const insertFormula = (fieldId, formula) => {
         // Replace placeholder field names with quotes for easier editing
@@ -559,8 +590,19 @@ const EnhancedCalculatedFieldsEditor = ({
     };
 
     const insertFieldIntoFormula = (fieldId, fieldLabel) => {
-        const fieldReference = `"${fieldLabel}"`;
-        const textareaElement = document.querySelector(`textarea[data-field-id="${fieldId}"]`);
+        const cleanLabel = fieldLabel.replace('📊 ', '');
+
+        // 🔥 check if it is calculated field
+        const calcField = calculatedFields.find(cf => cf.label === cleanLabel);
+
+        // if calculated field → insert its FORMULA
+        const insertText = calcField
+            ? `(${calcField.formula})`
+            : `"${cleanLabel}"`;
+
+        const textareaElement = document.querySelector(
+            `textarea[data-field-id="${fieldId}"]`
+        );
 
         if (textareaElement) {
             const start = textareaElement.selectionStart;
@@ -569,23 +611,26 @@ const EnhancedCalculatedFieldsEditor = ({
 
             const newFormula =
                 currentFormula.substring(0, start) +
-                fieldReference +
+                insertText +
                 currentFormula.substring(end);
 
             updateCalculatedField(fieldId, "formula", newFormula);
 
-            // Set cursor position after inserted text
             setTimeout(() => {
                 textareaElement.focus();
-                textareaElement.selectionStart = textareaElement.selectionEnd = start + fieldReference.length;
+                textareaElement.selectionStart =
+                    textareaElement.selectionEnd =
+                    start + insertText.length;
             }, 0);
         } else {
-            // Fallback to simple append
-            const currentFormula = calculatedFields.find(f => f.id === fieldId)?.formula || "";
-            const separator = currentFormula.trim() ? ', ' : '';
-            updateCalculatedField(fieldId, "formula", currentFormula + separator + fieldReference);
+            const currentFormula =
+                calculatedFields.find(f => f.id === fieldId)?.formula || "";
+
+            const separator = currentFormula.trim() ? " " : "";
+            updateCalculatedField(fieldId, "formula", currentFormula + separator + insertText);
         }
     };
+
 
     const validateFormula = (formula, functionType, availableFields) => {
         const errors = [];
@@ -601,9 +646,23 @@ const EnhancedCalculatedFieldsEditor = ({
         if (fieldMatches) {
             fieldMatches.forEach(match => {
                 const fieldName = match.replace(/"/g, '');
-                const fieldExists = availableFields.some(f => f.label === fieldName);
+
+                // Check if it's a regular field
+                const fieldExists = availableFields.some(f => {
+                    // Remove icon prefix for comparison
+                    const cleanLabel = f.label.replace('📊 ', '');
+                    return cleanLabel === fieldName;
+                });
+
                 if (!fieldExists) {
-                    warnings.push(`Field "${fieldName}" not found in selected fields`);
+                    // Check if it's a calculated field
+                    const isCalculatedField = calculatedFields.some(cf =>
+                        cf.label === fieldName && cf.label.trim() !== ''
+                    );
+
+                    if (!isCalculatedField) {
+                        warnings.push(`Field "${fieldName}" not found in selected fields or calculated fields`);
+                    }
                 }
             });
         }
@@ -794,7 +853,7 @@ const EnhancedCalculatedFieldsEditor = ({
 
 
     const renderFormulaBuilder = (field) => {
-        const availableFields = getAvailableFields();
+        const availableFields = getAvailableFields(field.id);
         const currentFunctions = CALCULATION_TYPES[field.calculationType || "aggregate"]?.functions || [];
         const validation = field.functionType === 'EXPRESSION'
             ? validateExpression(field.formula || "", field.calculationType || "rowwise", availableFields)
@@ -802,29 +861,28 @@ const EnhancedCalculatedFieldsEditor = ({
 
 
         const insertSmartTemplate = (template, fieldId) => {
-            // Auto-populate with first available fields
-            let smartFormula = template;
-            const fieldPlaceholders = template.match(/{[^}]+}/g) || [];
+            const availFields = getAvailableFields(field.id);
 
-            fieldPlaceholders.forEach((placeholder, index) => {
-                if (placeholder === '{target}') {
-                    smartFormula = smartFormula.replace(placeholder, '8');
-                } else if (availableFields[index]) {
-                    smartFormula = smartFormula.replace(placeholder, `"${availableFields[index].label}"`);
+            let smartFormula = template;
+
+            const placeholders = template.match(/{[^}]+}/g) || [];
+
+            placeholders.forEach((placeholder, index) => {
+                if (placeholder === "{target}") {
+                    smartFormula = smartFormula.replace(placeholder, "8");
+                } else if (availFields[index]) {
+                    const clean = availFields[index].label.replace("📊 ", "");
+                    smartFormula = smartFormula.replace(placeholder, `"${clean}"`);
                 } else {
                     smartFormula = smartFormula.replace(placeholder, '""');
                 }
             });
 
+            // ✅ update formula
             updateCalculatedField(fieldId, "formula", smartFormula);
-            // Also set the function type
-            const templateFunction = Object.keys(FORMULA_TEMPLATES).find(key =>
-                FORMULA_TEMPLATES[key].template === template
-            );
-            if (templateFunction) {
-                updateCalculatedField(fieldId, "functionType", templateFunction);
-            }
         };
+
+
         return (
             <div className="mt-3 p-4 border rounded bg-gradient-to-r from-blue-50 to-indigo-50">
                 <h5 className="font-medium mb-3 flex items-center">
@@ -899,30 +957,80 @@ const EnhancedCalculatedFieldsEditor = ({
 
                     {/* Field Selector with Search */}
                     <div>
-                        <label className="block text-sm font-medium mb-2">Available Fields</label>
+                        <label className="block text-sm font-medium mb-2">
+                            Available Fields ({getAvailableFields().length})
+                        </label>
                         <div className="relative">
                             <input
                                 type="text"
                                 placeholder="Search fields..."
-                                className="w-full border border-gray-300 p-2 rounded-t-lg text-sm"
+                                value={fieldSearchTerms[field.id] || ""}
+                                onChange={(e) => {
+                                    setFieldSearchTerms(prev => ({
+                                        ...prev,
+                                        [field.id]: e.target.value
+                                    }));
+                                }}
+                                className="w-full border border-gray-300 p-2 rounded-t-lg text-sm focus:ring-2 focus:ring-blue-500"
                             />
-                            <div className="border border-t-0 border-gray-300 rounded-b-lg max-h-32 overflow-y-auto">
-                                {availableFields.map(f => (
-                                    <div
-                                        key={f.id}
-                                        onClick={() => insertFieldIntoFormula(field.id, f.label)}
-                                        className="p-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 text-sm"
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <span>{f.label}</span>
-                                            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-                                                {f.type}
-                                            </span>
+                            <div className="border border-t-0 border-gray-300 rounded-b-lg max-h-40 overflow-y-auto bg-white">
+                                {(() => {
+                                    const availFields = getAvailableFields();
+                                    const searchTerm = (fieldSearchTerms[field.id] || "").toLowerCase();
+                                    const filteredFields = availFields.filter(f =>
+                                        f.label.toLowerCase().includes(searchTerm)
+                                    );
+
+                                    if (filteredFields.length === 0) {
+                                        return (
+                                            <div className="p-3 text-center text-gray-500 text-sm italic">
+                                                No fields found
+                                            </div>
+                                        );
+                                    }
+
+                                    return filteredFields.map(f => (
+                                        <div
+                                            key={f.id}
+                                            onClick={() => {
+                                                insertFieldIntoFormula(field.id, f.label);
+                                                // Clear search after selection
+                                                setFieldSearchTerms(prev => ({
+                                                    ...prev,
+                                                    [field.id]: ""
+                                                }));
+                                            }}
+                                            className={`p-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 text-sm transition-colors ${f.isCalculated ? 'bg-purple-50' : ''
+                                                }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className={f.isCalculated ? 'font-medium text-purple-700' : ''}>
+                                                    {f.label}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    {f.isCalculated && (
+                                                        <span className="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded">
+                                                            Calculated
+                                                        </span>
+                                                    )}
+                                                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                                                        {f.type}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {f.isCalculated && f.calculatedField && (
+                                                <div className="text-xs text-gray-500 mt-1 truncate">
+                                                    {f.calculatedField.formula}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
+                                    ));
+                                })()}
                             </div>
                         </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                            💡 Click to insert field reference into formula
+                        </p>
                     </div>
                 </div>
                 {/* Enhanced Formula Input with Validation */}
@@ -959,9 +1067,18 @@ const EnhancedCalculatedFieldsEditor = ({
                                     <div className="text-yellow-600 text-sm mt-1">
                                         <strong>⚠️ Warnings:</strong>
                                         <ul className="list-disc list-inside ml-4">
-                                            {validation.warnings.map((warning, i) => (
-                                                <li key={i}>{warning}</li>
-                                            ))}
+                                            {validation.warnings.map((warning, i) => {
+                                                // Check if this warning is about a calculated field
+                                                const fieldName = warning.match(/"([^"]+)"/)?.[1];
+                                                const isCalcField = fieldName && calculatedFields.some(cf => cf.label === fieldName);
+
+                                                // Don't show warning if it's a valid calculated field
+                                                if (isCalcField) {
+                                                    return null;
+                                                }
+
+                                                return <li key={i}>{warning}</li>;
+                                            })}
                                         </ul>
                                     </div>
                                 )}
@@ -980,6 +1097,41 @@ const EnhancedCalculatedFieldsEditor = ({
                         )}
                     </div>
                 </div>
+                {/* Calculated Field Reference Info */}
+                {calculatedFields.length > 0 && (
+                    <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <h6 className="text-sm font-medium text-purple-800 mb-2 flex items-center">
+                            <BarChart3 className="w-4 h-4 mr-1" />
+                            Using Calculated Fields in Formulas
+                        </h6>
+                        <div className="text-xs text-purple-700 space-y-1">
+                            <p>💡 You can reference other calculated fields in your formula!</p>
+                            <p>• Calculated fields appear with 📊 icon in the dropdown</p>
+                            <p>• Use them just like regular fields: "Calculated Field Name"</p>
+                            <p>• Make sure the referenced field is defined before this one</p>
+                        </div>
+
+                        {/* Show available calculated fields */}
+                        <div className="mt-2">
+                            <div className="text-xs font-medium text-purple-800">Available calculated fields:</div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {calculatedFields
+                                    .filter(cf => cf.label && cf.label.trim() !== '' && cf.id !== field.id)
+                                    .map((cf, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => insertFieldIntoFormula(field.id, `📊 ${cf.label}`)}
+                                            className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200 transition-colors"
+                                            title={`Click to insert: ${cf.formula}`}
+                                        >
+                                            📊 {cf.label}
+                                        </button>
+                                    ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Formula Preview */}
                 {field.formula && validation.isValid && (
                     <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded">
@@ -990,6 +1142,42 @@ const EnhancedCalculatedFieldsEditor = ({
                         <div className="text-xs text-green-600 mt-1 font-mono bg-green-100 p-2 rounded">
                             {field.formula}
                         </div>
+
+                        {/* Show referenced fields */}
+                        {(() => {
+                            const fieldMatches = field.formula.match(/"([^"]+)"/g);
+                            if (fieldMatches && fieldMatches.length > 0) {
+                                const referencedFields = fieldMatches.map(m => m.replace(/"/g, ''));
+                                return (
+                                    <div className="mt-2 text-xs">
+                                        <strong className="text-green-800">Referenced fields:</strong>
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                            {referencedFields.map((fieldName, idx) => {
+                                                const isCalcField = calculatedFields.some(cf => cf.label === fieldName);
+                                                const isRegularField = availableFields.some(f =>
+                                                    f.label.replace('📊 ', '') === fieldName
+                                                );
+
+                                                return (
+                                                    <span
+                                                        key={idx}
+                                                        className={`px-2 py-0.5 rounded ${isCalcField
+                                                                ? 'bg-purple-100 text-purple-700'
+                                                                : isRegularField
+                                                                    ? 'bg-blue-100 text-blue-700'
+                                                                    : 'bg-red-100 text-red-700'
+                                                            }`}
+                                                    >
+                                                        {isCalcField && '📊 '}
+                                                        {fieldName}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            }
+                        })()}
                     </div>
                 )}
 
@@ -1022,7 +1210,6 @@ const EnhancedCalculatedFieldsEditor = ({
                         </div>
                     </div>
                 )}
-
                 {/* Additional Options for Column-wise Calculations - RESTORED */}
                 {(field.calculationType === "columnwise") && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
@@ -1197,12 +1384,17 @@ const EnhancedCalculatedFieldsEditor = ({
 
         return fieldMatches.map(match => {
             const fieldName = match.replace(/"/g, '');
+
+            // Check if it's a calculated field reference
+            const calcField = calculatedFields.find(cf => cf.label === fieldName);
+            if (calcField) {
+                return `calc_${calcField.id}`;
+            }
+
+            // Otherwise treat as regular field
             return getFieldReference(fieldName, availableFields);
         }).filter(Boolean); // Remove any null/undefined values
     };
-
-
-
     return (
         <div className="mb-6 bg-white border rounded-lg shadow-sm">
             <div

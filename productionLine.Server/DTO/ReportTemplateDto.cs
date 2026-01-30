@@ -61,6 +61,9 @@ public class ChartConfig
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 
+    [JsonPropertyName("showChart")]
+    public bool ShowChart { get; set; }
+
     [JsonPropertyName("xField")]
     public string? XField { get; set; }
 

@@ -355,6 +355,13 @@ const MultiChartBuilder = ({
         }));
     };
 
+    const updateChartConfig = (chartId, updates) => {
+        setChartConfigs(prev =>
+            prev.map(chart =>
+                chart.id === chartId ? { ...chart, ...updates } : chart
+            )
+        );
+    };
 
     const renderShiftConfiguration = (chart) => {
         if (chart.type !== 'shift' || !chart.shiftConfigs) return null;
@@ -365,19 +372,36 @@ const MultiChartBuilder = ({
                     <h4 className="font-semibold text-blue-800">
                         ⚙️ Shift Configuration
                     </h4>
-                    <div className="flex items-center space-x-2">
-                        <button
-                            onClick={() => resetToDefaults(chart.id)}
-                            className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                        >
-                            Reset to Defaults
-                        </button>
-                        <button
-                            onClick={() => setShowConfig(!showConfig)}
-                            className="px-3 py-1 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300"
-                        >
-                            {showConfig ? 'Hide Config' : 'Show Config'}
-                        </button>
+
+                    <div className="flex items-center space-x-4">
+                        {/* Show / Hide Chart Toggle */}
+                        <label className="flex items-center gap-2 text-sm text-blue-700">
+                            <input
+                                type="checkbox"
+                                checked={chart.showChart !== false}
+                                onChange={(e) =>
+                                    updateChartConfig(chart.id, {
+                                        showChart: e.target.checked
+                                    })
+                                }
+                            />
+                            Show Chart
+                        </label>
+
+                        <div className="flex items-center space-x-2">
+                            <button
+                                onClick={() => resetToDefaults(chart.id)}
+                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                            >
+                                Reset to Defaults
+                            </button>
+                            <button
+                                onClick={() => setShowConfig(!showConfig)}
+                                className="px-3 py-1 text-sm bg-blue-200 text-blue-700 rounded hover:bg-blue-300"
+                            >
+                                {showConfig ? 'Hide Config' : 'Show Config'}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -828,18 +852,20 @@ const MultiChartBuilder = ({
                                 )}
                             </p>
                         </div>
-                        <ReportCharts
-                            data={data}
-                            metrics={chart.metrics}
-                            type={chart.type}
-                            xField={chart.xField}
-                            title={chart.title}
-                            comboConfig={chart.comboConfig}
-                            calculatedFields={calculatedFields}
-                            showConfiguration={true} // Allow configuration in designer
-                            shiftConfig={chart.shiftConfig} // Pass existing config
-                            onConfigChange={(config) => updateChart(index, config)} // Handle changes
-                        />
+                        {chart.showChart !== false && (
+                            <ReportCharts
+                                key={chart.id}
+                                data={data}
+                                metrics={chart.metrics}
+                                type={chart.type}
+                                xField={chart.xField}
+                                title={chart.title}
+                                comboConfig={chart.comboConfig}
+                                fields={fields}
+                                calculatedFields={calculatedFields}
+                                shiftConfigs={chart.shiftConfigs}
+                            />
+                        )}
                     </div>
                 )}
             </div>

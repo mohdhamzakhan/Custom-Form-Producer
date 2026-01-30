@@ -347,7 +347,8 @@ const ReportCharts = React.memo(({
     showDatePicker = false,  // ✅ ADD THIS
     onDateChange = () => { },  // ✅ ADD THIS
     onToggleDatePicker = () => { },  // ✅ ADD THIS
-    isDarkMode = false  // ✅ ADD THIS
+    isDarkMode = false,  // ✅ ADD THIS
+    showChart = true,
 }) => {
     console.log('=== ReportCharts Debug ===');
     console.log('selectedShiftPeriod:', selectedShiftPeriod);
@@ -355,6 +356,7 @@ const ReportCharts = React.memo(({
     console.log('passedShiftConfig:', passedShiftConfig);
     console.log('passedShiftConfig type:', typeof passedShiftConfig);
     console.log('passedShiftConfig isArray:', Array.isArray(passedShiftConfig));
+    console.log('passedShiftConfig isArray: Hamza', data);
 
     const [realTimeData, setRealTimeData] = useState([]);
     const [autoRefresh, setAutoRefresh] = useState(true);
@@ -794,30 +796,7 @@ const ReportCharts = React.memo(({
         }
     };
 
-    //const filteredShiftData = useMemo(() => {
-    //    const filtered = filterDataByShiftTime(
-    //        data,
-    //        activeShiftConfig.startTime,
-    //        activeShiftConfig.endTime
-    //    );
-
-    //    // ✅ ADD THIS DEBUG
-    //    console.log('🔍 Filtered data sample:', filtered.slice(0, 5).map(item => ({
-    //        Date: item.Date,
-    //        Count: item.Count,
-    //        formatted: new Date(item.Date).toLocaleTimeString()
-    //    })));
-
-    //    return filtered;
-    //}, [
-    //    data.length,
-    //    activeShiftConfig.startTime,
-    //    activeShiftConfig.endTime,
-    //    // Track both last Date AND last Count to detect new submissions
-    //    data.length > 0 ? `${data[data.length - 1]?.Date}_${data[data.length - 1]?.Count}` : null
-    //]);
-
-
+   
 
     // Render different chart types
     switch (type) {
@@ -953,7 +932,6 @@ const ReportCharts = React.memo(({
                     </ResponsiveContainer>
                 </div>
             );
-
 
         case 'line':
             return (
@@ -1458,6 +1436,12 @@ const ReportCharts = React.memo(({
                 return idx;
             }
 
+            console.log("Test Hamza", passedShiftConfig)
+
+            const shouldShowChart = showChart ?? true; 
+
+            console.log("shouldShowChart",shouldShowChart)
+
             // Fetch data from backend API
             useEffect(() => {
                 // ✅ Clear any existing intervals when dependencies change
@@ -1635,13 +1619,25 @@ const ReportCharts = React.memo(({
 
 
 
+
+
             // Render shift chart with backend data
             return (
                 <div
-                    className={`w-full max-w-full mx-auto
-      ${isMaximized ? 'h-screen flex flex-col' : 'p-6 rounded-lg shadow-lg'}
-      ${isDarkMode ? 'bg-gray-800' : 'bg-white'}
-    `}
+                    className={`w-full ${isMaximized ? '' : 'max-w-full mx-auto p-6 rounded-lg shadow-lg'}
+        ${isDarkMode ? 'bg-gray-800' : 'bg-white'}
+        ${isMaximized ? 'h-screen overflow-hidden flex flex-col' : ''}
+        `}
+                    style={isMaximized ? {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        zIndex: 999,
+                        margin: 0,
+                        padding: '10px'
+                    } : {}}
                 >
 
                     {/* Header Section */}
@@ -1715,17 +1711,16 @@ const ReportCharts = React.memo(({
 
                     {/* Current Shift Info */}
                     {!isFullscreenMode && (
-                        <div className={`mb-6 p-4 rounded-lg border ${isDarkMode
+                        <div className={`${isMaximized ? 'mb-2' : 'mb-6'} p-4 rounded-lg border ${isDarkMode
                             ? 'bg-gradient-to-r from-gray-800 to-gray-700 border-gray-600'
                             : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
                             }`}>
                             <div className="flex justify-between items-center">
                                 <div>
-                                    <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-blue-300' : 'text-blue-800'
-                                        }`}>
+                                    <h3 className={`${isMaximized ? 'text-base' : 'text-lg'} font-semibold ${isDarkMode ? 'text-blue-300' : 'text-blue-800'}`}>
                                         {activeShiftConfig.name} {activeShiftConfig.modelNumber && `[${activeShiftConfig.modelNumber}]`}
                                     </h3>
-                                    <p className={isDarkMode ? 'text-gray-300' : 'text-blue-600'}>
+                                    <p className={`${isMaximized ? 'text-xs' : 'text-sm'} ${isDarkMode ? 'text-gray-300' : 'text-blue-600'}`}>
                                         {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
                                         Target: {activeShiftConfig.targetParts} parts •
                                         Cycle: {activeShiftConfig.cycleTimeSeconds}s •
@@ -1733,8 +1728,10 @@ const ReportCharts = React.memo(({
                                     </p>
                                 </div>
                                 <div className="text-right">
-                                    <div className="text-sm text-blue-600">Last Updated</div>
-                                    <div className="text-blue-800 font-medium">
+                                    <div className={`${isMaximized ? 'text-xs' : 'text-sm'} ${isDarkMode ? 'text-blue-300' : 'text-blue-600'}`}>
+                                        Last Updated
+                                    </div>
+                                    <div className={`${isMaximized ? 'text-sm' : 'text-base'} ${isDarkMode ? 'text-blue-200' : 'text-blue-800'} font-medium`}>
                                         {new Date().toLocaleTimeString()}
                                     </div>
                                 </div>
@@ -1743,99 +1740,120 @@ const ReportCharts = React.memo(({
                     )}
 
                     {/* Production Chart */}
-                    <div className={`mb-6 ${isFullscreenMode ? 'flex-1' : ''}`} style={{
-                        transform: 'translateZ(0)',
-                        WebkitTransform: 'translateZ(0)',
-                        willChange: 'transform',
-                        position: 'relative'
-                    }}>
-                        {/* ✅ Add "Time Elapsed" label as HTML element */}
-                        {shiftChartData && (() => {
-                            const currentTimeIndex = isViewingToday(selectedDate)
-                                ? getCurrentChartBucketIndex(shiftChartData)
-                                : shiftChartData.length - 1;
-
-                            if (currentTimeIndex > 0) {
-                                return (
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: isFullscreenMode ? '40px' : '30px',
-                                        left: isFullscreenMode ? '60px' : '40px',
-                                        zIndex: 10,
-                                        backgroundColor: isFullscreenMode ? 'rgba(74, 222, 128, 0.9)' : 'rgba(74, 222, 128, 0.7)',
-                                        color: isFullscreenMode ? '#ffffff' : '#16a34a',
-                                        padding: '6px 12px',
-                                        borderRadius: '6px',
-                                        fontWeight: 'bold',
-                                        fontSize: isFullscreenMode ? '18px' : '14px',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                                        pointerEvents: 'none'
-                                    }}>
-                                        ⏱️ Time Elapsed
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })()}
-
-                        <ResponsiveContainer
-                            width="100%"
-                            height={isFullscreenMode ? "60vh" : 500}
+                    {shouldShowChart && (
+                        <div
+                            className={`${isMaximized ? 'flex-1 overflow-hidden' : 'mb-6'}`}
+                            style={isMaximized ? { minHeight: 0 } : {}}
                         >
-                            <LineChart
-                                data={shiftChartData}
-                                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                            {/* ✅ Add "Time Elapsed" label as HTML element */}
+                            {shiftChartData && (() => {
+                                const currentTimeIndex = isViewingToday(selectedDate)
+                                    ? getCurrentChartBucketIndex(shiftChartData)
+                                    : shiftChartData.length - 1;
+
+                                if (currentTimeIndex > 0) {
+                                    return (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: isMaximized ? '80px' : '30px',
+                                            left: isMaximized ? '60px' : '40px',
+                                            zIndex: 10,
+                                            backgroundColor: 'rgba(74, 222, 128, 0.9)',
+                                            color: '#ffffff',
+                                            padding: isMaximized ? '8px 16px' : '6px 12px',
+                                            borderRadius: '6px',
+                                            fontWeight: 'bold',
+                                            fontSize: isMaximized ? '16px' : '14px',
+                                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                            pointerEvents: 'none'
+                                        }}>
+                                            ⏱️ Time Elapsed
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+
+                            <ResponsiveContainer
+                                width="100%"
+                                height={isMaximized ? "100%" : 500}
                             >
-                                <CartesianGrid
-                                    strokeDasharray="3 3"
-                                    stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"}
-                                />
+                                <LineChart
+                                    data={shiftChartData}
+                                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                                >
+                                    <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"}
+                                    />
 
-                                {/* ✅ Add highlighted area for elapsed time */}
-                                {shiftChartData && (() => {
-                                    const areas = [];
+                                    {/* ✅ Add highlighted area for elapsed time */}
+                                    {shiftChartData && (() => {
+                                        const areas = [];
 
-                                    const currentTimeIndex = isViewingToday(selectedDate)
-                                        ? getCurrentChartBucketIndex(shiftChartData)
-                                        : shiftChartData.length - 1;
-
-
-
-
-                                    // Add elapsed time highlight (from start to current time)
-                                    if (currentTimeIndex > 0) {
-                                        areas.push(
-                                            <ReferenceArea
-                                                key="elapsed-time"
-                                                x1={shiftChartData[0].time}
-                                                x2={shiftChartData[currentTimeIndex].time}
-                                                fill={isDarkMode ? "#10b981" : "#4ade80"}
-                                                fillOpacity={isDarkMode ? 0.4 : 0.2}
-                                                ifOverflow="visible"
-                                                label={{
-                                                    position: "insideTopLeft",
-                                                    fill: isFullscreenMode ? "#ffffff" : "#16a34a",
-                                                    fontSize: isFullscreenMode ? 18 : 12,
-                                                    fontWeight: "bold"
-                                                }}
-                                            />
-
-                                        );
-                                    }
-
-                                    // Add break time highlights
-                                    let breakStart = null;
+                                        const currentTimeIndex = isViewingToday(selectedDate)
+                                            ? getCurrentChartBucketIndex(shiftChartData)
+                                            : shiftChartData.length - 1;
 
 
-                                    shiftChartData.forEach((point, index) => {
-                                        if (point.isBreak && breakStart === null) {
-                                            breakStart = index;
-                                        } else if (!point.isBreak && breakStart !== null) {
+
+
+                                        // Add elapsed time highlight (from start to current time)
+                                        if (currentTimeIndex > 0) {
+                                            areas.push(
+                                                <ReferenceArea
+                                                    key="elapsed-time"
+                                                    x1={shiftChartData[0].time}
+                                                    x2={shiftChartData[currentTimeIndex].time}
+                                                    fill={isDarkMode ? "#10b981" : "#4ade80"}
+                                                    fillOpacity={isDarkMode ? 0.4 : 0.2}
+                                                    ifOverflow="visible"
+                                                    label={{
+                                                        position: "insideTopLeft",
+                                                        fill: isFullscreenMode ? "#ffffff" : "#16a34a",
+                                                        fontSize: isFullscreenMode ? 18 : 12,
+                                                        fontWeight: "bold"
+                                                    }}
+                                                />
+
+                                            );
+                                        }
+
+                                        // Add break time highlights
+                                        let breakStart = null;
+
+
+                                        shiftChartData.forEach((point, index) => {
+                                            if (point.isBreak && breakStart === null) {
+                                                breakStart = index;
+                                            } else if (!point.isBreak && breakStart !== null) {
+                                                areas.push(
+                                                    <ReferenceArea
+                                                        key={`break-${breakStart}`}
+                                                        x1={shiftChartData[breakStart].time}
+                                                        x2={shiftChartData[index - 1].time}
+                                                        fill="#ffcccc"
+                                                        fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
+                                                        label={{
+                                                            value: "BREAK",
+                                                            position: "insideTop",
+                                                            fill: isDarkMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
+                                                            fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
+                                                            fontWeight: "bold"
+                                                        }}
+                                                    />
+                                                );
+                                                breakStart = null;
+                                            }
+                                        });
+
+                                        // Handle break at the end
+                                        if (breakStart !== null) {
                                             areas.push(
                                                 <ReferenceArea
                                                     key={`break-${breakStart}`}
                                                     x1={shiftChartData[breakStart].time}
-                                                    x2={shiftChartData[index - 1].time}
+                                                    x2={shiftChartData[shiftChartData.length - 1].time}
                                                     fill="#ffcccc"
                                                     fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
                                                     label={{
@@ -1847,250 +1865,222 @@ const ReportCharts = React.memo(({
                                                     }}
                                                 />
                                             );
-                                            breakStart = null;
                                         }
-                                    });
 
-                                    // Handle break at the end
-                                    if (breakStart !== null) {
-                                        areas.push(
-                                            <ReferenceArea
-                                                key={`break-${breakStart}`}
-                                                x1={shiftChartData[breakStart].time}
-                                                x2={shiftChartData[shiftChartData.length - 1].time}
-                                                fill="#ffcccc"
-                                                fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
-                                                label={{
-                                                    value: "BREAK",
-                                                    position: "insideTop",
-                                                    fill: isDarkMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
-                                                    fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
-                                                    fontWeight: "bold"
-                                                }}
-                                            />
-                                        );
-                                    }
-
-                                    return areas;
-                                })()}
+                                        return areas;
+                                    })()}
 
 
-                                <XAxis
-                                    dataKey="time"
-                                    tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
-                                    angle={-45}
-                                    textAnchor="end"
-                                    height={80}
-                                />
-                                <YAxis
-                                    tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
-                                    label={{
-                                        value: 'Cumulative Parts Produced',
-                                        angle: -90,
-                                        position: 'insideLeft',
-                                        style: {
-                                            fill: isFullscreenMode ? 'white' : '#666',
-                                            fontSize: 14
-                                        }
-                                    }}
-                                />
-                                <Tooltip
-                                    content={({ active, payload }) => {
-                                        if (active && payload && payload.length) {
-                                            const data = payload[0].payload;
-                                            const actual = Number(data?.actualParts ?? data?.actual ?? 0);
-                                            const target = Number(data?.targetParts ?? 0);
+                                    <XAxis
+                                        dataKey="time"
+                                        tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
+                                        angle={-45}
+                                        textAnchor="end"
+                                        height={80}
+                                    />
+                                    <YAxis
+                                        tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
+                                        label={{
+                                            value: 'Cumulative Parts Produced',
+                                            angle: -90,
+                                            position: 'insideLeft',
+                                            style: {
+                                                fill: isFullscreenMode ? 'white' : '#666',
+                                                fontSize: 14
+                                            }
+                                        }}
+                                    />
+                                    <Tooltip
+                                        content={({ active, payload }) => {
+                                            if (active && payload && payload.length) {
+                                                const data = payload[0].payload;
+                                                const actual = Number(data?.actualParts ?? data?.actual ?? 0);
+                                                const target = Number(data?.targetParts ?? 0);
 
-                                            const currentPct =
-                                                target > 0 ? ((actual / target) * 100).toFixed(1) : 0;
-                                            return (
-                                                <div style={{
-                                                    backgroundColor: isDarkMode ? '#1f2937' : 'white',
-                                                    color: isDarkMode ? '#f3f4f6' : '#111827',
-                                                    padding: '10px',
-                                                    border: `2px solid ${isDarkMode ? '#374151' : '#ccc'}`,
-                                                    borderRadius: '8px',
-                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-                                                }}>
-                                                    <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#1d4ed8' }}>
-                                                        {data.time} {/* Indigo-700 */}
-                                                    </p>
+                                                const currentPct =
+                                                    target > 0 ? ((actual / target) * 100).toFixed(1) : 0;
+                                                return (
+                                                    <div style={{
+                                                        backgroundColor: isDarkMode ? '#1f2937' : 'white',
+                                                        color: isDarkMode ? '#f3f4f6' : '#111827',
+                                                        padding: '10px',
+                                                        border: `2px solid ${isDarkMode ? '#374151' : '#ccc'}`,
+                                                        borderRadius: '8px',
+                                                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                                                    }}>
+                                                        <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#1d4ed8' }}>
+                                                            {data.time} {/* Indigo-700 */}
+                                                        </p>
 
-                                                    <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
-                                                        Actual: {data.actualParts} {/* Green-500 */}
-                                                    </p>
-
-                                                    <p style={{ margin: '5px 0', color: '#f97316', fontSize: '13px' }}>
-                                                        Target: {data.targetParts} {/* Orange-500 */}
-                                                    </p>
-
-                                                    <p style={{ margin: '5px 0', color: '#0ea5e9', fontSize: '13px' }}>
-                                                        Current Percentage: {currentPct}% {/* Sky-500 */}
-                                                    </p>
-
-                                                    {data.newPartsInBucket > 0 && (
                                                         <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
-                                                            New parts: +{data.newPartsInBucket} {/* Same green as Actual */}
+                                                            Actual: {data.actualParts} {/* Green-500 */}
                                                         </p>
-                                                    )}
 
-                                                    {console.log("Break Data", data)}
-                                                    {data.isBreak && (
-                                                        <p style={{
-                                                            margin: '5px 0',
-                                                            color: '#ff0000',
-                                                            fontWeight: 'bold',
-                                                            backgroundColor: '#ffeeee',
-                                                            padding: '3px 6px',
-                                                            borderRadius: '4px'
-                                                        }}>
-                                                            ⏸️ {data.breakName || 'BREAK TIME'}  {/* ✅ Show break name */}
+                                                        <p style={{ margin: '5px 0', color: '#f97316', fontSize: '13px' }}>
+                                                            Target: {data.targetParts} {/* Orange-500 */}
                                                         </p>
-                                                    )}
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    }}
-                                />
-                                <Legend />
 
-                                {/* Target Line */}
-                                <Line
-                                    type="monotone"
-                                    dataKey="targetParts"
-                                    stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
-                                    strokeWidth={isFullscreenMode ? 5 : 3}
-                                    strokeDasharray="8 8"
-                                    name="Target Production"
-                                    dot={false}
-                                />
+                                                        <p style={{ margin: '5px 0', color: '#0ea5e9', fontSize: '13px' }}>
+                                                            Current Percentage: {currentPct}% {/* Sky-500 */}
+                                                        </p>
 
-                                {/* Actual Production Line */}
-                                {/*<Line*/}
-                                {/*    type="monotone"*/}
-                                {/*    dataKey="actualParts"*/}
-                                {/*    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"}*/}
-                                {/*    strokeWidth={isFullscreenMode ? 5 : 3}*/}
-                                {/*    name="Actual Production (Cumulative)"*/}
-                                {/*    connectNulls={false}*/}
-                                {/*    dot={{*/}
-                                {/*        fill: isFullscreenMode ? '#4ade80' : '#82ca9d',*/}
-                                {/*        strokeWidth: 3,*/}
-                                {/*        r: isFullscreenMode ? 6 : 3*/}
-                                {/*    }}*/}
-                                {/*/>*/}
-                                <Line
-                                    type="monotone"
-                                    dataKey="actualParts"
-                                    stroke="#10b981"
-                                    strokeWidth={isFullscreenMode ? 4 : 3}
-                                    name="Actual Production"
-                                    connectNulls={false}
-                                    dot={(props) => {
-                                        const { cx, cy, payload } = props;
-                                        // Only show dot if there's real production (not zero, not null)
-                                        if (payload.actualParts && payload.actualParts > 0) {
-                                            return (
-                                                <circle
-                                                    cx={cx}
-                                                    cy={cy}
-                                                    r={isFullscreenMode ? 6 : 4}
-                                                    fill="#10b981"
-                                                    stroke="#fff"
-                                                    strokeWidth={2}
-                                                />
-                                            );
-                                        }
-                                        return null;
-                                    }}
-                                    activeDot={{ r: isFullscreenMode ? 8 : 6 }}
-                                />
+                                                        {data.newPartsInBucket > 0 && (
+                                                            <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
+                                                                New parts: +{data.newPartsInBucket} {/* Same green as Actual */}
+                                                            </p>
+                                                        )}
 
-                            </LineChart>
+                                                        {console.log("Break Data", data)}
+                                                        {data.isBreak && (
+                                                            <p style={{
+                                                                margin: '5px 0',
+                                                                color: '#ff0000',
+                                                                fontWeight: 'bold',
+                                                                backgroundColor: '#ffeeee',
+                                                                padding: '3px 6px',
+                                                                borderRadius: '4px'
+                                                            }}>
+                                                                ⏸️ {data.breakName || 'BREAK TIME'}  {/* ✅ Show break name */}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }}
+                                    />
+                                    <Legend />
 
-                        </ResponsiveContainer>
-                    </div>
+                                    {/* Target Line */}
+                                    <Line
+                                        type="monotone"
+                                        dataKey="targetParts"
+                                        stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
+                                        strokeWidth={isFullscreenMode ? 5 : 3}
+                                        strokeDasharray="8 8"
+                                        name="Target Production"
+                                        dot={false}
+                                    />
 
-                    {/* Production Summary Cards - Using Backend Metrics */}
+                                    {/* Actual Production Line */}
+                                    {/*<Line*/}
+                                    {/*    type="monotone"*/}
+                                    {/*    dataKey="actualParts"*/}
+                                    {/*    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"}*/}
+                                    {/*    strokeWidth={isFullscreenMode ? 5 : 3}*/}
+                                    {/*    name="Actual Production (Cumulative)"*/}
+                                    {/*    connectNulls={false}*/}
+                                    {/*    dot={{*/}
+                                    {/*        fill: isFullscreenMode ? '#4ade80' : '#82ca9d',*/}
+                                    {/*        strokeWidth: 3,*/}
+                                    {/*        r: isFullscreenMode ? 6 : 3*/}
+                                    {/*    }}*/}
+                                    {/*/>*/}
+                                    <Line
+                                        type="monotone"
+                                        dataKey="actualParts"
+                                        stroke="#10b981"
+                                        strokeWidth={isFullscreenMode ? 4 : 3}
+                                        name="Actual Production"
+                                        connectNulls={false}
+                                        dot={(props) => {
+                                            const { cx, cy, payload } = props;
+                                            // Only show dot if there's real production (not zero, not null)
+                                            if (payload.actualParts && payload.actualParts > 0) {
+                                                return (
+                                                    <circle
+                                                        cx={cx}
+                                                        cy={cy}
+                                                        r={isFullscreenMode ? 6 : 4}
+                                                        fill="#10b981"
+                                                        stroke="#fff"
+                                                        strokeWidth={2}
+                                                    />
+                                                );
+                                            }
+                                            return null;
+                                        }}
+                                        activeDot={{ r: isFullscreenMode ? 8 : 6 }}
+                                    />
+
+                                </LineChart>
+
+                            </ResponsiveContainer>
+                        </div>
+                    )}
+
+                    {/* ✅ UPDATED: Production Summary Cards with extended height when chart is hidden */}
+                    {/* Production Summary Cards - LARGER when chart is hidden */}
                     {!isFullscreenMode && shiftMetrics && (
-                        <div className="mb-6">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className={`${isMaximized ? 'mt-2' : 'mb-6'} ${!shouldShowChart ? 'flex-1 flex items-center' : ''}`}>
+                            <div className={`grid grid-cols-2 md:grid-cols-4 gap-${isMaximized ? '2' : shouldShowChart ? '4' : '6'} ${!shouldShowChart ? 'w-full' : ''}`}>
                                 {/* Current Production */}
-                                <div
-                                    className={`p-4 rounded-lg border shadow-sm ${isDarkMode
-                                            ? 'bg-slate-800 border-slate-500 text-blue-200'
-                                            : 'bg-blue-50 border-blue-300 text-blue-900'
-                                        }`}
-                                >
-                                    <div className="text-2xl font-bold">
+                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!shouldShowChart ? 'min-h-[750px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${isDarkMode
+                                        ? 'bg-slate-800 border-slate-500 text-blue-200'
+                                        : 'bg-blue-50 border-blue-300 text-blue-900'
+                                    }`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
                                         {shiftMetrics.currentProduction}
                                     </div>
-                                    <div className="mt-1 text-sm">
+                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
                                         Current Production
                                     </div>
                                 </div>
 
                                 {/* Target Parts */}
-                                <div
-                                    className={`p-4 rounded-lg border shadow-sm ${isDarkMode
-                                            ? 'bg-orange-900 border-orange-700 text-orange-100'
-                                            : 'bg-orange-50 border-orange-300 text-orange-900'
-                                        }`}
-                                >
-                                    <div className="text-2xl font-bold">
+                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${isDarkMode
+                                        ? 'bg-orange-900 border-orange-700 text-orange-100'
+                                        : 'bg-orange-50 border-orange-300 text-orange-900'
+                                    }`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
                                         {shiftMetrics.targetParts}
                                     </div>
-                                    <div className="mt-1 text-sm">
+                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
                                         Target Parts
                                     </div>
                                 </div>
 
                                 {/* Efficiency */}
-                                <div
-                                    className={`p-4 rounded-lg border shadow-sm ${shiftMetrics.efficiency >= 100
-                                            ? isDarkMode
-                                                ? 'bg-emerald-900 border-emerald-700 text-emerald-100'
-                                                : 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                                            : shiftMetrics.efficiency >= 80
-                                                ? isDarkMode
-                                                    ? 'bg-yellow-900 border-yellow-700 text-yellow-100'
-                                                    : 'bg-yellow-50 border-yellow-300 text-yellow-900'
-                                                : isDarkMode
-                                                    ? 'bg-red-900 border-red-700 text-red-100'
-                                                    : 'bg-red-50 border-red-300 text-red-900'
-                                        }`}
-                                >
-                                    <div className="text-2xl font-bold">
+                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${shiftMetrics.efficiency >= 100
+                                        ? isDarkMode ? 'bg-emerald-900 border-emerald-700 text-emerald-100' : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                                        : shiftMetrics.efficiency >= 80
+                                            ? isDarkMode ? 'bg-yellow-900 border-yellow-700 text-yellow-100' : 'bg-yellow-50 border-yellow-300 text-yellow-900'
+                                            : isDarkMode ? 'bg-red-900 border-red-700 text-red-100' : 'bg-red-50 border-red-300 text-red-900'
+                                    }`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
                                         {shiftMetrics.efficiency}%
                                     </div>
-                                    <div className="mt-1 text-sm">
+                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
                                         Current %
                                     </div>
                                 </div>
 
                                 {/* Remaining Parts */}
-                                <div
-                                    className={`p-4 rounded-lg border shadow-sm ${isDarkMode
-                                            ? 'bg-purple-900 border-purple-700 text-purple-100'
-                                            : 'bg-purple-50 border-purple-300 text-purple-900'
-                                        }`}
-                                >
-                                    <div className="text-2xl font-bold">
+                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${isDarkMode
+                                        ? 'bg-purple-900 border-purple-700 text-purple-100'
+                                        : 'bg-purple-50 border-purple-300 text-purple-900'
+                                    }`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
                                         {shiftMetrics.remainingParts}
                                     </div>
-                                    <div className="mt-1 text-sm">
+                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
                                         Remaining Parts
                                     </div>
                                 </div>
                             </div>
-
                         </div>
                     )}
 
-
                     {/* Marquee Message */}
-                    {activeShiftConfig?.message && (
+                    {!isMaximized && activeShiftConfig?.message && (
                         <div className="mb-6">
                             <div className={`marquee-container ${isDarkMode ? 'dark' : 'light'} rounded-lg shadow-lg`}>
                                 <div className="marquee-text">
@@ -2103,14 +2093,14 @@ const ReportCharts = React.memo(({
 
                     {/* Break Schedule */}
                     {isMaximized && activeShiftConfig.breaks && activeShiftConfig.breaks.length > 0 && (
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Break Schedule</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="p-2 bg-gray-50 rounded-lg mt-2">
+                            <h4 className="text-xs font-semibold text-gray-700 mb-2">Break Schedule</h4>
+                            <div className="grid grid-cols-3 gap-2">
                                 {activeShiftConfig.breaks.map((breakItem, idx) => (
-                                    <div key={breakItem.id || idx} className="flex items-center p-2 bg-white rounded border">
-                                        <div className="w-2 h-2 bg-red-400 rounded-full mr-3"></div>
+                                    <div key={breakItem.id || idx} className="flex items-center p-1 bg-white rounded border">
+                                        <div className="w-2 h-2 bg-red-400 rounded-full mr-2"></div>
                                         <div>
-                                            <div className="text-sm font-medium">{breakItem.name}</div>
+                                            <div className="text-xs font-medium">{breakItem.name}</div>
                                             <div className="text-xs text-gray-600">
                                                 {breakItem.startTime} - {breakItem.endTime}
                                             </div>
