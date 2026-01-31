@@ -9,7 +9,7 @@ namespace productionLine.Server.Model
     {
         [Key]
         [Column("ID")]
-        public int Id { get; set; }
+        public long Id { get; set; }
 
         [Required]
         [Column("FORMID")]
@@ -38,7 +38,7 @@ namespace productionLine.Server.Model
     {
         [Key]
         [Column("ID")]
-        public int Id { get; set; }
+        public long Id { get; set; }
 
         [Required]
         [Column("FIELDLABEL")]
@@ -50,7 +50,7 @@ namespace productionLine.Server.Model
 
         [ForeignKey("FormSubmission")]
         [Column("FORMSUBMISSIONID")]
-        public int FormSubmissionId { get; set; }
+        public long FormSubmissionId { get; set; }
 
         [JsonIgnore] // Prevent infinite recursion during serialization
         public FormSubmission? FormSubmission { get; set; } // Make nullable to avoid validation error

@@ -7,10 +7,10 @@ namespace productionLine.Server.Model
     public class FormApproval
     {
         [Column("ID")]
-        public int Id { get; set; }
+        public long Id { get; set; }
 
         [Column("FORMSUBMISSIONID")]
-        public int FormSubmissionId { get; set; }
+        public long FormSubmissionId { get; set; }
 
         [Column("FORMSUBMISSION")]
         [JsonIgnore]

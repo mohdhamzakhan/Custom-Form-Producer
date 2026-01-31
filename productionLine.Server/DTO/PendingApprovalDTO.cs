@@ -5,7 +5,7 @@
     }
     public class PendingSubmissionDto
     {
-        public int Id { get; set; }
+        public long Id { get; set; }
         public DateTime SubmittedAt { get; set; }
         public string FormName { get; set; }
 
