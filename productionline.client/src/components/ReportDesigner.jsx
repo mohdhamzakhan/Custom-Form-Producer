@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from "react";
+﻿import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import { ChevronRight, ChevronDown, Users, Download, BarChart3, FileText, Plus, X, Search, User, UserCheck, Copy } from "lucide-react";
@@ -197,6 +197,20 @@ export default function EnhancedReportDesigner() {
         );
     };
 
+    const [showFloatingActions, setShowFloatingActions] = useState(false);
+    useEffect(() => {
+        const el = contentRef.current;
+        if (!el) return;
+
+        const onScroll = () => {
+            setShowFloatingActions(el.scrollTop > 250);
+        };
+
+        el.addEventListener("scroll", onScroll);
+        return () => el.removeEventListener("scroll", onScroll);
+    }, []);
+
+    const contentRef = useRef(null);
     const navigate = useNavigate();
 
 
@@ -1649,6 +1663,32 @@ export default function EnhancedReportDesigner() {
     return (
         <>
             <style>{dragDropStyles}</style>
+
+            {showFloatingActions && (
+                <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 transition-all">
+                    <button
+                        onClick={copyReportDesign}
+                        className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicate Report
+                    </button>
+                    <button
+                        onClick={previewReport}
+                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Preview
+                    </button>
+                    <button
+                        onClick={saveTemplate}
+                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <Download className="w-4 h-4 mr-2" />
+                        Save Template
+                    </button>
+                </div>
+            )}
             <div className="flex h-screen bg-gray-100">
                 {/* Left Panel */}
                 <div className="w-80 bg-white border-r border-gray-200 overflow-y-auto">
@@ -1965,7 +2005,8 @@ export default function EnhancedReportDesigner() {
                 </div>
 
                 {/* Main Content Area */}
-                <div className="flex-1 overflow-y-auto">
+                <div ref={contentRef} className="flex-1 overflow-y-auto">
+
                     <div className="p-6">
                         {/* Header */}
                         <div className="flex items-center justify-between mb-6">

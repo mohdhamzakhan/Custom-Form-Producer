@@ -936,18 +936,18 @@ export default function EnhancedReportViewer() {
             <div className="view-controls">
 
                 {/* Debug Info (optional - remove in production) */}
-                <div style={{
-                    background: '#fef3c7',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    border: '1px solid #f59e0b'
-                }}>
-                    📊 Total: {reportData.length} |
-                    ✅ Filtered: {filteredReportData.length} |
-                    🗑️ Hidden: {reportData.length - filteredReportData.length} |
-                    {isGrouped ? ' 🏷️ GROUPED' : ' 📋 FLAT'}
-                </div>
+                {/*<div style={{*/}
+                {/*    background: '#fef3c7',*/}
+                {/*    padding: '8px 12px',*/}
+                {/*    borderRadius: '6px',*/}
+                {/*    fontSize: '12px',*/}
+                {/*    border: '1px solid #f59e0b'*/}
+                {/*}}>*/}
+                {/*    📊 Total: {reportData.length} |*/}
+                {/*    ✅ Filtered: {filteredReportData.length} |*/}
+                {/*    🗑️ Hidden: {reportData.length - filteredReportData.length} |*/}
+                {/*    {isGrouped ? ' 🏷️ GROUPED' : ' 📋 FLAT'}*/}
+                {/*</div>*/}
                 {/* Export Button - First */}
                 <button
                     onClick={exportToExcel}
@@ -968,19 +968,19 @@ export default function EnhancedReportViewer() {
                 </button>
 
                 {/* Toggle Blank Rows Button */}
-                <button
-                    onClick={() => {
-                        console.log('🔄 Toggling showBlankRows from:', showBlankRows);
-                        setShowBlankRows(!showBlankRows);
-                    }}
-                    className={`blank-rows-toggle ${!showBlankRows ? 'active' : ''}`}
-                    title={showBlankRows ? "Hide blank rows" : "Show blank rows"}
-                >
-                    {showBlankRows ? '👁️ Show All' : '🧹 Hide Blanks'}
-                    <span className="ml-1 text-xs font-normal">
-                        ({filteredReportData.length} rows)
-                    </span>
-                </button>
+                {/*<button*/}
+                {/*    onClick={() => {*/}
+                {/*        console.log('🔄 Toggling showBlankRows from:', showBlankRows);*/}
+                {/*        setShowBlankRows(!showBlankRows);*/}
+                {/*    }}*/}
+                {/*    className={`blank-rows-toggle ${!showBlankRows ? 'active' : ''}`}*/}
+                {/*    title={showBlankRows ? "Hide blank rows" : "Show blank rows"}*/}
+                {/*>*/}
+                {/*    {showBlankRows ? '👁️ Show All' : '🧹 Hide Blanks'}*/}
+                {/*    <span className="ml-1 text-xs font-normal">*/}
+                {/*        ({filteredReportData.length} rows)*/}
+                {/*    </span>*/}
+                {/*</button>*/}
 
                 {/* Dark Mode Toggle */}
                 <button
@@ -1073,7 +1073,9 @@ export default function EnhancedReportViewer() {
         console.log('📊 Using FLAT view - WILL SHOW SUMMARY ROWS');
         return renderExpandedTableWithSummary(filteredReportData, summaryRows, selectedFields, fields);
     };
+    const [activeTooltip, setActiveTooltip] = useState(null);
     const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
 
     const renderNewGroupedTable = () => {
         const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
@@ -1102,6 +1104,8 @@ export default function EnhancedReportViewer() {
 
         console.log('Visible fields:', visibleFields.length);
 
+
+
         return (
             <>
                 <style>{summaryRowsCSS}</style>
@@ -1111,9 +1115,11 @@ export default function EnhancedReportViewer() {
                     overflow: 'auto'
                 }}>
                     <table className="report-table" style={{
+                        minWidth: `${visibleFields.length * 180}px`,
                         borderCollapse: 'collapse',
-                        width: '100%',
-                        position: 'relative'
+                        backgroundColor: '#ffffff',
+                        borderRadius: '8px',
+                        overflow: 'hidden'
                     }}>
                         <thead style={{
                             position: 'sticky',
@@ -1179,6 +1185,8 @@ export default function EnhancedReportViewer() {
 
                                             // 🔥 REGULAR FIELDS: AGGREGATE
                                             const rows = filteredReportData.filter(r => r.submissionId === subId);
+                                            let displayValue = '—';
+                                            let isTextField = false;
 
                                             const allValues = rows
                                                 .map(row => {
@@ -1186,9 +1194,23 @@ export default function EnhancedReportViewer() {
                                                     return cell?.value;
                                                 })
                                                 .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '');
-
-                                            let displayValue = '—';
-                                            let isTextField = false;
+                                            
+                                            const tooltipContent =
+                                                allValues.length > 1 ? (
+                                                    isTextField ? (
+                                                        <div>
+                                                            <strong>Combined values:</strong><br />
+                                                            {allValues.map((v, i) => (
+                                                                <div key={i}>• {v}</div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div>
+                                                            <strong>Sum calculation:</strong><br />
+                                                            {allValues.join(' + ')} = {displayValue}
+                                                        </div>
+                                                    )
+                                                ) : null;
 
                                             if (allValues.length > 0) {
                                                 const hasDatePattern = allValues.some(v =>
@@ -1225,9 +1247,13 @@ export default function EnhancedReportViewer() {
                                                             field?.label?.toLowerCase().includes('percentage')) {
                                                             displayValue = displayValue.toFixed(2);
                                                         } else if (numericValues.every(v => Number.isInteger(v))) {
-                                                            displayValue = Math.round(displayValue);
+                                                            displayValue = Number(displayValue).toLocaleString('en-IN', {
+                                                                maximumFractionDigits: 10
+                                                            });
                                                         } else {
-                                                            displayValue = displayValue.toFixed(2);
+                                                            displayValue = Number(displayValue).toLocaleString('en-IN', {
+                                                                maximumFractionDigits: 10
+                                                            });
                                                         }
                                                     } else {
                                                         const unique = [...new Set(allValues)];
@@ -1238,62 +1264,31 @@ export default function EnhancedReportViewer() {
 
                                             return (
                                                 <td
-                                                    key={j}
-                                                    className={allValues.length > 1 ? 'cell-with-tooltip' : ''}
-                                                    onMouseMove={(e) =>
-                                                        setTooltipPos({ x: e.clientX + 10, y: e.clientY - 10 })
-                                                    }
-                                                    style={{
-                                                        border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
-                                                        padding: '12px',
-                                                        maxWidth: '300px',
-                                                        wordWrap: 'break-word',
-                                                        position: 'relative',
-                                                        backgroundColor: isDarkMode ? '#1f2937' : 'white',
-                                                        color: isDarkMode ? '#d1d5db' : '#1f2937'
+                                                    onMouseEnter={() => {
+                                                        if (tooltipContent) {
+                                                            setActiveTooltip(tooltipContent);
+                                                        }
                                                     }}
+                                                    onMouseMove={(e) => {
+                                                        setTooltipPos({ x: e.clientX + 12, y: e.clientY + 12 });
+                                                    }}
+                                                    onMouseLeave={() => setActiveTooltip(null)}
                                                 >
+
+
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         <span>{displayValue}</span>
+
                                                         {allValues.length > 1 && (
                                                             <span className="aggregated-badge">
                                                                 {allValues.length} rows
                                                             </span>
                                                         )}
                                                     </div>
-
-                                                    {allValues.length > 1 && !isTextField && (
-                                                        <div className="calculation-detail">
-                                                            <span>∑</span>
-                                                            <span>{allValues.join(' + ')}</span>
-                                                        </div>
-                                                    )}
-
-                                                    {allValues.length > 1 && isTextField && (
-                                                        <div className="calculation-detail">
-                                                            <span>🔗</span>
-                                                            <span>from {allValues.length} sources</span>
-                                                        </div>
-                                                    )}
-
-                                                    {allValues.length > 1 && (
-                                                        <div className="tooltip-content">
-                                                            {isTextField ? (
-                                                                <div>
-                                                                    <strong>Combined values:</strong><br />
-                                                                    {allValues.map((v, i) => (
-                                                                        <div key={i}>• {v}</div>
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                <div>
-                                                                    <strong>Sum calculation:</strong><br />
-                                                                    {allValues.join(' + ')} = {displayValue}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </td>
+
+                                               
+
                                             );
                                         })}
                                     </tr>
@@ -1329,6 +1324,27 @@ export default function EnhancedReportViewer() {
                         </tbody>
                     </table>
                 </div>
+                {activeTooltip && (
+                    <div
+                        style={{
+                            position: 'fixed',
+                            left: tooltipPos.x,
+                            top: tooltipPos.y,
+                            background: isDarkMode ? '#374151' : '#1f2937',
+                            color: '#fff',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            zIndex: 2147483647,
+                            pointerEvents: 'none',
+                            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                            maxWidth: '320px'
+                        }}
+                    >
+                        {activeTooltip}
+                    </div>
+                )}
+
             </>
         );
     };
@@ -1347,9 +1363,23 @@ export default function EnhancedReportViewer() {
             return fieldObj ? fieldObj.visible !== false : true;
         });
         return (
-            <div className="grouped-view">
+            <div
+                className="grouped-view"
+                style={{
+                    maxHeight: '70vh',
+                    overflowY: 'auto',
+                    overflowX: 'auto',
+                    width: '100%'
+                }}
+            >
                 {Object.entries(grouped).map(([submissionId, rows]) => (
-                    <div key={submissionId} className="group">
+                    <div
+                        style={{
+                            maxHeight: '70vh',
+                            overflow: 'auto',
+                            width: '100%'
+                        }}
+                    >
                         <div className="group-header">
                             <h4>Submission #{submissionId}</h4>
                         </div>
@@ -1357,7 +1387,17 @@ export default function EnhancedReportViewer() {
                             <thead>
                                 <tr>
                                     {visibleFields.map((field, i) => (
-                                        <th key={i}>{typeof field === 'object' ? field.label : field}</th>
+                                        <th
+                                            key={i}
+                                            style={{
+                                                position: 'sticky',
+                                                top: 0,
+                                                background: '#f3f4f6',
+                                                zIndex: 5
+                                            }}
+                                        >
+                                            {typeof field === 'object' ? field.label : field}
+                                        </th>
                                     ))}
                                 </tr>
                             </thead>
@@ -1592,26 +1632,26 @@ export default function EnhancedReportViewer() {
     z-index: 9999 !important;  /* ✅ ADD THIS - Bring cell to front on hover */
 }
 
-.cell-with-tooltip:hover .tooltip-content {
-    visibility: visible;
-    opacity: 1;
-}
+//.cell-with-tooltip:hover .tooltip-content {
+//    visibility: visible;
+//    opacity: 1;
+//}
 
-.tooltip-content {
-    visibility: hidden;
-    opacity: 0;
-    position: fixed;   /* ✅ IMPORTANT - stays fixed */
-    background-color: #1f2937;
-    color: white;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    white-space: nowrap;
-    z-index: 999999 !important;  /* ✅ INCREASED - Much higher z-index */
-    transition: opacity 0.15s;
-    pointer-events: none;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);  /* ✅ ADD shadow for better visibility */
-}
+//.tooltip-content {
+//    visibility: hidden;
+//    opacity: 0;
+//    position: fixed;   /* ✅ IMPORTANT - stays fixed */
+//    background-color: #1f2937;
+//    color: white;
+//    padding: 8px 12px;
+//    border-radius: 6px;
+//    font-size: 12px;
+//    white-space: nowrap;
+//    z-index: 999999 !important;  /* ✅ INCREASED - Much higher z-index */
+//    transition: opacity 0.15s;
+//    pointer-events: none;
+//    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);  /* ✅ ADD shadow for better visibility */
+//}
 
 /* ✅ ADD THIS - Position tooltip dynamically */
 .tooltip-content {
@@ -1620,15 +1660,15 @@ export default function EnhancedReportViewer() {
     transform: translate(10px, -50%);  /* Offset from cursor */
 }
 
-.tooltip-content::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: -5px;
-    transform: translateY(-50%);
-    border: 5px solid transparent;
-    border-right-color: #1f2937;
-}
+//.tooltip-content::after {
+//    content: "";
+//    position: absolute;
+//    top: 50%;
+//    left: -5px;
+//    transform: translateY(-50%);
+//    border: 5px solid transparent;
+//    border-right-color: #1f2937;
+//}
 
 .calculation-detail {
     font-size: 10px;
@@ -2528,7 +2568,35 @@ export default function EnhancedReportViewer() {
                     overflow: 'auto'
                 }}>
                     <table className="report-table" style={{ position: 'relative' }}>
-                        {/* ... thead ... */}
+                       <thead style={{
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 100,
+                            backgroundColor: isDarkMode ? '#374151' : '#f3f4f6'
+                        }}>
+                            <tr>
+                                {visibleFields.map((fieldId, i) => {
+                                    const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                    const cleanedLabel = field?.label?.includes("→")
+                                        ? field.label.split("→").pop().trim()
+                                        : field?.label || fieldId;
+                                    return (
+                                        <th key={i} style={{
+                                            border: '1px solid #ccc',
+                                            padding: '12px',
+                                            backgroundColor: '#f3f4f6',
+                                            fontWeight: '600',
+                                            position: 'sticky',
+                                            top: 0,
+                                            zIndex: 100,  /* ✅ Keep at 100 */
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                        }}>
+                                            {cleanedLabel}
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                        </thead>
 
                         <tbody>
                             {reportData.map((row, i) => (
@@ -2700,41 +2768,143 @@ export default function EnhancedReportViewer() {
     const calculateColumnwiseSummary = (calcField, allReportData, fields) => {
         const { formula, functionType, calculationType } = calcField;
 
-        // ✅ ADD THIS CHECK - Handle EXPRESSION type for column-wise
+        // ✅ ENHANCED: Handle EXPRESSION type for column-wise with aggregate functions
         if (functionType === 'EXPRESSION') {
             console.log('📊 Processing columnwise EXPRESSION:', formula);
 
-            // Remove EXPRESSION wrapper if present
             let cleanFormula = formula.trim();
             if (cleanFormula.startsWith('EXPRESSION(') && cleanFormula.endsWith(')')) {
                 cleanFormula = cleanFormula.slice(11, -1);
             }
 
-            // Extract field reference
+            // ✅ NEW: Check for aggregate function wrappers
+            const aggregateFunctionMatch = cleanFormula.match(/^(SUM|AVG|MAX|MIN|COUNT|PERCENTAGE)\((.*)\)$/i);
+
+            if (aggregateFunctionMatch) {
+                const aggFunction = aggregateFunctionMatch[1].toUpperCase();
+                const innerExpression = aggregateFunctionMatch[2];
+
+                console.log(`📊 Detected ${aggFunction} wrapper around expression:`, innerExpression);
+
+                // Extract field references from inner expression
+                const fieldMatches = innerExpression.match(/"([^"]+)"/g);
+                if (!fieldMatches || fieldMatches.length === 0) {
+                    console.error('❌ No fields found in EXPRESSION');
+                    return 0;
+                }
+
+                const fieldNames = fieldMatches.map(f => f.replace(/"/g, ''));
+                const rowResults = [];
+
+                // Calculate expression for each row
+                allReportData.forEach(row => {
+                    let rowExpression = innerExpression;
+
+                    fieldNames.forEach(fieldName => {
+                        const value = getFieldValue(fieldName, row.data, fields);
+                        const safeValue = !isNaN(value) && value !== null ? Number(value) : 0;
+
+                        // Replace field reference with value
+                        const escapedFieldName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        rowExpression = rowExpression.replace(
+                            new RegExp(`"${escapedFieldName}"`, 'g'),
+                            safeValue
+                        );
+                    });
+
+                    try {
+                        const rowResult = eval(rowExpression);
+                        if (!isNaN(rowResult) && isFinite(rowResult)) {
+                            rowResults.push(rowResult);
+                        }
+                    } catch (e) {
+                        console.error('❌ Expression eval failed:', rowExpression, e);
+                    }
+                });
+
+                // ✅ Apply the aggregate function
+                let finalResult = 0;
+
+                switch (aggFunction) {
+                    case 'SUM':
+                        finalResult = rowResults.reduce((sum, val) => sum + val, 0);
+                        console.log('✅ SUM result:', finalResult);
+                        break;
+
+                    case 'AVG':
+                        finalResult = rowResults.length > 0
+                            ? rowResults.reduce((sum, val) => sum + val, 0) / rowResults.length
+                            : 0;
+                        console.log('✅ AVG result:', finalResult);
+                        break;
+
+                    case 'MAX':
+                        finalResult = rowResults.length > 0 ? Math.max(...rowResults) : 0;
+                        console.log('✅ MAX result:', finalResult);
+                        break;
+
+                    case 'MIN':
+                        finalResult = rowResults.length > 0 ? Math.min(...rowResults) : 0;
+                        console.log('✅ MIN result:', finalResult);
+                        break;
+
+                    case 'COUNT':
+                        finalResult = rowResults.length;
+                        console.log('✅ COUNT result:', finalResult);
+                        break;
+
+                    case 'PERCENTAGE':
+                        // For percentage, we need two values: part and total
+                        // Assume the expression evaluates to part/total ratio per row
+                        // Then we average those ratios
+                        finalResult = rowResults.length > 0
+                            ? (rowResults.reduce((sum, val) => sum + val, 0) / rowResults.length) * 100
+                            : 0;
+                        console.log('✅ PERCENTAGE result:', finalResult);
+                        break;
+
+                    default:
+                        finalResult = rowResults.reduce((sum, val) => sum + val, 0);
+                }
+
+                return finalResult;
+            }
+
+            // ✅ FALLBACK: No aggregate function wrapper - default to SUM behavior
             const fieldMatches = cleanFormula.match(/"([^"]+)"/g);
             if (!fieldMatches || fieldMatches.length === 0) {
-                console.error('❌ No field reference found in columnwise EXPRESSION');
+                console.error('❌ No fields found in EXPRESSION');
                 return 0;
             }
 
-            const fieldName = fieldMatches[0].replace(/"/g, '');
-            console.log('📋 Extracting field:', fieldName);
+            const fieldNames = fieldMatches.map(f => f.replace(/"/g, ''));
+            let total = 0;
 
-            // Get all values for this field
-            const allValues = allReportData
-                .map(row => getFieldValue(fieldName, row.data, fields))
-                .filter(val => !isNaN(val) && val !== null && val !== undefined && val !== '');
+            allReportData.forEach(row => {
+                let rowExpression = cleanFormula;
 
-            console.log('📊 Collected values:', allValues);
+                fieldNames.forEach(fieldName => {
+                    const value = getFieldValue(fieldName, row.data, fields);
+                    const safeValue = !isNaN(value) && value !== null ? Number(value) : 0;
 
-            // Sum all values (default aggregation for columnwise)
-            const sum = allValues.reduce((total, val) => {
-                const numValue = parseFloat(val);
-                return total + (isNaN(numValue) ? 0 : numValue);
-            }, 0);
+                    // Replace field reference with value
+                    const escapedFieldName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    rowExpression = rowExpression.replace(
+                        new RegExp(`"${escapedFieldName}"`, 'g'),
+                        safeValue
+                    );
+                });
 
-            console.log('✅ Columnwise sum:', sum);
-            return sum;
+                try {
+                    const rowResult = eval(rowExpression);
+                    total += isNaN(rowResult) ? 0 : rowResult;
+                } catch (e) {
+                    console.error('❌ Expression eval failed:', rowExpression, e);
+                }
+            });
+
+            console.log('✅ Columnwise EXPRESSION total (default SUM):', total);
+            return total;
         }
 
         // Handle predefined functions (existing code continues...)
@@ -2742,12 +2912,13 @@ export default function EnhancedReportViewer() {
         if (fieldRefs.length === 0) return 0;
 
         const fieldName = fieldRefs[0];
-
         console.log(fieldName)
+
         const allValues = allReportData.map(row => getFieldValue(fieldName, row.data, fields))
             .filter(val => !isNaN(val) && val !== null && val !== undefined);
 
         console.log("Values", allValues)
+
         switch (functionType) {
             case 'SUM':
             case 'RUNNING_TOTAL':
