@@ -2577,6 +2577,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
         setDraggedColumnIndex(null);
         setDragOverColumnIndex(null);
     };
+    const [tempDependentOptions, setTempDependentOptions] = useState({});
 
     return (
         <div
@@ -3130,17 +3131,19 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         {console.log(column.remarksOptions)}
                                         <select
                                             multiple
-                                            value={column.requiresRemarks || []}
+                                            value={column.remarksOptions || []}
                                             onChange={(e) => {
                                                 const selected = Array.from(
                                                     e.target.selectedOptions,
                                                     opt => opt.value
                                                 );
+
                                                 const updatedColumns = [...field.columns];
                                                 updatedColumns[colIndex] = {
                                                     ...updatedColumns[colIndex],
                                                     remarksOptions: selected
                                                 };
+
                                                 updateField({ ...field, columns: updatedColumns });
                                             }}
                                             className="w-full px-2 py-1 border rounded mt-1 h-24"
@@ -3151,11 +3154,12 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 </option>
                                             ))}
                                         </select>
+
                                     </div>
                                 )}
-
                                 {column.type === "dependentDropdown" && (
                                     <div className="w-full space-y-4">
+                                        {/* Parent Column Selector */}
                                         <div>
                                             <label className="block text-sm font-medium mb-1">Parent Column</label>
                                             <select
@@ -3182,69 +3186,103 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     ))}
                                             </select>
                                         </div>
-                                        {/* Child options configuration */}
+
+                                        {/* Child Options Configuration */}
                                         {column.parentColumn && (
                                             <div className="space-y-2">
                                                 {field.columns
                                                     .find(c => c.name === column.parentColumn)
-                                                    ?.options?.map(parentOption => (
-                                                        <div key={parentOption} className="border p-2 rounded space-y-2">
-                                                            <div className="font-medium mb-2">When {column.parentColumn} is "{parentOption}"</div>
-                                                            <textarea
-                                                                value={(column.dependentOptions?.[parentOption] || []).join(",")}
-                                                                onChange={(e) => {
-                                                                    const values = e.target.value.split(",").map(v => v.trim()).filter(Boolean);
-                                                                    const updatedColumns = [...field.columns];
-                                                                    updatedColumns[colIndex] = {
-                                                                        ...updatedColumns[colIndex],
-                                                                        dependentOptions: {
-                                                                            ...updatedColumns[colIndex].dependentOptions,
-                                                                            [parentOption]: values
-                                                                        }
-                                                                    };
-                                                                    updateField({ columns: updatedColumns });
-                                                                }}
-                                                                placeholder="Enter comma-separated options"
-                                                                className="w-full border rounded p-2"
-                                                            />
-                                                            <label className="block text-xs text-gray-500 mt-2">
-                                                                Remarks required for options:
-                                                            </label>
-                                                            <select
-                                                                multiple
-                                                                value={(column.remarksOptions || [])
-                                                                    .filter(item => item.startsWith(`${parentOption}:`))
-                                                                    .map(item => item.substring(parentOption.length + 1))}
-                                                                onChange={(e) => {
-                                                                    const selected = Array.from(
-                                                                        e.target.selectedOptions,
-                                                                        opt => opt.value
-                                                                    );
+                                                    ?.options?.map(parentOption => {
+                                                        const key = `${colIndex}_${parentOption}`;
 
-                                                                    // Remove old entries for this parent option
-                                                                    const otherRemarks = (column.remarksOptions || [])
-                                                                        .filter(item => !item.startsWith(`${parentOption}:`));
+                                                        return (
+                                                            <div key={parentOption} className="border p-2 rounded space-y-2">
+                                                                <div className="font-medium mb-2">
+                                                                    When {column.parentColumn} is "{parentOption}"
+                                                                </div>
 
-                                                                    // Add new entries with parent:child format
-                                                                    const newRemarks = selected.map(opt => `${parentOption}:${opt}`);
+                                                                {/* Dependent Options Textarea */}
+                                                                <textarea
+                                                                    value={
+                                                                        tempDependentOptions[key] ??
+                                                                        (column.dependentOptions?.[parentOption] || []).join(", ")
+                                                                    }
+                                                                    onChange={(e) => {
+                                                                        setTempDependentOptions(prev => ({
+                                                                            ...prev,
+                                                                            [key]: e.target.value
+                                                                        }));
+                                                                    }}
+                                                                    onBlur={() => {
+                                                                        const values = (tempDependentOptions[key] || "")
+                                                                            .split(",")
+                                                                            .map(v => v.trim())
+                                                                            .filter(Boolean);
 
-                                                                    const updatedColumns = [...field.columns];
-                                                                    updatedColumns[colIndex] = {
-                                                                        ...updatedColumns[colIndex],
-                                                                        remarksOptions: [...otherRemarks, ...newRemarks]
-                                                                    };
-                                                                    updateField({ columns: updatedColumns });
-                                                                }}
-                                                                className="w-full px-2 py-1 border rounded h-24"
-                                                            >
-                                                                {(column.dependentOptions?.[parentOption] || []).map((opt, i) => (
-                                                                    <option key={i} value={opt}>
-                                                                        {opt}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    ))}
+                                                                        const updatedColumns = [...field.columns];
+                                                                        updatedColumns[colIndex] = {
+                                                                            ...updatedColumns[colIndex],
+                                                                            dependentOptions: {
+                                                                                ...updatedColumns[colIndex].dependentOptions,
+                                                                                [parentOption]: values
+                                                                            }
+                                                                        };
+
+                                                                        updateField({ columns: updatedColumns });
+
+                                                                        // cleanup temp state
+                                                                        setTempDependentOptions(prev => {
+                                                                            const copy = { ...prev };
+                                                                            delete copy[key];
+                                                                            return copy;
+                                                                        });
+                                                                    }}
+                                                                    placeholder="Enter comma-separated options"
+                                                                    className="w-full border rounded p-2"
+                                                                />
+
+                                                                {/* Remarks Selector */}
+                                                                <label className="block text-xs text-gray-500 mt-2">
+                                                                    Remarks required for options:
+                                                                </label>
+
+                                                                <select
+                                                                    multiple
+                                                                    value={(column.remarksOptions || [])
+                                                                        .filter(item => item.startsWith(`${parentOption}:`))
+                                                                        .map(item => item.substring(parentOption.length + 1))}
+                                                                    onChange={(e) => {
+                                                                        const selected = Array.from(
+                                                                            e.target.selectedOptions,
+                                                                            opt => opt.value
+                                                                        );
+
+                                                                        const otherRemarks = (column.remarksOptions || [])
+                                                                            .filter(item => !item.startsWith(`${parentOption}:`));
+
+                                                                        const newRemarks = selected.map(
+                                                                            opt => `${parentOption}:${opt}`
+                                                                        );
+
+                                                                        const updatedColumns = [...field.columns];
+                                                                        updatedColumns[colIndex] = {
+                                                                            ...updatedColumns[colIndex],
+                                                                            remarksOptions: [...otherRemarks, ...newRemarks]
+                                                                        };
+
+                                                                        updateField({ columns: updatedColumns });
+                                                                    }}
+                                                                    className="w-full px-2 py-1 border rounded h-24"
+                                                                >
+                                                                    {(column.dependentOptions?.[parentOption] || []).map((opt, i) => (
+                                                                        <option key={i} value={opt}>
+                                                                            {opt}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        );
+                                                    })}
                                             </div>
                                         )}
                                     </div>

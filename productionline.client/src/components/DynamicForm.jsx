@@ -3090,31 +3090,7 @@ export default function DynamicForm() {
         }
     };
 
-    // Add this function next to your evaluateFormula function
-    //const evaluateRowFormula = (formula, row) => {
-    //    if (!formula) return "";
-    //    try {
-    //        let expression = formula;
-    //        Object.keys(row).forEach((colName) => {
-    //            const fieldValue = row[colName];
-    //            // Better handling for grid cell values
-    //            let value = 0;
-    //            if (fieldValue !== null && fieldValue !== undefined && fieldValue !== "") {
-    //                const parsedValue = parseFloat(fieldValue);
-    //                value = isNaN(parsedValue) ? 0 : parsedValue;
-    //            }
-
-    //            // Replace both with and without braces
-    //            expression = expression.replaceAll(`{${colName}}`, value);
-    //            expression = expression.replaceAll(colName, value);
-    //        });
-
-    //        return eval(expression);
-    //    } catch (error) {
-    //        console.error("Row formula evaluation error:", error);
-    //        return "";
-    //    }
-    //};
+    
 
 
     const addGridRow = (fieldId, columns) => {
