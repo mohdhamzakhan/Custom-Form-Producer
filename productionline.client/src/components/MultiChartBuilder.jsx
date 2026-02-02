@@ -206,9 +206,9 @@ const MultiChartBuilder = ({
             };
         }).filter(field => field.type !== 'grid');
 
-        console.log('Base fields before filtering:', baseFields);
-        console.log('Selected fields:', selectedFields);
-        console.log('Fields array:', fields);
+        //console.log('Base fields before filtering:', baseFields);
+        //console.log('Selected fields:', selectedFields);
+        //console.log('Fields array:', fields);
 
         const calcFields = calculatedFields
             .filter(cf => cf.label && cf.formula)
@@ -221,7 +221,7 @@ const MultiChartBuilder = ({
                 isColumnwise: cf.calculationType === 'columnwise'
             }));
 
-        console.log('Calculated fields:', calcFields);
+        //console.log('Calculated fields:', calcFields);
 
         return [...baseFields, ...calcFields];
     };

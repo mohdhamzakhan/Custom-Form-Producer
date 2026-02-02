@@ -52,6 +52,15 @@ namespace productionLine.Server.Model
 
         [Column("GROUPINGCONFIG", TypeName = "CLOB")]
         public string? GroupingConfig { get; set; }
+        [Column("FORMIDS")]
+        public string? FormIds { get; set; }
+        [Column("ISMULTIFORM", TypeName = "NUMBER(1)")]
+        public bool IsMultiForm { get; set; }
+        [Column("FORMRELATIONSHIPS")]
+        public string? FormRelationships { get; set; }
+        [ForeignKey("FORMID")]
+        public virtual Form? Form { get; set; }
+
     }
 
     [Table("FF_REPORTFIELD")]
@@ -76,7 +85,10 @@ namespace productionLine.Server.Model
 
         [Column("VISIBLE", TypeName = "NUMBER(1)")]  // ✅ ADD THIS
         public bool Visible { get; set; } = true;  // Default to visible
+        [Column("FORMID")]
+        public int? FormId { get; set; }
     }
+
 
     [Table("FF_REPORTFILTER")]
     public class ReportFilter
@@ -100,5 +112,6 @@ namespace productionLine.Server.Model
 
         [Column("TYPE")]
         public string? Type { get; set; }
+
     }
 }

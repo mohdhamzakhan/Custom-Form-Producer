@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback, useRef } from "react";
+﻿import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import { ChevronRight, ChevronDown, Users, Download, BarChart3, FileText, Plus, X, Search, User, UserCheck, Copy } from "lucide-react";
@@ -11,6 +11,8 @@ import EnhancedCalculatedFieldsEditor from './CalculatedFieldsEditor';
 import { toast } from 'react-toastify';
 import { GripVertical, Eye, EyeOff } from "lucide-react";
 import { EnhancedGroupingEditor } from './EnhancedGroupingEditor'; // ADD THIS
+import RelationshipDiagram from './RelationshipDiagram';
+import FormRelationshipEditor from './FormRelationshipEditor';
 
 
 // AD Search component
@@ -179,6 +181,13 @@ export default function EnhancedReportDesigner() {
     const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current");
     const [fieldVisibility, setFieldVisibility] = useState({});
 
+    // ✅ NEW: Multi-form support
+    const [multiFormMode, setMultiFormMode] = useState(false);
+    const [selectedForms, setSelectedForms] = useState([]); // Array of form IDs
+    const [formFieldMappings, setFormFieldMappings] = useState({}); // { formId: { fields: [], selectedFields: [] } }
+
+    // ✅ NEW: Form relationships state
+    const [relationships, setRelationships] = useState([]);
 
     // UI state for left panel
     const [leftPanelExpanded, setLeftPanelExpanded] = useState({
@@ -186,7 +195,8 @@ export default function EnhancedReportDesigner() {
         selectedFields: true,
         calculatedFields: false,
         filters: false,
-        sharing: false
+        sharing: false,
+        relationships: true
     });
 
     const toggleExpand = (rowIdx) => {
@@ -212,138 +222,362 @@ export default function EnhancedReportDesigner() {
 
     const contentRef = useRef(null);
     const navigate = useNavigate();
+    const toggleMultiFormMode = () => {
+        if (!multiFormMode) {
+            // Switching TO multi-form mode
+            if (selectedFormId) {
+                // Migrate current form to multi-form mode
+                setSelectedForms([selectedFormId]);
+                setFormFieldMappings({
+                    [selectedFormId]: {
+                        fields: fields,
+                        selectedFields: selectedFields
+                    }
+                });
+            }
+        } else {
+            // Switching TO single-form mode
+            if (selectedForms.length > 0) {
+                // Use first form as the single form
+                const firstFormId = selectedForms[0];
+                setSelectedFormId(firstFormId);
+                if (formFieldMappings[firstFormId]) {
+                    setFields(formFieldMappings[firstFormId].fields || []);
+                    setSelectedFields(formFieldMappings[firstFormId].selectedFields || []);
+                }
+            }
+        }
 
+        setRelationships([]);
 
+        setMultiFormMode(!multiFormMode);
+    };
+    const addFormToSelection = async (formId) => {
+        if (selectedForms.includes(formId)) {
+            toast.error("Form already added");
+            return;
+        }
+
+        try {
+            const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/fields`);
+            const fieldList = Array.isArray(res.data)
+                ? res.data
+                : Array.isArray(res.data.fields)
+                    ? res.data.fields
+                    : [];
+
+            const expandedFields = [];
+            fieldList.forEach((field) => {
+                if (field.columnJson) {
+                    try {
+                        const columns = JSON.parse(field.columnJson);
+                        columns.forEach((col) => {
+                            expandedFields.push({
+                                id: `${field.id}:${col.id}`,
+                                label: `${field.label} → ${col.name}`,
+                                type: col.type || "text",
+                                formId: formId // ✅ Track which form this field belongs to
+                            });
+                        });
+                    } catch (err) {
+                        console.error("Invalid columnJson in field:", field.label);
+                    }
+                } else {
+                    expandedFields.push({
+                        id: field.id,
+                        label: field.label,
+                        type: field.type,
+                        formId: formId // ✅ Track which form this field belongs to
+                    });
+                }
+            });
+
+            setSelectedForms(prev => [...prev, formId]);
+            setFormFieldMappings(prev => ({
+                ...prev,
+                [formId]: {
+                    fields: expandedFields,
+                    selectedFields: []
+                }
+            }));
+
+            toast.success("Form added successfully");
+        } catch (err) {
+            setError("Failed to load form fields: " + (err.message || "Unknown error"));
+        }
+    };
+    // ✅ NEW: Remove a form from selection
+    const removeFormFromSelection = (formId) => {
+        setSelectedForms(prev => prev.filter(id => id !== formId));
+        setFormFieldMappings(prev => {
+            const newMappings = { ...prev };
+            delete newMappings[formId];
+            return newMappings;
+        });
+        setRelationships(prev => prev.filter(
+            r => r.sourceFormId !== formId && r.targetFormId !== formId
+        ));
+    };
+    // ✅ NEW: Get all fields from all selected forms (for multi-form mode)
+    const getAllFields = () => {
+        if (!multiFormMode) {
+            return fields;
+        }
+
+        const allFields = [];
+        selectedForms.forEach(formId => {
+            if (formFieldMappings[formId]) {
+                // Add form name prefix to differentiate fields from different forms
+                const formName = forms.find(f => f.id === formId)?.name || `Form ${formId}`;
+                const formFields = formFieldMappings[formId].fields.map(field => ({
+                    ...field,
+                    displayLabel: `[${formName}] ${field.label}`,
+                    originalLabel: field.label,
+                    formId: formId
+                }));
+                allFields.push(...formFields);
+            }
+        });
+        return allFields;
+    };
+    // ✅ NEW: Get all selected fields from all forms
+    const getAllSelectedFields = () => {
+        if (!multiFormMode) {
+            return selectedFields;
+        }
+
+        const allSelected = [];
+        selectedForms.forEach(formId => {
+            if (formFieldMappings[formId]) {
+                allSelected.push(...formFieldMappings[formId].selectedFields);
+            }
+        });
+        return allSelected;
+    };
 
     useEffect(() => {
         if (!reportId) return;
 
-        axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`).then((res) => {
-            const data = res.data;
-            console.log(data);
+        const loadReport = async () => {
+            try {
+                // Load report data first
+                const reportRes = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`);
+                const data = reportRes.data;
+                console.log('📋 Report loaded:', data);
+                setTemplateName(data.name || '');
 
-            setTemplateName(data.name);
-            setSelectedFormId(data.formId);
-            setOptions((prev) => ({
-                ...prev,
-                includeApprovals: data.includeApprovals ?? false,
-                includeRemarks: data.includeRemarks ?? false,
-                isShared: !!data.sharedWithRole,
-                sharedWithRoles: data.sharedWithRole || [],
-            }));
-            console.log(data.sharedWithRole)
-            if (data.sharedWithRole) {
-                try {
-                    let parsedUsers;
+                // Determine form IDs
+                const formIds = data.formIds || (data.formId ? [data.formId] : []);
+                console.log('📂 Form IDs:', formIds);
 
-                    // Check if it's already an object/array
-                    if (typeof data.sharedWithRole === 'string') {
-                        parsedUsers = JSON.parse(data.sharedWithRole);
-                    } else {
-                        // It's already parsed (object/array)
-                        parsedUsers = data.sharedWithRole;
+                if (formIds.length > 1) {
+                    // ✅ MULTI-FORM MODE
+                    console.log('🔄 Loading MULTI-FORM report...');
+                    setMultiFormMode(true);
+                    setSelectedForms(formIds);
+
+                    const mappings = {};
+
+                    // Load fields for each form
+                    for (const formId of formIds) {
+                        try {
+                            console.log(`📥 Loading fields for form ${formId}...`);
+                            const fieldRes = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/fields`);
+
+                            console.log(`✅ Response for form ${formId}:`, fieldRes.data);
+
+                            // Extract field list (same logic as addFormToSelection)
+                            let fieldList = [];
+                            if (Array.isArray(fieldRes.data)) {
+                                fieldList = fieldRes.data;
+                            } else if (fieldRes.data && Array.isArray(fieldRes.data.fields)) {
+                                fieldList = fieldRes.data.fields;
+                            }
+
+                            console.log(`📋 ${fieldList.length} raw fields for form ${formId}`);
+
+                            // Expand grid fields
+                            const expandedFields = [];
+                            fieldList.forEach(field => {
+                                if (field.columnJson) {
+                                    try {
+                                        const columns = JSON.parse(field.columnJson);
+                                        columns.forEach(col => {
+                                            expandedFields.push({
+                                                id: `${field.id}:${col.id}`,
+                                                label: `${field.label} - ${col.name}`,
+                                                type: col.type || "text",
+                                                formId: formId,
+                                                originalLabel: field.label
+                                            });
+                                        });
+                                    } catch (err) {
+                                        console.error("Invalid columnJson:", field.label);
+                                    }
+                                } else {
+                                    expandedFields.push({
+                                        id: field.id,
+                                        label: field.label,
+                                        type: field.type || "text",
+                                        formId: formId,
+                                        originalLabel: field.label
+                                    });
+                                }
+                            });
+
+                            // Match selected fields from saved report data
+                            const selectedFieldsForForm = (data.fields || [])
+                                .filter(f => f.formId == formId || f.formId === formId.toString())
+                                .map(f => f.fieldId || f.id);
+
+                            mappings[formId] = {
+                                fields: expandedFields,
+                                selectedFields: selectedFieldsForForm
+                            };
+
+                            console.log(`✅ Form ${formId}: ${expandedFields.length} fields, ${selectedFieldsForForm.length} selected`);
+                        } catch (err) {
+                            console.error(`❌ Failed to load form ${formId}:`, err.message);
+                            mappings[formId] = { fields: [], selectedFields: [] };
+                        }
                     }
 
-                    if (Array.isArray(parsedUsers)) {
-                        setSelectedUsers(parsedUsers);
-                        console.log('Loaded selected users:', parsedUsers);
-                    } else {
-                        console.warn('SharedWithRole is not an array:', parsedUsers);
-                        setSelectedUsers([]);
+                    console.log('🎯 Setting formFieldMappings:', mappings);
+                    setFormFieldMappings(mappings);
+
+                    // Load relationships
+                    if (data.formRelationships?.length > 0) {
+                        setRelationships(data.formRelationships);
                     }
-                } catch (error) {
-                    console.error('Error parsing SharedWithRole:', error);
-                    setSelectedUsers([]);
+
+                } else if (formIds.length === 1) {
+                    // ✅ SINGLE-FORM MODE
+                    console.log('🔄 Loading SINGLE-FORM report...');
+                    setMultiFormMode(false);
+                    setSelectedFormId(formIds[0]);
+
+                    // Load fields using existing single-form logic
+                    const loadFormFields = async () => {
+                        try {
+                            const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formIds[0]}/fields`);
+                            const fieldList = Array.isArray(res.data) ? res.data : (Array.isArray(res.data.fields) ? res.data.fields : []);
+
+                            const expandedFields = [];
+                            fieldList.forEach(field => {
+                                if (field.columnJson) {
+                                    try {
+                                        const columns = JSON.parse(field.columnJson);
+                                        columns.forEach(col => {
+                                            expandedFields.push({
+                                                id: `${field.id}:${col.id}`,
+                                                label: `${field.label} - ${col.name}`,
+                                                type: col.type || "text"
+                                            });
+                                        });
+                                    } catch (err) {
+                                        console.error("Invalid columnJson:", field.label);
+                                    }
+                                } else {
+                                    expandedFields.push({
+                                        id: field.id,
+                                        label: field.label,
+                                        type: field.type || "text"
+                                    });
+                                }
+                            });
+
+                            setFields(expandedFields);
+                            setSelectedFields(expandedFields.map(f => f.id));
+                        } catch (err) {
+                            console.error('Failed to load form fields:', err);
+                        }
+                    };
+                    loadFormFields();
+
+                } else {
+                    console.log('⚠️ No valid form IDs found');
                 }
-            } else {
-                setSelectedUsers([]);
-            }
 
-            // Map fields first and set local state
-            const mappedFields = (data.fields || []).map(f => ({
-                id: f.fieldId,
-                label: f.fieldLabel,
-                type: f.type || "text",   // fallback if type missing
-                order: f.order,
-                visible: f.visible !== false
-            }));
-            setFields(mappedFields);
+                // COMMON SETTINGS (both single and multi-form)
+                setOptions(prev => ({
+                    ...prev,
+                    includeApprovals: data.includeApprovals ?? false,
+                    includeRemarks: data.includeRemarks ?? false,
+                    isShared: !!data.sharedWithRole,
+                    sharedWithRoles: data.sharedWithRole || []
+                }));
 
-            // Set selectedFields from mappedFields just by id
-            setSelectedFields(mappedFields.map(f => f.id));
+                // Load shared users
+                if (data.sharedWithRole) {
+                    try {
+                        let parsedUsers = typeof data.sharedWithRole === 'string'
+                            ? JSON.parse(data.sharedWithRole)
+                            : data.sharedWithRole;
+                        if (Array.isArray(parsedUsers)) {
+                            setSelectedUsers(parsedUsers);
+                        }
+                    } catch (error) {
+                        console.error('Error parsing shared users:', error);
+                    }
+                }
 
-            // Initialize visibility state
-            const visibilityMap = {};
-            mappedFields.forEach(f => {
-                visibilityMap[f.id] = f.visible !== false;
-            });
-            setFieldVisibility(visibilityMap);
-
-            // Map filters after fields state is prepared (use mappedFields directly here)
-            const loadedFilters = (data.filters || []).map((f, index) => {
-                const matchingField = mappedFields.find(field =>
-                    field.id === f.fieldLabel || field.label === f.fieldLabel
-                );
-                return {
+                // Load filters
+                const loadedFilters = (data.filters || []).map((f, index) => ({
                     id: index + 1,
-                    field: matchingField?.id || f.fieldLabel || "",   // fallback to GUID or empty string
-                    label: matchingField?.label || f.fieldLabel,
-                    type: matchingField?.type || f.type || "text",
+                    field: f.fieldLabel || "",
+                    label: f.fieldLabel || "",
+                    type: f.type || "text",
                     condition: f.operator || "",
                     value: f.value || ""
-                };
-            });
-            setFilters(loadedFilters);
+                }));
+                setFilters(loadedFilters);
 
+                // Load calculated fields, charts, grouping
+                setCalculatedFields(data.calculatedFields || []);
+                setGroupingConfig(data.groupingConfig || []);
 
-            setCalculatedFields(data.calculatedFields || []);
-            // Normalize chartConfigs handling for backward compatibility
-            let charts = [];
-
-            if (data.chartConfig) {
-                if (Array.isArray(data.chartConfig)) {
-                    // Handle array of charts
-                    charts = data.chartConfig.map(chart => ({
-                        ...chart,
-                        showChart: chart.showChart !== false,
-                        position: {
-                            row: chart.position?.Row ?? chart.position?.row ?? 0,
-                            col: chart.position?.Col ?? chart.position?.col ?? 0,
-                            width: chart.position?.Width ?? chart.position?.width ?? 12,
-                            height: chart.position?.Height ?? chart.position?.height ?? 6,
-                        },
-                        shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ?
-                            chart.shiftConfigs :
-                            (chart.shiftConfig ? [chart.shiftConfig] : null) // Backward compatibility
-                    }));
-                } else {
-                    // Handle single chart object (backward compatibility)
-                    charts = [{
-                        id: data.chartConfig.id || 1,
-                        title: data.chartConfig.title || "Chart 1",
-                        type: data.chartConfig.type || "bar",
-                        metrics: data.chartConfig.metrics || [],
-                        xField: data.chartConfig.xField || null,
-                        position: {
-                            row: data.chartConfig.position?.Row ?? 0,
-                            col: data.chartConfig.position?.Col ?? 0,
-                            width: data.chartConfig.position?.Width ?? 12,
-                            height: data.chartConfig.position?.Height ?? 6
-                        },
-                        comboConfig: data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] },
-                        shiftConfigs: data.chartConfig.type === 'shift' && data.chartConfig.shiftConfigs ?
-                            data.chartConfig.shiftConfigs :
-                            (data.chartConfig.shiftConfig ? [data.chartConfig.shiftConfig] : null)
-                    }];
+                // Chart configs (simplified)
+                let charts = [];
+                if (data.chartConfig) {
+                    if (Array.isArray(data.chartConfig)) {
+                        charts = data.chartConfig.map(chart => ({
+                            ...chart,
+                            showChart: chart.showChart !== false,
+                            position: {
+                                row: chart.position?.Row ?? chart.position?.row ?? 0,
+                                col: chart.position?.Col ?? chart.position?.col ?? 0,
+                                width: chart.position?.Width ?? chart.position?.width ?? 12,
+                                height: chart.position?.Height ?? chart.position?.height ?? 6
+                            }
+                        }));
+                    } else {
+                        charts = [{
+                            id: 1,
+                            title: data.chartConfig.title || "Chart 1",
+                            type: data.chartConfig.type || "bar",
+                            metrics: data.chartConfig.metrics || [],
+                            position: { row: 0, col: 0, width: 12, height: 6 }
+                        }];
+                    }
                 }
-            }
-            // If data.chartConfig is null/undefined, charts remains empty array []
+                setChartConfigs(charts);
 
-            console.log(charts)
-            setGroupingConfig(data.groupingConfig || []);
-            setChartConfigs(charts);
-        });
+                // Field visibility
+                const visibilityMap = {};
+                (data.fields || []).forEach(f => {
+                    visibilityMap[f.fieldId || f.id] = f.visible !== false;
+                });
+                setFieldVisibility(visibilityMap);
+
+            } catch (err) {
+                console.error('❌ Failed to load report:', err);
+                toast.error('Failed to load report');
+            }
+        };
+
+        loadReport();
     }, [reportId]);
+
 
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
@@ -351,9 +585,7 @@ export default function EnhancedReportDesigner() {
         if (storedUserData && storedUserData !== "undefined") {
             const storedUser = JSON.parse(storedUserData);
 
-            // Check if session has expired
             if (storedUser.expiry && Date.now() > storedUser.expiry) {
-                // Session expired
                 localStorage.removeItem("user");
                 localStorage.removeItem("meaiFormToken");
                 navigate(`/login?expired=true`);
@@ -369,12 +601,12 @@ export default function EnhancedReportDesigner() {
 
     const fetchAvailableRoles = async (user) => {
         try {
-            // Mock data for now - replace with actual API call
             setAvailableRoles(["Admin", "Manager", "Supervisor", "Analyst", "Viewer"]);
         } catch (err) {
             console.error("Failed to fetch roles:", err);
         }
     };
+
 
     useEffect(() => {
         const fetchForms = async () => {
@@ -388,13 +620,15 @@ export default function EnhancedReportDesigner() {
                     body: JSON.stringify(user)
                 });
                 const data = await response.json();
-                setForms(Array.isArray(data) ? data : []); // Defensive assignment
+                setForms(Array.isArray(data) ? data : []);
             } catch (err) {
                 setError(err.message || "Failed to load forms");
             }
         };
         fetchForms();
+
     }, [user]);
+
 
     useEffect(() => {
         if (!selectedFormId) return;
@@ -439,6 +673,7 @@ export default function EnhancedReportDesigner() {
         };
 
         loadFormFields();
+
     }, [selectedFormId]);
 
     const handleFormChange = async (e) => {
@@ -482,7 +717,6 @@ export default function EnhancedReportDesigner() {
             setFilters([]);
             setCalculatedFields([]);
 
-            // Reset any messages
             setError(null);
             setSuccess(null);
         } catch (err) {
@@ -512,9 +746,29 @@ export default function EnhancedReportDesigner() {
     };
 
     const toggleField = (fieldId) => {
-        setSelectedFields(prev =>
-            prev.includes(fieldId) ? prev.filter(f => f !== fieldId) : [...prev, fieldId]
-        );
+        if (!multiFormMode) {
+            // Single form mode - original behavior
+            setSelectedFields(prev =>
+                prev.includes(fieldId) ? prev.filter(f => f !== fieldId) : [...prev, fieldId]
+            );
+        } else {
+            // Multi-form mode - find which form this field belongs to
+            for (const formId of selectedForms) {
+                const formFields = formFieldMappings[formId]?.fields || [];
+                if (formFields.some(f => f.id === fieldId)) {
+                    setFormFieldMappings(prev => ({
+                        ...prev,
+                        [formId]: {
+                            ...prev[formId],
+                            selectedFields: prev[formId].selectedFields.includes(fieldId)
+                                ? prev[formId].selectedFields.filter(f => f !== fieldId)
+                                : [...prev[formId].selectedFields, fieldId]
+                        }
+                    }));
+                    break;
+                }
+            }
+        }
     };
 
     const togglePanelSection = (section) => {
@@ -536,49 +790,50 @@ export default function EnhancedReportDesigner() {
             return;
         }
 
-        if (selectedFields.length === 0) {
+        // ✅ MODIFIED: Check for fields in either single or multi-form mode
+        const totalSelectedFields = multiFormMode
+            ? getAllSelectedFields().length
+            : selectedFields.length;
+
+        if (totalSelectedFields === 0) {
             setError("Please select at least one field");
             return;
         }
 
-        // Clear previous messages
         setError(null);
         setSuccess(null);
 
-        // Check filter validity
         const invalidFilters = filters.filter(f => !f.field || !f.condition);
         if (invalidFilters.length > 0) {
             setError("Please complete all filter criteria or remove incomplete filters");
             return;
         }
 
-        console.log(calculatedFields)
-        // Check calculated fields validity
         const invalidCalcs = calculatedFields.filter(c => !c.label || !c.formula);
         if (invalidCalcs.length > 0) {
             setError("Please complete all calculated fields or remove incomplete ones");
             return;
         }
 
-        // Validate charts
         const invalidCharts = chartConfigs.filter(chart => {
             if (!chart.title || chart.metrics.length === 0) return true;
             if (chart.type === "combo" && (!chart.comboConfig.barMetrics?.length && !chart.comboConfig.lineMetrics?.length)) return true;
             return false;
         });
 
-        console.log("Config", chartConfigs)
-
         if (invalidCharts.length > 0) {
             setError("Please complete all chart configurations or remove incomplete ones");
             return;
         }
 
+        // ✅ MODIFIED: Get all fields from appropriate mode
+        const activeFields = multiFormMode ? getAllFields() : fields;
+        const activeSelectedFields = multiFormMode ? getAllSelectedFields() : selectedFields;
+
         const filtersToSave = filters.map(f => {
-            const matchedField = fields.find(field => field.id === f.field);
-            console.log(matchedField)
+            const matchedField = activeFields.find(field => field.id === f.field);
             return {
-                fieldLabel: matchedField?.id || f.field,    // REQUIRED to match on load
+                fieldLabel: matchedField?.id || f.field,
                 operator: f.condition,
                 value: f.value,
                 type: matchedField?.type || f.type || "text"
@@ -587,7 +842,9 @@ export default function EnhancedReportDesigner() {
 
         const payload = {
             Id: reportId ? parseInt(reportId) : 0,
-            FormId: parseInt(selectedFormId),
+            // ✅ MODIFIED: Support multi-form mode
+            FormId: multiFormMode ? (selectedForms[0] || 0) : parseInt(selectedFormId),
+            FormIds: multiFormMode ? selectedForms : null, // ✅ NEW: Send all form IDs for multi-form
             Name: templateName,
             CreatedBy: localStorage.getItem("user")
                 ? JSON.parse(localStorage.getItem("user")).username
@@ -595,13 +852,14 @@ export default function EnhancedReportDesigner() {
             IncludeApprovals: options.includeApprovals,
             IncludeRemarks: options.includeRemarks,
             SharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
-            Fields: selectedFields.map((fieldId, index) => {
-                const field = fields.find(f => f.id === fieldId);
+            Fields: activeSelectedFields.map((fieldId, index) => {
+                const field = activeFields.find(f => f.id === fieldId);
                 return {
                     fieldId: fieldId,
-                    fieldLabel: field?.label || fieldId,
+                    fieldLabel: field?.originalLabel || field?.label || fieldId,
+                    formId: field?.formId, // ✅ NEW: Track which form each field belongs to
                     order: index,
-                    visible: fieldVisibility[fieldId] !== false // Save visibility state
+                    visible: fieldVisibility[fieldId] !== false
                 };
             }),
             Filters: filtersToSave,
@@ -620,38 +878,35 @@ export default function EnhancedReportDesigner() {
                 windowSize: c.windowSize || 3
             })),
             ChartConfigs: chartConfigs.map(chart => {
-                // Build the base chart config WITHOUT shift properties
                 const baseConfig = {
                     id: chart.id,
                     title: chart.title,
                     type: chart.type,
                     showChart: chart.showChart !== false,
                     metrics: chart.metrics.map(metricId => {
-                        const field = fields.find(f => f.id === metricId);
-                        return field ? field.label : metricId;
+                        const field = activeFields.find(f => f.id === metricId);
+                        return field ? (field.originalLabel || field.label) : metricId;
                     }),
                     xField: (() => {
                         if (!chart.xField) return null;
-                        const field = fields.find(f => f.id === chart.xField);
-                        return field ? field.label : chart.xField;
+                        const field = activeFields.find(f => f.id === chart.xField);
+                        return field ? (field.originalLabel || field.label) : chart.xField;
                     })(),
                     position: chart.position,
                     comboConfig: {
                         barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
-                            const field = fields.find(f => f.id === metricId);
-                            return field ? field.label : metricId;
+                            const field = activeFields.find(f => f.id === metricId);
+                            return field ? (field.originalLabel || field.label) : metricId;
                         }),
                         lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
-                            const field = fields.find(f => f.id === metricId);
-                            return field ? field.label : metricId;
+                            const field = activeFields.find(f => f.id === metricId);
+                            return field ? (field.originalLabel || field.label) : metricId;
                         })
                     }
                 };
 
-                // ✅ Only add shift properties for shift charts
                 if (chart.type === 'shift') {
                     if (chart.shiftConfigs && chart.shiftConfigs.length > 0) {
-                        // ✅ REQUIRED: Single shift config for backend validation
                         baseConfig.shiftConfig = {
                             targetParts: chart.shiftConfigs[0].targetParts || 100,
                             cycleTimeSeconds: chart.shiftConfigs[0].cycleTimeSeconds || 30,
@@ -665,7 +920,6 @@ export default function EnhancedReportDesigner() {
                             showChart: chart.shiftConfigs[0].showChart || true
                         };
 
-                        // ✅ OPTIONAL: Multiple shift configurations
                         baseConfig.shiftConfigs = chart.shiftConfigs.map(config => ({
                             shift: config.shift,
                             name: config.name,
@@ -678,7 +932,6 @@ export default function EnhancedReportDesigner() {
                             breaks: config.breaks || []
                         }));
                     } else {
-                        // ✅ Shift chart but no configs - provide default shift config
                         baseConfig.shiftConfig = {
                             targetParts: 100,
                             cycleTimeSeconds: 30,
@@ -693,51 +946,21 @@ export default function EnhancedReportDesigner() {
                         baseConfig.shiftConfigs = null;
                     }
                 }
-                // ✅ For non-shift charts, shift properties are NOT added at all
 
                 return baseConfig;
             }),
-            GroupingConfig: groupingConfig
+            GroupingConfig: groupingConfig,
+            IsMultiForm: multiFormMode, // ✅ NEW: Flag to indicate multi-form report
+            FormRelationships: relationships.length > 0 ? relationships : []
         };
 
-        // ✅ FIXED: Correct debugging - use the right property name
-        console.log('Charts being saved:', payload.ChartConfigs);
-
-        if (payload.ChartConfigs) {
-            const shiftCharts = payload.ChartConfigs.filter(c => c.type === 'shift');
-            console.log('Shift charts found:', shiftCharts.length);
-
-            shiftCharts.forEach((chart, index) => {
-                console.log(`Shift Chart ${index + 1} (${chart.title}):`, {
-                    shiftConfigs: chart.shiftConfigs,
-                    configCount: chart.shiftConfigs?.length || 0
-                });
-
-                if (chart.shiftConfigs) {
-                    chart.shiftConfigs.forEach((config, configIndex) => {
-                        console.log(`  Config ${configIndex + 1} - Shift ${config.shift}:`, {
-                            targetParts: config.targetParts,
-                            cycleTimeSeconds: config.cycleTimeSeconds,
-                            startTime: config.startTime,
-                            endTime: config.endTime,
-                            breaksCount: config.breaks?.length || 0
-                        });
-                    });
-                }
-            });
-        }
-
-        console.log("Complete Payload:", JSON.stringify(payload, null, 2));
-
-
         try {
-            // ✅ FIXED: Use the correct API constant and send the right payload
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json-patch+json"
                 },
-                body: JSON.stringify(payload) // ✅ FIXED: Send payload directly, not fixedPayload
+                body: JSON.stringify(payload)
             });
 
             const data = await response.json();
@@ -747,7 +970,6 @@ export default function EnhancedReportDesigner() {
                 setSuccess("Report template saved successfully!");
                 toast.success("Report template saved successfully!");
 
-                console.log("Response data:", data);
                 if (data && data.id) {
                     setTimeout(() => {
                         navigate(`/reports/view/${data.id}`);
@@ -765,23 +987,39 @@ export default function EnhancedReportDesigner() {
 
     useEffect(() => {
         const fetchApprovedSubmissions = async () => {
-            if (!selectedFormId) return;
+            if (!selectedFormId && !multiFormMode) return;
 
             try {
-                const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${selectedFormId}/submissions`);
-                const data = await res.json();
+                // ✅ MODIFIED: Fetch from all selected forms in multi-form mode
+                const formsToFetch = multiFormMode ? selectedForms : [selectedFormId];
+                let allSubmissions = [];
 
-                const approvedOnly = data.filter(s =>
-                    s.approvals && s.approvals.every(a => a.status === "Approved")
-                );
-                setSubmissionData(approvedOnly);
+                for (const formId of formsToFetch) {
+                    const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/submissions`);
+                    const data = await res.json();
+
+                    const approvedOnly = data.filter(s =>
+                        s.approvals && s.approvals.every(a => a.status === "Approved")
+                    );
+
+                    // Tag submissions with their source form
+                    const taggedSubmissions = approvedOnly.map(s => ({
+                        ...s,
+                        sourceFormId: formId,
+                        sourceFormName: forms.find(f => f.id === formId)?.name
+                    }));
+
+                    allSubmissions.push(...taggedSubmissions);
+                }
+
+                setSubmissionData(allSubmissions);
             } catch (err) {
                 console.error("Error fetching submissions", err);
             }
         };
 
         fetchApprovedSubmissions();
-    }, [selectedFormId]);
+    }, [selectedFormId, multiFormMode, selectedForms]);
 
     // Helper to group selected fields by their grid parent
     function groupGridColumns(fields, selectedFields) {
@@ -789,7 +1027,6 @@ export default function EnhancedReportDesigner() {
         selectedFields.forEach(fieldId => {
             const field = fields.find(f => f.id === fieldId);
             if (!field) return;
-            // grid field ids look like: parentFieldId:colId
             const [parentId, colId] = fieldId.split(":");
             if (colId) {
                 if (!gridGroups[parentId]) gridGroups[parentId] = [];
@@ -1509,29 +1746,33 @@ export default function EnhancedReportDesigner() {
     };
 
     const copyReportDesign = async () => {
-        // Validation - ensure there's something to copy
+        const totalSelectedFields = multiFormMode
+            ? getAllSelectedFields().length
+            : selectedFields.length;
+
         if (!templateName.trim()) {
             setError("Please enter a template name before copying");
             return;
         }
 
-        if (!selectedFormId) {
+        if (!selectedFormId && !multiFormMode) {
             setError("Please select a form before copying");
             return;
         }
 
-        if (selectedFields.length === 0) {
+        if (totalSelectedFields === 0) {
             setError("Please select at least one field before copying");
             return;
         }
 
-        // Clear previous messages
         setError(null);
         setSuccess(null);
 
-        // Prepare payload similar to saveTemplate but for copying
+        const activeFields = multiFormMode ? getAllFields() : fields;
+        const activeSelectedFields = multiFormMode ? getAllSelectedFields() : selectedFields;
+
         const filtersToSave = filters.map(f => {
-            const matchedField = fields.find(field => field.id === f.field);
+            const matchedField = activeFields.find(field => field.id === f.field);
             return {
                 fieldLabel: matchedField?.id || f.field,
                 operator: f.condition,
@@ -1545,47 +1786,46 @@ export default function EnhancedReportDesigner() {
             title: chart.title,
             type: chart.type,
             showChart: chart.showChart !== false,
-            // Convert field IDs to field labels for storage
             metrics: chart.metrics.map(metricId => {
-                const field = fields.find(f => f.id === metricId);
-                return field ? field.label : metricId;
+                const field = activeFields.find(f => f.id === metricId);
+                return field ? (field.originalLabel || field.label) : metricId;
             }),
-            // Convert xField ID to label
             xField: (() => {
                 if (!chart.xField) return null;
-                const field = fields.find(f => f.id === chart.xField);
-                return field ? field.label : chart.xField;
+                const field = activeFields.find(f => f.id === chart.xField);
+                return field ? (field.originalLabel || field.label) : chart.xField;
             })(),
             position: chart.position,
             comboConfig: {
                 barMetrics: (chart.comboConfig?.barMetrics || []).map(metricId => {
-                    const field = fields.find(f => f.id === metricId);
-                    return field ? field.label : metricId;
+                    const field = activeFields.find(f => f.id === metricId);
+                    return field ? (field.originalLabel || field.label) : metricId;
                 }),
                 lineMetrics: (chart.comboConfig?.lineMetrics || []).map(metricId => {
-                    const field = fields.find(f => f.id === metricId);
-                    return field ? field.label : metricId;
+                    const field = activeFields.find(f => f.id === metricId);
+                    return field ? (field.originalLabel || field.label) : metricId;
                 })
             },
-            // ✅ FIXED: Include shiftConfigs properly (plural)
             shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ? chart.shiftConfigs : null
         }));
 
         const payload = {
-            Id: 0, // Always 0 for new copy
-            FormId: parseInt(selectedFormId),
-            Name: templateName + " (Copy)", // Append (Copy) to distinguish
+            Id: 0,
+            FormId: multiFormMode ? (selectedForms[0] || 0) : parseInt(selectedFormId),
+            FormIds: multiFormMode ? selectedForms : null,
+            Name: templateName + " (Copy)",
             CreatedBy: localStorage.getItem("user")
                 ? JSON.parse(localStorage.getItem("user")).username
                 : "system",
             IncludeApprovals: options.includeApprovals,
             IncludeRemarks: options.includeRemarks,
             SharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
-            Fields: selectedFields.map((fieldId, index) => {
-                const field = fields.find(f => f.id === fieldId);
+            Fields: activeSelectedFields.map((fieldId, index) => {
+                const field = activeFields.find(f => f.id === fieldId);
                 return {
                     fieldId: fieldId,
-                    fieldLabel: field?.label || fieldId,
+                    fieldLabel: field?.originalLabel || field?.label || fieldId,
+                    formId: field?.formId,
                     order: index,
                     visible: field.visible
                 };
@@ -1605,7 +1845,8 @@ export default function EnhancedReportDesigner() {
                 sourceFields: c.sourceFields || [],
                 windowSize: c.windowSize || 3
             })),
-            ChartConfigs: chartConfigsToSave // ✅ FIXED: Direct assignment
+            ChartConfigs: chartConfigsToSave,
+            IsMultiForm: multiFormMode
         };
 
         try {
@@ -1622,7 +1863,6 @@ export default function EnhancedReportDesigner() {
             if (response.ok) {
                 setSuccess("Report template copied successfully! A new copy has been created.");
 
-                // Optionally: redirect to the new copy for editing
                 if (data && data.id) {
                     setTimeout(() => {
                         navigate(`/reports/designer/${data.id}`);
@@ -1636,6 +1876,7 @@ export default function EnhancedReportDesigner() {
         }
     };
 
+
     const dragDropStyles = `
 [draggable="true"] {
     cursor: move;
@@ -1647,15 +1888,32 @@ export default function EnhancedReportDesigner() {
 }
 `;
 
-    const allFieldIds = fields.map(f => f.id);
-    const allSelected = allFieldIds.length > 0 && allFieldIds.every(id => selectedFields.includes(id));
-    const someSelected = allFieldIds.some(id => selectedFields.includes(id));
+    const activeFields = multiFormMode ? getAllFields() : fields;
+    const activeSelectedFields = multiFormMode ? getAllSelectedFields() : selectedFields;
+
+    const allFieldIds = activeFields.map(f => f.id);
+    const allSelected = allFieldIds.length > 0 && allFieldIds.every(id => activeSelectedFields.includes(id));
+    const someSelected = allFieldIds.some(id => activeSelectedFields.includes(id));
 
     const toggleSelectAllFields = () => {
-        if (allSelected) {
-            setSelectedFields([]);
+        if (!multiFormMode) {
+            // Single form mode
+            if (allSelected) {
+                setSelectedFields([]);
+            } else {
+                setSelectedFields(allFieldIds);
+            }
         } else {
-            setSelectedFields(allFieldIds);
+            // Multi-form mode
+            const newMappings = { ...formFieldMappings };
+            selectedForms.forEach(formId => {
+                const formFields = newMappings[formId]?.fields || [];
+                newMappings[formId] = {
+                    ...newMappings[formId],
+                    selectedFields: allSelected ? [] : formFields.map(f => f.id)
+                };
+            });
+            setFormFieldMappings(newMappings);
         }
     };
 
@@ -1694,8 +1952,77 @@ export default function EnhancedReportDesigner() {
                 <div className="w-80 bg-white border-r border-gray-200 overflow-y-auto">
                     <div className="p-4 border-b">
                         <h2 className="text-lg font-semibold">Report Designer</h2>
+
+                        <div className="mt-3">
+                            <label className="flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={multiFormMode}
+                                    onChange={toggleMultiFormMode}
+                                    className="mr-2"
+                                />
+                                <span className="text-sm font-medium">Multi-Form Report</span>
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1">
+                                {multiFormMode
+                                    ? "Combine data from multiple forms"
+                                    : "Report from a single form"}
+                            </p>
+                        </div>
                     </div>
 
+                    {multiFormMode && (
+                        <div className="border-b">
+                            <div className="p-4">
+                                <h3 className="font-medium flex items-center mb-3">
+                                    <FileText className="w-4 h-4 mr-2" />
+                                    Selected Forms ({selectedForms.length})
+                                </h3>
+
+                                {/* Form selector */}
+                                <select
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            addFormToSelection(parseInt(e.target.value));
+                                            e.target.value = ""; // Reset selector
+                                        }
+                                    }}
+                                    className="w-full border p-2 rounded mb-3"
+                                >
+                                    <option value="">+ Add Form</option>
+                                    {forms
+                                        .filter(f => !selectedForms.includes(f.id))
+                                        .map(form => (
+                                            <option key={form.id} value={form.id}>
+                                                {form.name}
+                                            </option>
+                                        ))}
+                                </select>
+
+                                {/* Selected forms list */}
+                                <div className="space-y-2">
+                                    {selectedForms.map((formId, index) => {
+                                        const form = forms.find(f => f.id === formId);
+                                        const fieldCount = formFieldMappings[formId]?.selectedFields?.length || 0;
+                                        return (
+                                            <div key={formId} className="flex items-center justify-between p-2 bg-blue-50 rounded">
+                                                <div>
+                                                    <div className="font-medium text-sm">{form?.name || `Form ${formId}`}</div>
+                                                    <div className="text-xs text-gray-500">{fieldCount} fields selected</div>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeFormFromSelection(formId)}
+                                                    className="text-red-500 hover:text-red-700"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {/* Available Fields */}
                     <div className="border-b">
                         <div
@@ -1712,46 +2039,53 @@ export default function EnhancedReportDesigner() {
                             }
                         </div>
 
-                        {selectedFormId && leftPanelExpanded.availableFields && (
-                            <div className="px-4 pb-4">
-                                {/* Select All */}
-                                <label className="flex items-center p-2 mb-2 border rounded cursor-pointer bg-gray-50">
-                                    <input
-                                        type="checkbox"
-                                        checked={allSelected}
-                                        ref={(el) => {
-                                            if (el) el.indeterminate = !allSelected && someSelected;
-                                        }}
-                                        onChange={toggleSelectAllFields}
-                                        className="mr-3"
-                                    />
-                                    <span className="text-sm font-medium">
-                                        {allSelected ? "Deselect All" : "Select All"}
-                                    </span>
-                                </label>
+                        {((multiFormMode && selectedForms.length > 0) || (!multiFormMode && selectedFormId)) &&
+                            leftPanelExpanded.availableFields && (
+                                <div className="px-4 pb-4">
+                                    {/* Select All */}
+                                    <label className="flex items-center p-2 mb-2 border rounded cursor-pointer bg-gray-50">
+                                        <input
+                                            type="checkbox"
+                                            checked={allSelected}
+                                            ref={(el) => {
+                                                if (el) el.indeterminate = !allSelected && someSelected;
+                                            }}
+                                            onChange={toggleSelectAllFields}
+                                            className="mr-3"
+                                        />
+                                        <span className="text-sm font-medium">
+                                            {allSelected ? "Deselect All" : "Select All"}
+                                        </span>
+                                    </label>
 
-                                <div className="space-y-2 max-h-60 overflow-y-auto">
-                                    {fields.map((field, idx) => (
-                                        <label
-                                            key={field.id || idx}
-                                            className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedFields.includes(field.id)}
-                                                onChange={() => toggleField(field.id)}
-                                                className="mr-3"
-                                            />
-                                            <div className="flex-1">
-                                                <div className="font-medium text-sm">{field.label}</div>
-                                                <div className="text-xs text-gray-500">{field.type}</div>
-                                            </div>
-                                        </label>
-                                    ))}
+                                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                                        {activeFields.map((field, idx) => (
+                                            <label
+                                                key={field.id || idx}
+                                                className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeSelectedFields.includes(field.id)}
+                                                    onChange={() => toggleField(field.id)}
+                                                    className="mr-3"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="font-medium text-sm">
+                                                        {field.displayLabel || field.label}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">{field.type}</div>
+                                                    {multiFormMode && (
+                                                        <div className="text-xs text-blue-600">
+                                                            {forms.find(f => f.id === field.formId)?.name}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-
+                            )}
                     </div>
 
                     {/* Selected Fields with Reordering */}
@@ -1762,7 +2096,7 @@ export default function EnhancedReportDesigner() {
                         >
                             <h3 className="font-medium flex items-center">
                                 <UserCheck className="w-4 h-4 mr-2" />
-                                Selected Fields ({selectedFields.length})
+                                Selected Fields ({activeSelectedFields.length})
                             </h3>
                             {leftPanelExpanded.selectedFields ?
                                 <ChevronDown className="w-4 h-4" /> :
@@ -1772,12 +2106,12 @@ export default function EnhancedReportDesigner() {
 
                         {leftPanelExpanded.selectedFields && (
                             <div className="px-4 pb-4">
-                                {selectedFields.length === 0 ? (
+                                {activeSelectedFields.length === 0 ? (
                                     <p className="text-gray-500 text-sm italic">No fields selected</p>
                                 ) : (
                                     <div className="space-y-1">
-                                        {selectedFields.map((fieldId, index) => {
-                                            const field = fields.find(f => f.id === fieldId);
+                                        {activeSelectedFields.map((fieldId, index) => {
+                                            const field = activeFields.find(f => f.id === fieldId);
                                             if (!field) return null;
                                             const isVisible = fieldVisibility[fieldId] !== false;
 
@@ -1800,17 +2134,32 @@ export default function EnhancedReportDesigner() {
                                                         const dropIndex = index;
 
                                                         if (dragIndex !== dropIndex) {
-                                                            const newFields = [...selectedFields];
-                                                            const [removed] = newFields.splice(dragIndex, 1);
-                                                            newFields.splice(dropIndex, 0, removed);
-                                                            setSelectedFields(newFields);
+                                                            if (!multiFormMode) {
+                                                                const newFields = [...selectedFields];
+                                                                const [removed] = newFields.splice(dragIndex, 1);
+                                                                newFields.splice(dropIndex, 0, removed);
+                                                                setSelectedFields(newFields);
+                                                            } else {
+                                                                // Handle reordering in multi-form mode
+                                                                const formId = field.formId;
+                                                                const formSelected = formFieldMappings[formId].selectedFields;
+                                                                const newFields = [...formSelected];
+                                                                const [removed] = newFields.splice(dragIndex, 1);
+                                                                newFields.splice(dropIndex, 0, removed);
+
+                                                                setFormFieldMappings(prev => ({
+                                                                    ...prev,
+                                                                    [formId]: {
+                                                                        ...prev[formId],
+                                                                        selectedFields: newFields
+                                                                    }
+                                                                }));
+                                                            }
                                                         }
                                                     }}
                                                 >
-                                                    {/* Drag Handle */}
                                                     <GripVertical className="w-4 h-4 text-gray-400 cursor-move" />
 
-                                                    {/* Visibility Toggle */}
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -1819,8 +2168,7 @@ export default function EnhancedReportDesigner() {
                                                                 [fieldId]: !isVisible
                                                             }));
                                                         }}
-                                                        className={`p-1 rounded hover:bg-blue-200 ${isVisible ? 'text-blue-600' : 'text-gray-400'
-                                                            }`}
+                                                        className={`p-1 rounded hover:bg-blue-200 ${isVisible ? 'text-blue-600' : 'text-gray-400'}`}
                                                         title={isVisible ? "Hide from report" : "Show in report"}
                                                     >
                                                         {isVisible ?
@@ -1829,15 +2177,18 @@ export default function EnhancedReportDesigner() {
                                                         }
                                                     </button>
 
-                                                    {/* Field Info */}
                                                     <div className="flex-1">
                                                         <div className={`font-medium text-sm ${!isVisible ? 'text-gray-400 line-through' : ''}`}>
-                                                            {field.label}
+                                                            {field.displayLabel || field.label}
                                                         </div>
                                                         <div className="text-xs text-gray-500">{field.type}</div>
+                                                        {multiFormMode && (
+                                                            <div className="text-xs text-blue-600">
+                                                                {forms.find(f => f.id === field.formId)?.name}
+                                                            </div>
+                                                        )}
                                                     </div>
 
-                                                    {/* Remove Button */}
                                                     <button
                                                         onClick={() => toggleField(fieldId)}
                                                         className="text-red-500 hover:text-red-700 p-1"
@@ -1850,8 +2201,7 @@ export default function EnhancedReportDesigner() {
                                     </div>
                                 )}
 
-                                {/* Field Order Controls */}
-                                {selectedFields.length > 1 && (
+                                {activeSelectedFields.length > 1 && (
                                     <div className="mt-3 pt-3 border-t text-xs text-gray-500">
                                         <p>💡 Drag fields to reorder • Click eye icon to hide/show</p>
                                     </div>
@@ -1904,6 +2254,9 @@ export default function EnhancedReportDesigner() {
                             </div>
                         )}
                     </div>
+
+
+                    {/* Charts */}
                     <div className="border-b">
                         <div
                             className="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-50"
@@ -1937,9 +2290,6 @@ export default function EnhancedReportDesigner() {
                             </div>
                         )}
                     </div>
-
-
-
 
                     {/* Filters */}
                     <div className="border-b">
@@ -2004,15 +2354,19 @@ export default function EnhancedReportDesigner() {
                     </div>
                 </div>
 
+
                 {/* Main Content Area */}
                 <div ref={contentRef} className="flex-1 overflow-y-auto">
-
                     <div className="p-6">
                         {/* Header */}
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h1 className="text-2xl font-bold">Report Designer</h1>
-                                <p className="text-gray-600">Create and customize your reports</p>
+                                <p className="text-gray-600">
+                                    {multiFormMode
+                                        ? `Multi-Form Report (${selectedForms.length} forms)`
+                                        : "Create and customize your reports"}
+                                </p>
                             </div>
                             <div className="flex space-x-3">
                                 <button
@@ -2039,26 +2393,37 @@ export default function EnhancedReportDesigner() {
                             </div>
                         </div>
 
+                        {/* Error/Success Messages */}
+                        {error && (
+                            <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded">
+                                {error}
+                            </div>
+                        )}
+                        {success && (
+                            <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded">
+                                {success}
+                            </div>
+                        )}
+
                         {/* Form Selection */}
                         <div className="mb-6 bg-white p-6 rounded-lg shadow">
                             <h3 className="text-lg font-semibold mb-4">Basic Settings</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-2">Select Form</label>
-                                    <select
-                                        value={selectedFormId}
-                                        onChange={(e) => {
-                                            handleFormChange(e); // <--- Add this line to trigger field loading
-                                        }}
-                                        className="w-full border p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
-
-                                        <option value="">-- Choose a form --</option>
-                                        {forms.map(form => (
-                                            <option key={form.id} value={form.id}>{form.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                {!multiFormMode && (
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Select Form</label>
+                                        <select
+                                            value={selectedFormId}
+                                            onChange={handleFormChange}
+                                            className="w-full border p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="">-- Choose a form --</option>
+                                            {forms.map(form => (
+                                                <option key={form.id} value={form.id}>{form.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm font-medium mb-2">Template Name</label>
                                     <input
@@ -2070,33 +2435,63 @@ export default function EnhancedReportDesigner() {
                                     />
                                 </div>
                             </div>
+
+                            {multiFormMode && selectedForms.length > 0 && (
+                                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
+                                    <h4 className="font-medium text-sm mb-2">Selected Forms:</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedForms.map(formId => {
+                                            const form = forms.find(f => f.id === formId);
+                                            return (
+                                                <span key={formId} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                                                    {form?.name || `Form ${formId}`}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
+
+                        <RelationshipDiagram
+                            selectedForms={selectedForms}
+                            forms={forms}
+                            relationships={relationships}
+                            formFieldMappings={formFieldMappings}
+                        />
+
+                        <FormRelationshipEditor
+                            selectedForms={selectedForms}
+                            forms={forms}
+                            formFieldMappings={formFieldMappings}
+                            relationships={relationships}
+                            setRelationships={setRelationships}
+                        />
 
                         {/* Enhanced Calculated Fields Editor */}
                         <EnhancedCalculatedFieldsEditor
                             calculatedFields={calculatedFields}
                             setCalculatedFields={setCalculatedFields}
-                            selectedFields={selectedFields}
-                            fields={fields}
+                            selectedFields={activeSelectedFields}
+                            fields={activeFields}
                         />
 
                         <MultiChartBuilder
                             chartConfigs={chartConfigs}
                             setChartConfigs={setChartConfigs}
-                            selectedFields={selectedFields}
-                            fields={fields}
+                            selectedFields={activeSelectedFields}
+                            fields={activeFields}
                             calculatedFields={calculatedFields}
-                            data={submissionData} // Add this line
+                            data={submissionData}
                         />
+
                         <EnhancedGroupingEditor
                             groupingConfig={groupingConfig}
                             setGroupingConfig={setGroupingConfig}
-                            selectedFields={selectedFields}
-                            fields={fields}
+                            selectedFields={activeSelectedFields}
+                            fields={activeFields}
                             calculatedFields={calculatedFields}
                         />
-
-
 
                         {/* Filters Section */}
                         <div className="mb-6 bg-white p-6 rounded-lg shadow">
@@ -2110,23 +2505,24 @@ export default function EnhancedReportDesigner() {
                                             <select
                                                 value={filter.field || ""}
                                                 onChange={(e) => {
-                                                    const selected = fields.find(f => f.id === e.target.value);
+                                                    const selected = activeFields.find(f => f.id === e.target.value);
                                                     updateFilter(filter.id, {
                                                         field: selected.id,
-                                                        label: selected.label,
+                                                        label: selected.originalLabel || selected.label,
                                                         type: selected.type,
-                                                        condition: "", // reset
+                                                        condition: "",
                                                         value: ""
                                                     });
                                                 }}
+                                                className="border p-2 rounded flex-1"
                                             >
                                                 <option value="">Select Field</option>
-                                                {fields.map(f => (
-                                                    <option key={f.id} value={f.id}>{f.label}</option>
+                                                {activeFields.map(f => (
+                                                    <option key={f.id} value={f.id}>
+                                                        {f.displayLabel || f.label}
+                                                    </option>
                                                 ))}
                                             </select>
-
-
 
                                             <select
                                                 value={filter.condition || ""}
@@ -2145,7 +2541,6 @@ export default function EnhancedReportDesigner() {
                                                 )}
                                             </select>
 
-
                                             {filter.condition === "between" ? (
                                                 <></>
                                             ) : (
@@ -2157,7 +2552,6 @@ export default function EnhancedReportDesigner() {
                                                     className="border p-2 rounded flex-1"
                                                 />
                                             )}
-
 
                                             <button
                                                 onClick={() => removeFilter(filter.id)}
@@ -2262,233 +2656,80 @@ export default function EnhancedReportDesigner() {
                         <div className="bg-white p-6 rounded-lg shadow">
                             <h3 className="text-lg font-semibold mb-4">Report Preview</h3>
 
-                            {/* Chart Preview */}
-                            {chartConfig?.metrics?.length > 0 && chartConfig?.type && (
-                                <div className="mb-6">
-                                    <h4 className="font-semibold mb-3">📊 Chart Preview</h4>
-                                    <ReportCharts
-                                        data={submissionData.map(submission => ({
-                                            data: submission.submissionData.map(field => ({
-                                                fieldLabel: fields.find(f => f.id.split(':')[0] === field.fieldLabel)?.label || field.fieldLabel,
-                                                value: field.fieldValue
-                                            }))
-                                        }))}
-                                        metrics={chartConfig.metrics}
-                                        type={chartConfig.type}
-                                        xField={chartConfig.xField || "Line Name"}
-                                        title={chartConfig.title || "Chart Preview"}
-
-                                    />
-                                </div>
-                            )}
-
-                            {/* Table Preview */}
-                            {selectedFields.length > 0 ? (
+                            {activeSelectedFields.length > 0 ? (
                                 <div>
                                     <h4 className="font-semibold mb-3">📋 Data Table Preview</h4>
                                     <div className="border rounded overflow-hidden">
-                                        {/* Table Header */}
                                         <div className="bg-gray-50 border-b">
                                             <div className="grid gap-4 font-semibold text-sm p-3" style={{
-                                                gridTemplateColumns: `40px repeat(${selectedFields.filter(fId => fieldVisibility[fId] !== false).length +
-                                                    calculatedFields.length
-                                                    }, 1fr)`
+                                                gridTemplateColumns: `40px repeat(${activeSelectedFields.filter(fId => fieldVisibility[fId] !== false).length}, 1fr)`
                                             }}>
                                                 <div></div>
-                                                {selectedFields
-                                                    .filter(fieldId => fieldVisibility[fieldId] !== false) // Filter visible fields
+                                                {activeSelectedFields
+                                                    .filter(fieldId => fieldVisibility[fieldId] !== false)
                                                     .map(fieldId => {
-                                                        const field = fields.find(f => f.id === fieldId);
+                                                        const field = activeFields.find(f => f.id === fieldId);
                                                         const displayLabel = field?.label?.includes("→")
                                                             ? field.label.split("→").pop().trim()
-                                                            : field?.label;
+                                                            : field?.displayLabel || field?.label;
                                                         return (
-                                                            <div key={fieldId}>{displayLabel}</div>
-                                                        );
-                                                    })}
-                                                {calculatedFields.map((cf, i) => (
-                                                    <div key={`cf-${i}`} className="text-blue-600">
-                                                        {cf.label}
-                                                        <div className="text-xs font-normal text-gray-500">
-                                                            ({cf.calculationType})
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Table Body */}
-                                        <div className="max-h-96 overflow-y-auto">
-                                            {submissionData.length === 0 ? (
-                                                <p className="text-gray-500 italic p-4">No approved submissions available</p>
-                                            ) : (
-                                                <>
-                                                    {/* Regular Data Rows */}
-                                                    {submissionData.slice(0, 3).map((submission, rowIdx) => {
-                                                        const hasGrid = selectedFields.some(fieldId => {
-                                                            const field = fields.find(f => f.id === fieldId);
-                                                            if (!field) return false;
-                                                            const baseFieldId = fieldId.split(":")[0];
-                                                            const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
-                                                            try {
-                                                                const parsed = JSON.parse(fieldData?.fieldValue || "");
-                                                                return Array.isArray(parsed) && typeof parsed[0] === "object";
-                                                            } catch {
-                                                                return false;
-                                                            }
-                                                        });
-
-                                                        return (
-                                                            <div key={rowIdx} className="border-b last:border-b-0">
-                                                                {/* Main row */}
-                                                                <div
-                                                                    className="grid gap-4 items-center text-sm p-3 hover:bg-gray-50"
-                                                                    style={{
-                                                                        gridTemplateColumns: `40px repeat(${selectedFields.filter(fId => fieldVisibility[fId] !== false).length +
-                                                                            calculatedFields.length
-                                                                            }, 1fr)`
-                                                                    }}
-                                                                >
-                                                                    <button
-                                                                        className="text-blue-500 hover:underline focus:outline-none"
-                                                                        onClick={() => hasGrid && toggleExpand(rowIdx)}
-                                                                        style={{
-                                                                            background: "none",
-                                                                            border: "none",
-                                                                            cursor: hasGrid ? "pointer" : "default",
-                                                                            opacity: hasGrid ? "1" : "0.4"
-                                                                        }}
-                                                                        disabled={!hasGrid}
-                                                                    >
-                                                                        {hasGrid ? (expandedSubmissions.includes(rowIdx) ? "▼" : "▶") : ""}
-                                                                    </button>
-
-                                                                    {/* Normal Fields */}
-                                                                    {selectedFields
-                                                                        .filter(fieldId => fieldVisibility[fieldId] !== false)
-                                                                        .map(fieldId => {
-                                                                            const field = fields.find(f => f.id === fieldId);
-                                                                            if (!field) return <div key={fieldId}>—</div>;
-                                                                            const baseFieldId = fieldId.split(":")[0];
-                                                                            const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
-                                                                            const raw = fieldData?.fieldValue;
-
-                                                                            try {
-                                                                                const parsed = JSON.parse(raw);
-                                                                                if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                                                                                    return <div key={fieldId}>{parsed.length} rows</div>;
-                                                                                }
-                                                                                return <div key={fieldId}>{parsed || "—"}</div>;
-                                                                            } catch {
-                                                                                return <div key={fieldId}>{raw || "—"}</div>;
-                                                                            }
-                                                                        })}
-
-                                                                    {/* Calculated Fields */}
-                                                                    {calculatedFields.map((calcField, i) => {
-                                                                        const calculatedValue = calculateFieldValueForPreview(calcField, submission, fields, submissionData, rowIdx);
-
-                                                                        // ✅ Handle string results vs numeric results
-                                                                        let displayValue;
-                                                                        if (calcField.functionType === 'EXPRESSION' && isNaN(parseFloat(calculatedValue))) {
-                                                                            // It's a string result
-                                                                            displayValue = calculatedValue;
-                                                                        } else {
-                                                                            // It's a numeric result
-                                                                            displayValue = calcField.format === 'percentage'
-                                                                                ? `${calculatedValue}%`
-                                                                                : calculatedValue;
-                                                                        }
-
-                                                                        return (
-                                                                            <div key={`cf-${i}`} className="font-medium text-blue-700">
-                                                                                {displayValue}
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-
-                                                                {/* Nested grid rows (existing code) */}
-                                                                {expandedSubmissions.includes(rowIdx) && (
-                                                                    <div className="pl-10 pt-2 pb-2 bg-gray-25">
-                                                                        {(() => {
-                                                                            const gridGroups = groupGridColumns(fields, selectedFields);
-                                                                            return Object.entries(gridGroups).map(([parentId, columns]) => {
-                                                                                const parentField = fields.find(f => f.id === parentId);
-                                                                                const parentLabel = parentField ? parentField.label : parentId;
-                                                                                const fieldData = submission.submissionData.find(d => d.fieldLabel === parentId);
-                                                                                let gridRows = [];
-                                                                                try {
-                                                                                    gridRows = JSON.parse(fieldData?.fieldValue || "[]");
-                                                                                    if (!Array.isArray(gridRows)) gridRows = [];
-                                                                                } catch {
-                                                                                    gridRows = [];
-                                                                                }
-                                                                                if (gridRows.length === 0) return null;
-                                                                                return (
-                                                                                    <CollapsibleGridTable
-                                                                                        key={parentId}
-                                                                                        label={parentLabel}
-                                                                                        columns={columns}
-                                                                                        rows={gridRows}
-                                                                                        maxPreviewRows={3}
-                                                                                    />
-                                                                                );
-                                                                            });
-                                                                        })()}
+                                                            <div key={fieldId}>
+                                                                {displayLabel}
+                                                                {multiFormMode && (
+                                                                    <div className="text-xs font-normal text-blue-600">
+                                                                        {forms.find(f => f.id === field?.formId)?.name}
                                                                     </div>
                                                                 )}
                                                             </div>
                                                         );
                                                     })}
+                                            </div>
+                                        </div>
 
-                                                    {/* Summary Row for Column-wise Calculations */}
-                                                    {calculatedFields.some(cf => cf.calculationType === 'columnwise') && (
-                                                        <div className="bg-blue-50 border-t-2 border-blue-200">
-                                                            <div
-                                                                className="grid gap-4 items-center text-sm p-3 font-semibold"
-                                                                style={{ gridTemplateColumns: `40px repeat(${selectedFields.length + calculatedFields.length}, 1fr)` }}
-                                                            >
-                                                                <div className="text-blue-600">📊</div>
+                                        <div className="max-h-96 overflow-y-auto">
+                                            {submissionData.length === 0 ? (
+                                                <p className="text-gray-500 italic p-4">No approved submissions available</p>
+                                            ) : (
+                                                submissionData.slice(0, 3).map((submission, rowIdx) => (
+                                                    <div key={rowIdx} className="border-b last:border-b-0">
+                                                        <div
+                                                            className="grid gap-4 items-center text-sm p-3 hover:bg-gray-50"
+                                                            style={{
+                                                                gridTemplateColumns: `40px repeat(${activeSelectedFields.filter(fId => fieldVisibility[fId] !== false).length}, 1fr)`
+                                                            }}
+                                                        >
+                                                            <div>{rowIdx + 1}</div>
+                                                            {activeSelectedFields
+                                                                .filter(fieldId => fieldVisibility[fieldId] !== false)
+                                                                .map(fieldId => {
+                                                                    const field = activeFields.find(f => f.id === fieldId);
+                                                                    if (!field) return <div key={fieldId}>—</div>;
 
-                                                                {/* Empty cells for regular fields */}
-                                                                {selectedFields.map(fieldId => (
-                                                                    <div key={`summary-${fieldId}`} className="text-gray-400">—</div>
-                                                                ))}
+                                                                    const baseFieldId = fieldId.split(":")[0];
+                                                                    const fieldData = submission.submissionData.find(d => d.fieldLabel === baseFieldId);
+                                                                    const raw = fieldData?.fieldValue;
 
-                                                                {/* Summary values for calculated fields */}
-                                                                {calculatedFields.map((calcField, i) => {
-                                                                    if (calcField.calculationType === 'columnwise') {
-                                                                        // Calculate summary value for column-wise calculations
-                                                                        const summaryValue = calculateColumnwiseSummary(calcField, submissionData, fields);
-                                                                        const displayValue = calcField.format === 'percentage'
-                                                                            ? `${summaryValue}%`
-                                                                            : summaryValue;
-
-                                                                        return (
-                                                                            <div key={`summary-cf-${i}`} className="text-blue-700 font-bold">
-                                                                                {displayValue}
-                                                                                <div className="text-xs font-normal text-blue-500">
-                                                                                    Final {calcField.functionType}
-                                                                                </div>
-                                                                            </div>
-                                                                        );
-                                                                    } else {
-                                                                        return <div key={`summary-cf-${i}`} className="text-gray-400">—</div>;
+                                                                    try {
+                                                                        const parsed = JSON.parse(raw);
+                                                                        if (Array.isArray(parsed) && typeof parsed[0] === "object") {
+                                                                            return <div key={fieldId}>{parsed.length} rows</div>;
+                                                                        }
+                                                                        return <div key={fieldId}>{parsed || "—"}</div>;
+                                                                    } catch {
+                                                                        return <div key={fieldId}>{raw || "—"}</div>;
                                                                     }
                                                                 })}
-                                                            </div>
-                                                            <div className="px-3 pb-2">
-                                                                <p className="text-xs text-blue-600">
-                                                                    📋 Summary Row: Final results for column-wise calculations
-                                                                </p>
-                                                            </div>
                                                         </div>
-                                                    )}
-                                                </>
+                                                    </div>
+                                                ))
                                             )}
                                         </div>
                                     </div>
+                                    {multiFormMode && submissionData.length > 0 && (
+                                        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+                                            <strong>Multi-Form Data:</strong> Showing combined data from {selectedForms.length} forms
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="text-center py-8 text-gray-500">

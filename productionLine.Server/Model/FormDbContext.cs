@@ -154,6 +154,10 @@ namespace productionLine.Server.Model
             modelBuilder.Entity<ReportTemplate>()
                 .Property(e => e.IncludeRemarks)
                 .HasConversion<int>();
+
+            modelBuilder.Entity<ReportTemplate>()
+                .Property(e => e.IsMultiForm)
+                .HasDefaultValue(0);
         }
 
         // Add this temporarily to see what SQL is being generated

@@ -19,6 +19,7 @@ namespace productionLine.Server.Controllers
         {
             _context = context;
         }
+
         [HttpGet("production")]
         public async Task<IActionResult> GetProductionReport(int formId, DateTime start, DateTime end)
         {
@@ -32,12 +33,12 @@ namespace productionLine.Server.Controllers
                 if (!submissions.Any())
                     return Ok(new { mttb = 0, mttf = 0, mttr = 0 });
 
-                double totalDowntime = 0; // In minutes
+                double totalDowntime = 0;
                 int failureCount = 0;
 
                 foreach (var sub in submissions)
                 {
-                    var downtimeField = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == "Downtime"); // Adjust FieldLabel
+                    var downtimeField = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == "Downtime");
                     if (downtimeField != null && double.TryParse(downtimeField.FieldValue, out var downtimeMinutes))
                     {
                         totalDowntime += downtimeMinutes;
@@ -45,9 +46,9 @@ namespace productionLine.Server.Controllers
                     }
                 }
 
-                var mttr = failureCount > 0 ? (totalDowntime / failureCount) / 60.0 : 0; // Convert minutes to hours
-                var mttb = failureCount > 0 ? (1440.0 / failureCount) / 60.0 : 0;         // Assume 1 day (1440 minutes) operations
-                var mttf = failureCount > 0 ? (1440.0 / failureCount) / 60.0 : 0;         // Same as MTTB if no extra failure data
+                var mttr = failureCount > 0 ? (totalDowntime / failureCount) / 60.0 : 0;
+                var mttb = failureCount > 0 ? (1440.0 / failureCount) / 60.0 : 0;
+                var mttf = failureCount > 0 ? (1440.0 / failureCount) / 60.0 : 0;
 
                 return Ok(new
                 {
@@ -86,6 +87,7 @@ namespace productionLine.Server.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { report.Id });
         }
+
         [HttpGet("form/{formId}")]
         public async Task<IActionResult> GetReportsForForm(int formId)
         {
@@ -96,6 +98,7 @@ namespace productionLine.Server.Controllers
 
             return Ok(reports);
         }
+
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateReport(int id, [FromBody] ReportDto updated)
         {
@@ -124,6 +127,7 @@ namespace productionLine.Server.Controllers
             await _context.SaveChangesAsync();
             return NoContent();
         }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetReportById(int id)
         {
@@ -157,12 +161,12 @@ namespace productionLine.Server.Controllers
                 {
                     WriteIndented = false,
                     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                    // ADDED: Allow reading as object/dictionary
                     PropertyNameCaseInsensitive = true
                 };
-                // ADDED: Log incoming data
+
                 Console.WriteLine("Received ChartConfigs: " +
                     (dto.ChartConfigs != null ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions) : "null"));
+
                 ReportTemplate template;
 
                 if (dto.Id > 0)
@@ -178,6 +182,15 @@ namespace productionLine.Server.Controllers
 
                     template.Name = dto.Name;
                     template.FormId = dto.FormId;
+
+                    // ✅ NEW: Store multiple form IDs for multi-form reports
+                    template.FormIds = dto.FormIds != null && dto.FormIds.Any()
+                        ? JsonSerializer.Serialize(dto.FormIds, jsonOptions)
+                        : null;
+
+                    // ✅ NEW: Store multi-form flag
+                    template.IsMultiForm = dto.IsMultiForm;
+
                     template.IncludeApprovals = dto.IncludeApprovals;
                     template.IncludeRemarks = dto.IncludeRemarks;
                     template.SharedWithRole = dto.SharedWithRole;
@@ -190,7 +203,8 @@ namespace productionLine.Server.Controllers
                         FieldId = f.FieldId,
                         FieldLabel = f.FieldLabel,
                         Order = index,
-                        Visible = f.Visible ?? true
+                        Visible = f.Visible ?? true,
+                        FormId = f.FormId  // ✅ NEW: Store which form this field belongs to
                     }).ToList();
 
                     template.Filters = dto.Filters.Select(f => new ReportFilter
@@ -208,8 +222,13 @@ namespace productionLine.Server.Controllers
                     template.ChartConfig = dto.ChartConfigs?.Any() == true
                         ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions)
                         : null;
+
                     template.GroupingConfig = dto.GroupingConfig?.Any() == true
                         ? JsonSerializer.Serialize(dto.GroupingConfig, jsonOptions)
+                        : null;
+
+                    template.FormRelationships = dto.FormRelationships?.Any() == true
+                        ? JsonSerializer.Serialize(dto.FormRelationships, jsonOptions)
                         : null;
                 }
                 else
@@ -219,19 +238,28 @@ namespace productionLine.Server.Controllers
                     {
                         Name = dto.Name,
                         FormId = dto.FormId,
+
+                        // ✅ NEW: Store multiple form IDs
+                        FormIds = dto.FormIds != null && dto.FormIds.Any()
+                            ? JsonSerializer.Serialize(dto.FormIds, jsonOptions)
+                            : null,
+
+                        // ✅ NEW: Store multi-form flag
+                        IsMultiForm = dto.IsMultiForm,
+
                         CreatedBy = dto.CreatedBy ?? "system",
                         CreatedAt = DateTime.Now,
                         IncludeApprovals = dto.IncludeApprovals,
                         IncludeRemarks = dto.IncludeRemarks,
                         SharedWithRole = dto.SharedWithRole,
 
-                        // ✅ Add Fields and Filters immediately
                         Fields = dto.Fields.Select((f, index) => new ReportField
                         {
                             FieldId = f.FieldId,
                             FieldLabel = f.FieldLabel,
                             Order = index,
-                            Visible = f.Visible ?? true
+                            Visible = f.Visible ?? true,
+                            FormId = f.FormId  // ✅ NEW: Store which form this field belongs to
                         }).ToList(),
 
                         Filters = dto.Filters.Select(f => new ReportFilter
@@ -249,8 +277,13 @@ namespace productionLine.Server.Controllers
                         ChartConfig = dto.ChartConfigs?.Any() == true
                             ? JsonSerializer.Serialize(dto.ChartConfigs, jsonOptions)
                             : null,
+
                         GroupingConfig = dto.GroupingConfig?.Any() == true
                             ? JsonSerializer.Serialize(dto.GroupingConfig, jsonOptions)
+                            : null,
+
+                        FormRelationships = dto.FormRelationships?.Any() == true
+                            ? JsonSerializer.Serialize(dto.FormRelationships, jsonOptions)
                             : null
                     };
 
@@ -278,43 +311,82 @@ namespace productionLine.Server.Controllers
                 .Include(t => t.Fields)
                 .Include(t => t.Filters)
                 .FirstOrDefaultAsync(t => t.Id == templateId);
+
             if (template == null)
                 return NotFound("Template not found.");
 
-            var form = await _context.Forms
-                .Include(f => f.Fields)
-                .FirstOrDefaultAsync(f => f.Id == template.FormId);
-            if (form == null)
-                return NotFound("Form not found.");
+            // ✅ NEW: Check if this is a multi-form report
+            List<int> formIds = new List<int>();
 
-            var formFields = form.Fields.ToList();
-            var formSubmissions = await _context.FormSubmissions
-                .Include(s => s.Approvals)
-                .Include(s => s.SubmissionData)
-                .Where(s => s.FormId == template.FormId && s.Approvals.Any(a => a.Status == "Approved"))
-                .ToListAsync();
+            if (template.IsMultiForm && !string.IsNullOrEmpty(template.FormIds))
+            {
+                try
+                {
+                    formIds = JsonSerializer.Deserialize<List<int>>(template.FormIds);
+                }
+                catch
+                {
+                    formIds = new List<int> { template.FormId };
+                }
+            }
+            else
+            {
+                formIds = new List<int> { template.FormId };
+            }
 
-            var filtered = ApplyFilters(template.Filters, formSubmissions, runtimeValues);
+            // ✅ NEW: Fetch submissions from all forms
+            var allSubmissions = new List<FormSubmission>();
+
+            foreach (var formId in formIds)
+            {
+                var form = await _context.Forms
+                    .Include(f => f.Fields)
+                    .FirstOrDefaultAsync(f => f.Id == formId);
+
+                if (form == null) continue;
+
+                var formSubmissions = await _context.FormSubmissions
+                    .Include(s => s.Approvals)
+                    .Include(s => s.SubmissionData)
+                    .Where(s => s.FormId == formId && s.Approvals.Any(a => a.Status == "Approved"))
+                    .ToListAsync();
+
+                allSubmissions.AddRange(formSubmissions);
+            }
+
+            var filtered = ApplyFilters(template.Filters, allSubmissions, runtimeValues);
 
             var allFields = template.Fields.ToList();
-
             var result = new List<object>();
 
             foreach (var sub in filtered)
             {
-                // Check if any field is a grid field
-                var hasGridFields = template.Fields.Any(f => f.FieldLabel.Contains("→"));
+                // Get the form for this submission
+                var form = await _context.Forms
+                    .Include(f => f.Fields)
+                    .FirstOrDefaultAsync(f => f.Id == sub.FormId);
+
+                if (form == null) continue;
+
+                var formFields = form.Fields.ToList();
+
+                // ✅ NEW: Only process fields that belong to this submission's form
+                var relevantFields = allFields.Where(f =>
+                    f.FormId == null || // Legacy fields without form tracking
+                    f.FormId == 0 ||    // Default/unassigned
+                    f.FormId == sub.FormId // Matches this submission's form
+                ).ToList();
+
+                var hasGridFields = relevantFields.Any(f => f.FieldLabel.Contains("→"));
 
                 if (hasGridFields)
                 {
-                    // Handle grid expansion - create multiple rows
-                    var gridData = GetExpandedGridData(sub, allFields, formFields);
+                    var gridData = GetExpandedGridData(sub, relevantFields, formFields);
                     result.AddRange(gridData);
                 }
                 else
                 {
-                    // Handle normal single-row data
-                    var singleRow = CreateSingleRow(sub, allFields, formFields);
+                    var singleRow = CreateSingleRow(sub, relevantFields, formFields);
                     result.Add(singleRow);
                 }
             }
@@ -326,7 +398,6 @@ namespace productionLine.Server.Controllers
         {
             var result = new List<object>();
 
-            // Group fields into grid sections and normal fields
             var gridFieldGroups = reportFields
                 .Where(f => f.FieldLabel.Contains("→"))
                 .GroupBy(f => f.FieldLabel.Split("→")[0].Trim())
@@ -334,7 +405,6 @@ namespace productionLine.Server.Controllers
 
             var normalFields = reportFields.Where(f => !f.FieldLabel.Contains("→")).ToList();
 
-            // 1. Build dictionary of normal field values
             var normalValues = new Dictionary<string, string>();
             foreach (var field in normalFields)
             {
@@ -349,7 +419,6 @@ namespace productionLine.Server.Controllers
                 }
             }
 
-            // 2. Build dictionary of grid field rows per group (e.g., "Production Details", "Operator Details")
             var gridRowsPerGroup = new Dictionary<string, List<Dictionary<string, object>>>();
             int maxRowCount = 0;
 
@@ -370,28 +439,24 @@ namespace productionLine.Server.Controllers
                 }
                 catch
                 {
-                    // skip invalid grid JSON
                     continue;
                 }
             }
 
-            // 3. Merge all grid and normal field values by row
             for (int rowIndex = 0; rowIndex < maxRowCount; rowIndex++)
             {
                 var rowData = new List<object>();
 
-                // Add normal (flat) fields to every row
                 foreach (var field in normalFields)
                 {
                     rowData.Add(new
                     {
                         fieldLabel = field.FieldLabel,
                         value = normalValues.ContainsKey(field.FieldLabel) ? normalValues[field.FieldLabel] : "-",
-                        visible = field.Visible  // ✅ ADD visibility flag
+                        visible = field.Visible
                     });
                 }
 
-                // Add grid fields from each group
                 foreach (var group in gridFieldGroups)
                 {
                     var sectionName = group.Key;
@@ -409,7 +474,7 @@ namespace productionLine.Server.Controllers
                         {
                             fieldLabel = field.FieldLabel,
                             value = value,
-                            visible = field.Visible  // ✅ ADD visibility flag
+                            visible = field.Visible
                         });
                     }
                 }
@@ -425,6 +490,7 @@ namespace productionLine.Server.Controllers
 
             return result;
         }
+
         [HttpDelete("delete/{id}")]
         public async Task<IActionResult> DeleteTemplate(int id)
         {
@@ -438,10 +504,9 @@ namespace productionLine.Server.Controllers
                     return NotFound(new { message = "Report template not found." });
                 }
 
-                // Soft delete
                 template.IsDeleted = true;
                 template.DeletedAt = DateTime.Now;
-                template.DeletedBy = "current-username"; // Get from authentication context
+                template.DeletedBy = "current-username";
 
                 await _context.SaveChangesAsync();
 
@@ -452,6 +517,7 @@ namespace productionLine.Server.Controllers
                 return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
             }
         }
+
         private object CreateSingleRow(FormSubmission sub, ICollection<ReportField> reportFields, List<FormField> formFields)
         {
             return new
@@ -480,6 +546,7 @@ namespace productionLine.Server.Controllers
                 }).ToList()
             };
         }
+
         public class SharedUser
         {
             [JsonPropertyName("id")]
@@ -494,10 +561,11 @@ namespace productionLine.Server.Controllers
             [JsonPropertyName("email")]
             public string Email { get; set; }
         }
+
         private List<FormSubmission> ApplyFilters(
-    List<ReportFilter> filters,
-    List<FormSubmission> submissions,
-    Dictionary<string, string> runtimeValues)
+            List<ReportFilter> filters,
+            List<FormSubmission> submissions,
+            Dictionary<string, string> runtimeValues)
         {
             foreach (var filter in filters)
             {
@@ -516,7 +584,6 @@ namespace productionLine.Server.Controllers
 
                 submissions = submissions.Where(sub =>
                 {
-                    // Handle grid field reference (gridFieldId:columnId)
                     if (field.Contains(':'))
                     {
                         var parts = field.Split(':', StringSplitOptions.RemoveEmptyEntries);
@@ -524,7 +591,6 @@ namespace productionLine.Server.Controllers
                             Guid.TryParse(parts[0], out Guid gridFieldId) &&
                             Guid.TryParse(parts[1], out Guid columnId))
                         {
-                            // Find the grid field data
                             var gridFieldData = sub.SubmissionData.FirstOrDefault(d =>
                                 Guid.TryParse(d.FieldLabel, out Guid fieldGuid) && fieldGuid == gridFieldId);
 
@@ -533,17 +599,14 @@ namespace productionLine.Server.Controllers
 
                             try
                             {
-                                // Get the column name from the grid field definition
                                 var columnName = GetColumnNameById(gridFieldId, columnId);
                                 if (string.IsNullOrEmpty(columnName))
                                     return false;
 
-                                // Parse the grid data as JSON array
                                 var gridRows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(gridFieldData.FieldValue);
                                 if (gridRows == null || !gridRows.Any())
                                     return false;
 
-                                // Check if any row in the grid matches the filter condition
                                 return gridRows.Any(row =>
                                 {
                                     if (!row.ContainsKey(columnName))
@@ -564,7 +627,6 @@ namespace productionLine.Server.Controllers
                     }
                     else
                     {
-                        // Handle regular field reference
                         var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == field);
                         if (match == null || string.IsNullOrWhiteSpace(match.FieldValue))
                             return false;
@@ -579,7 +641,6 @@ namespace productionLine.Server.Controllers
             return submissions;
         }
 
-        // Helper method to get column name by ID
         private string GetColumnNameById(Guid gridFieldId, Guid columnId)
         {
             var gridField = _context.FormFields
@@ -590,13 +651,12 @@ namespace productionLine.Server.Controllers
                 var column = gridField.Columns.FirstOrDefault(c =>
                     Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
 
-                return column?.Name; // This should return "Model No", "Working Hour", etc.
+                return column?.Name;
             }
 
             return null;
         }
 
-        // Extract the operator logic into a separate method for reuse
         private bool ApplyOperatorCondition(string fieldValue, string op, List<string> multipleValues)
         {
             switch (op)
@@ -644,7 +704,6 @@ namespace productionLine.Server.Controllers
 
         [HttpGet("template/{reportId}")]
         public async Task<IActionResult> GetTemplate(int reportId)
-
         {
             var template = await _context.ReportTemplates
                 .Include(t => t.Fields)
@@ -654,16 +713,13 @@ namespace productionLine.Server.Controllers
             if (template == null)
                 return NotFound("Template not found.");
 
-            // Separate regular field IDs and grid field references
             var regularFieldIds = new List<Guid>();
             var gridFieldIds = new List<Guid>();
 
             foreach (var filter in template.Filters.Where(f => !string.IsNullOrEmpty(f.FieldLabel)))
             {
-                // Check if it's a grid field reference (contains colon)
                 if (filter.FieldLabel.Contains(':'))
                 {
-                    // Extract grid field ID (first part before colon)
                     var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length >= 2 && Guid.TryParse(parts[0], out Guid gridFieldId))
                     {
@@ -672,7 +728,6 @@ namespace productionLine.Server.Controllers
                 }
                 else
                 {
-                    // Regular field reference
                     if (Guid.TryParse(filter.FieldLabel, out Guid fieldId))
                     {
                         regularFieldIds.Add(fieldId);
@@ -680,29 +735,45 @@ namespace productionLine.Server.Controllers
                 }
             }
 
-            // Get regular form fields
             var formFields = await _context.FormFields
                 .Where(ff => regularFieldIds.Contains(ff.Id))
                 .ToDictionaryAsync(ff => ff.Id, ff => ff);
 
-            // Get grid form fields
             var gridFormFields = await _context.FormFields
                 .Where(ff => gridFieldIds.Contains(ff.Id) && ff.Type.ToLower() == "grid")
                 .ToDictionaryAsync(ff => ff.Id, ff => ff);
+
             try
             {
+                // ✅ NEW: Parse form IDs for multi-form reports
+                List<int> formIds = new List<int> { template.FormId };
+                if (template.IsMultiForm && !string.IsNullOrEmpty(template.FormIds))
+                {
+                    try
+                    {
+                        formIds = JsonSerializer.Deserialize<List<int>>(template.FormIds);
+                    }
+                    catch
+                    {
+                        // Fall back to single form
+                    }
+                }
+
                 return Ok(new
                 {
                     id = template.Id,
                     name = template.Name,
                     formId = template.FormId,
+                    formIds = formIds,  // ✅ NEW: Return all form IDs
+                    isMultiForm = template.IsMultiForm,  // ✅ NEW: Return multi-form flag
                     fields = template.Fields.Select(f => new
                     {
                         f.Id,
                         f.FieldId,
                         f.FieldLabel,
                         f.Order,
-                        f.Visible  // ✅ ADD THIS
+                        f.Visible,
+                        f.FormId  // ✅ NEW: Include form ID for each field
                     }).ToList(),
                     filters = template.Filters.Select(filter =>
                     {
@@ -712,7 +783,6 @@ namespace productionLine.Server.Controllers
 
                         if (!string.IsNullOrEmpty(filter.FieldLabel))
                         {
-                            // Handle grid field reference (gridFieldId:columnId)
                             if (filter.FieldLabel.Contains(':'))
                             {
                                 var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
@@ -723,7 +793,6 @@ namespace productionLine.Server.Controllers
                                     if (gridFormFields.TryGetValue(gridFieldId, out var gridField) &&
                                         gridField.Columns != null)
                                     {
-                                        // Find the specific column in the grid
                                         var column = gridField.Columns.FirstOrDefault(c =>
                                             Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
 
@@ -731,7 +800,6 @@ namespace productionLine.Server.Controllers
                                         {
                                             fieldType = column.Type?.ToLower();
 
-                                            // Extract options for dropdown, checkbox, or radio columns
                                             if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
                                                 column.Options != null && column.Options.Any())
                                             {
@@ -741,14 +809,12 @@ namespace productionLine.Server.Controllers
                                     }
                                 }
                             }
-                            // Handle regular field reference
                             else if (Guid.TryParse(filter.FieldLabel, out Guid fieldId))
                             {
                                 if (formFields.TryGetValue(fieldId, out formField))
                                 {
                                     fieldType = formField.Type?.ToLower();
 
-                                    // Extract options for dropdown, checkbox, or radio fields
                                     if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
                                         !string.IsNullOrEmpty(formField.OptionsJson))
                                     {
@@ -765,9 +831,7 @@ namespace productionLine.Server.Controllers
                             filter.Operator,
                             filter.Value,
                             filter.Type,
-                            // Add options data for dropdown, checkbox, and radio filters
                             options = options,
-                            // Add field type information for frontend rendering
                             fieldType = fieldType
                         };
                     }).ToList(),
@@ -782,11 +846,14 @@ namespace productionLine.Server.Controllers
                         : new List<ChartConfig>(),
                     groupingConfig = !string.IsNullOrEmpty(template.GroupingConfig)
                         ? JsonSerializer.Deserialize<List<GroupingConfig>>(template.GroupingConfig)
-                        : new List<GroupingConfig>()
-
+                        : new List<GroupingConfig>(),
+                    formRelationships = !string.IsNullOrEmpty(template.FormRelationships)
+                        ? JsonSerializer.Deserialize<List<FormRelationship>>(template.FormRelationships)
+                        : new List<FormRelationship>(),
                 });
             }
-            catch(Exception ex) {
+            catch (Exception ex)
+            {
                 return NotFound();
             }
         }
@@ -796,10 +863,8 @@ namespace productionLine.Server.Controllers
         {
             try
             {
-                var query = _context.ReportTemplates
-    .AsQueryable();
+                var query = _context.ReportTemplates.AsQueryable();
 
-                // Filter reports based on user access
                 var reports = await query
                     .Where(r => r.CreatedBy == username ||
                                (r.SharedWithRole != null &&
@@ -812,8 +877,9 @@ namespace productionLine.Server.Controllers
                         r.IncludeRemarks,
                         r.CreatedBy,
                         CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
-                        //UpdatedAt = r.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
-                        r.FormId
+                        r.FormId,
+                        r.IsMultiForm,  // ✅ NEW: Include multi-form flag
+                        FormIds = r.FormIds  // ✅ NEW: Include form IDs JSON
                     })
                     .ToListAsync();
 
@@ -833,7 +899,6 @@ namespace productionLine.Server.Controllers
             if (report == null)
                 return NotFound();
 
-            // Optional: Add authorization check
             if (report.CreatedBy != User.Identity?.Name)
                 return Forbid();
 
@@ -880,17 +945,15 @@ namespace productionLine.Server.Controllers
             if (template == null)
                 return NotFound("Template not found.");
 
-            // ✅ Parse the date from request or use today
             DateTime targetDate = DateTime.Today;
             if (!string.IsNullOrEmpty(request.Date))
             {
                 if (DateTime.TryParse(request.Date, out DateTime parsedDate))
                 {
-                    targetDate = parsedDate.Date; // Ensure we only use the date part
+                    targetDate = parsedDate.Date;
                 }
             }
 
-            // Parse shift period
             DateTime startDate, endDate;
             string shiftLetter = request.ShiftPeriod;
 
@@ -901,43 +964,69 @@ namespace productionLine.Server.Controllers
 
             if (request.ShiftPeriod == "fullday")
             {
-                // ✅ Use the selected date for full day
                 startDate = targetDate;
                 endDate = targetDate.AddDays(1);
             }
             else
             {
-                // ✅ FIXED: Get shift times as TimeSpan and combine with target date
                 var shiftTimes = GetShiftTimeRange(shiftLetter);
-
-                // Combine date with time
                 startDate = targetDate.Add(shiftTimes.start);
                 endDate = targetDate.Add(shiftTimes.end);
 
-                // Handle overnight shifts (e.g., Shift C: 23:00 to 06:00)
                 if (shiftTimes.end < shiftTimes.start)
                 {
                     endDate = endDate.AddDays(1);
                 }
             }
 
-            // Fetch submissions within the shift period
-            var submissions = await _context.FormSubmissions
-                .Include(s => s.SubmissionData)
-                .Include(s => s.Approvals)
-                .Where(s => s.FormId == template.FormId &&
-                           s.SubmittedAt >= startDate &&
-                           s.SubmittedAt < endDate &&
-                           s.Approvals.Any(a => a.Status == "Approved"))
-                .OrderBy(s => s.SubmittedAt)
-                .ToListAsync();
+            // ✅ NEW: Support multi-form shift reports
+            List<int> formIds = new List<int>();
 
-            // Return data in the same format as regular reports
+            if (template.IsMultiForm && !string.IsNullOrEmpty(template.FormIds))
+            {
+                try
+                {
+                    formIds = JsonSerializer.Deserialize<List<int>>(template.FormIds);
+                }
+                catch
+                {
+                    formIds = new List<int> { template.FormId };
+                }
+            }
+            else
+            {
+                formIds = new List<int> { template.FormId };
+            }
+
+            var allSubmissions = new List<FormSubmission>();
+
+            foreach (var formId in formIds)
+            {
+                var submissions = await _context.FormSubmissions
+                    .Include(s => s.SubmissionData)
+                    .Include(s => s.Approvals)
+                    .Where(s => s.FormId == formId &&
+                               s.SubmittedAt >= startDate &&
+                               s.SubmittedAt < endDate &&
+                               s.Approvals.Any(a => a.Status == "Approved"))
+                    .OrderBy(s => s.SubmittedAt)
+                    .ToListAsync();
+
+                allSubmissions.AddRange(submissions);
+            }
+
             var result = new List<object>();
 
-            foreach (var sub in submissions)
+            foreach (var sub in allSubmissions)
             {
-                var rowData = template.Fields.Select(reportField =>
+                // ✅ NEW: Filter fields by submission's form
+                var relevantFields = template.Fields.Where(f =>
+                    f.FormId == null ||
+                    f.FormId == 0 ||
+                    f.FormId == sub.FormId
+                ).ToList();
+
+                var rowData = relevantFields.Select(reportField =>
                 {
                     var formField = _context.FormFields
                         .FirstOrDefault(f => f.Label == reportField.FieldLabel);
@@ -954,7 +1043,6 @@ namespace productionLine.Server.Controllers
                     };
                 }).ToList();
 
-                // Add the submission timestamp as a field
                 rowData.Add(new
                 {
                     fieldLabel = "Date",
@@ -973,15 +1061,14 @@ namespace productionLine.Server.Controllers
             return Ok(result);
         }
 
-        // ✅ Return a named tuple with TimeSpan values
         private (TimeSpan start, TimeSpan end) GetShiftTimeRange(string shift)
         {
             return shift switch
             {
-                "A" => (new TimeSpan(6, 0, 0), new TimeSpan(14, 30, 0)),   // 06:00 - 14:30
-                "B" => (new TimeSpan(14, 30, 0), new TimeSpan(23, 0, 0)),  // 14:30 - 23:00
-                "C" => (new TimeSpan(23, 0, 0), new TimeSpan(6, 0, 0)),    // 23:00 - 06:00 (next day)
-                _ => (new TimeSpan(6, 0, 0), new TimeSpan(14, 30, 0))      // Default to Shift A
+                "A" => (new TimeSpan(6, 0, 0), new TimeSpan(14, 30, 0)),
+                "B" => (new TimeSpan(14, 30, 0), new TimeSpan(23, 0, 0)),
+                "C" => (new TimeSpan(23, 0, 0), new TimeSpan(6, 0, 0)),
+                _ => (new TimeSpan(6, 0, 0), new TimeSpan(14, 30, 0))
             };
         }
 
@@ -990,23 +1077,19 @@ namespace productionLine.Server.Controllers
             var now = DateTime.Now;
             var currentTime = now.TimeOfDay;
 
-            // Shift A: 6:00 AM to 2:30 PM
             if (currentTime >= new TimeSpan(6, 0, 0) && currentTime < new TimeSpan(14, 30, 0))
                 return "A";
 
-            // Shift B: 2:30 PM to 11:00 PM
             if (currentTime >= new TimeSpan(14, 30, 0) && currentTime < new TimeSpan(23, 0, 0))
                 return "B";
 
-            // Shift C: 11:00 PM to 6:00 AM
             return "C";
         }
 
         public class ShiftReportRequest
         {
-            public string ShiftPeriod { get; set; } // "current", "A", "B", "C", or "fullday"
+            public string ShiftPeriod { get; set; }
             public string Date { get; set; }
         }
-
     }
 }

@@ -4,18 +4,32 @@ public class ReportTemplateDto
 {
     public int Id { get; set; }
     public int FormId { get; set; }
+    public List<int>? FormIds { get; set; }
+    public bool IsMultiForm { get; set; } = false;
     public string Name { get; set; }
     public string CreatedBy { get; set; }
     public bool IncludeApprovals { get; set; }
     public bool IncludeRemarks { get; set; }
     public string? SharedWithRole { get; set; }
-
     public List<ReportFieldDto> Fields { get; set; }
     public List<ReportFilterDto> Filters { get; set; }
     public List<CalculatedField> CalculatedFields { get; set; }     // ✅ NEW
     public List<ChartConfig>? ChartConfigs { get; set; } // ✅ strongly typed                        // ✅ NEW
     public List<GroupingConfig> GroupingConfig { get; set; }
+    public List<FormRelationship>? FormRelationships { get; set; }
 }
+
+
+public class FormRelationship
+{
+    public long Id { get; set; }
+    public int SourceFormId { get; set; }
+    public string SourceFieldId { get; set; }
+    public int TargetFormId { get; set; }
+    public string TargetFieldId { get; set; }
+    public string Type { get; set; } 
+}
+
 
 public class GroupingConfig
 {
@@ -103,6 +117,7 @@ public class ReportFieldDto
     public string FieldLabel { get; set; }
     public int Order { get; set; }
     public bool? Visible { get; set; }
+    public int? FormId { get; set; }
 }
 
 public class ReportFilterDto

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260202033734_MultiFormReport")]
+    partial class MultiFormReport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -827,9 +830,6 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("DELETEDBY");
 
-                    b.Property<int?>("FORMID")
-                        .HasColumnType("NUMBER(10)");
-
                     b.Property<int>("FormId")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FORMID");
@@ -837,10 +837,6 @@ namespace productionLine.Server.Migrations
                     b.Property<string>("FormIds")
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("FORMIDS");
-
-                    b.Property<string>("FormRelationships")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("FORMRELATIONSHIPS");
 
                     b.Property<string>("GroupingConfig")
                         .HasColumnType("CLOB")
@@ -875,13 +871,7 @@ namespace productionLine.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("FORMID");
-
-                    b.ToTable("FF_REPORTTEMPLATE", t =>
-                        {
-                            t.Property("FORMID")
-                                .HasColumnName("FORMID1");
-                        });
+                    b.ToTable("FF_REPORTTEMPLATE");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormAccess", b =>
@@ -1003,15 +993,6 @@ namespace productionLine.Server.Migrations
                         .IsRequired();
 
                     b.Navigation("ReportTemplate");
-                });
-
-            modelBuilder.Entity("productionLine.Server.Model.ReportTemplate", b =>
-                {
-                    b.HasOne("productionLine.Server.Model.Form", "Form")
-                        .WithMany()
-                        .HasForeignKey("FORMID");
-
-                    b.Navigation("Form");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.Form", b =>
