@@ -13,6 +13,7 @@ import { GripVertical, Eye, EyeOff } from "lucide-react";
 import { EnhancedGroupingEditor } from './EnhancedGroupingEditor'; // ADD THIS
 import RelationshipDiagram from './RelationshipDiagram';
 import FormRelationshipEditor from './FormRelationshipEditor';
+import LoadingDots from './LoadingDots';
 
 
 // AD Search component
@@ -180,6 +181,7 @@ export default function EnhancedReportDesigner() {
     const [summaryRows, setSummaryRows] = useState([]);
     const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current");
     const [fieldVisibility, setFieldVisibility] = useState({});
+    const [isLoading, setIsLoading] = useState(false);
 
     // ✅ NEW: Multi-form support
     const [multiFormMode, setMultiFormMode] = useState(false);
@@ -360,6 +362,8 @@ export default function EnhancedReportDesigner() {
 
         const loadReport = async () => {
             try {
+
+                setIsLoading(true);
                 // Load report data first
                 const reportRes = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${reportId}`);
                 const data = reportRes.data;
@@ -572,6 +576,9 @@ export default function EnhancedReportDesigner() {
             } catch (err) {
                 console.error('❌ Failed to load report:', err);
                 toast.error('Failed to load report');
+            }
+            finally {
+                setIsLoading(false);
             }
         };
 
@@ -1916,7 +1923,7 @@ export default function EnhancedReportDesigner() {
             setFormFieldMappings(newMappings);
         }
     };
-
+    if (isLoading) return <LoadingDots />;
 
     return (
         <>

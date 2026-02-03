@@ -596,6 +596,7 @@ namespace productionLine.Server.Controllers
                 formSubmission.SubmittedAt = submittedAt;
                 formSubmission.SubmissionData = new List<FormSubmissionData>();
                 formSubmission.Approvals = new List<FormApproval>();
+                formSubmission.Status = submissionDTO.Status ?? "Submitted";
             }
             else
             {
@@ -604,7 +605,8 @@ namespace productionLine.Server.Controllers
                     FormId = formId,
                     SubmittedAt = submittedAt,
                     SubmissionData = new List<FormSubmissionData>(),
-                    Approvals = new List<FormApproval>()
+                    Approvals = new List<FormApproval>(),
+                    Status = submissionDTO.Status ?? "Submitted"
                 };
 
                 _context.FormSubmissions.Add(formSubmission);
@@ -620,35 +622,37 @@ namespace productionLine.Server.Controllers
             }
 
             await _context.SaveChangesAsync();
+            if (formSubmission.Status == "Submitted")
+            {
 
-            if (form.Approvers == null || !form.Approvers.Any())
-            {
-                formSubmission.Approvals.Add(new FormApproval
-                {
-                    FormSubmissionId = formSubmission.Id,
-                    ApprovalLevel = 0,
-                    ApproverId = 0,
-                    ApproverName = "System Approval",
-                    Status = "Approved",
-                    Comments = "Auto Approved",
-                    ApprovedAt = DateTime.Now
-                });
-            }
-            else
-            {
-                foreach (var approver in form.Approvers)
+                if (form.Approvers == null || !form.Approvers.Any())
                 {
                     formSubmission.Approvals.Add(new FormApproval
                     {
                         FormSubmissionId = formSubmission.Id,
-                        ApprovalLevel = approver.Level,
-                        ApproverId = 1,
-                        ApproverName = approver.Name,
-                        Status = "Pending"
+                        ApprovalLevel = 0,
+                        ApproverId = 0,
+                        ApproverName = "System Approval",
+                        Status = "Approved",
+                        Comments = "Auto Approved",
+                        ApprovedAt = DateTime.Now
                     });
                 }
+                else
+                {
+                    foreach (var approver in form.Approvers)
+                    {
+                        formSubmission.Approvals.Add(new FormApproval
+                        {
+                            FormSubmissionId = formSubmission.Id,
+                            ApprovalLevel = approver.Level,
+                            ApproverId = 1,
+                            ApproverName = approver.Name,
+                            Status = "Pending"
+                        });
+                    }
+                }
             }
-
             await _context.SaveChangesAsync();
 
             return Ok(new
@@ -659,6 +663,63 @@ namespace productionLine.Server.Controllers
                     : "Form submitted successfully"
             });
         }
+        [HttpGet("{form}/drafts")]
+        public async Task<IActionResult> GetDraftSubmissions(string form)
+        {
+            int formId = await _context.Forms
+                .Where(f => f.FormLink == form.ToLower())
+                .Select(f => f.Id)
+                .FirstOrDefaultAsync();
+
+            if (formId == 0)
+                return NotFound("Form not found");
+
+            try
+            {
+                var drafts = await _context.FormSubmissions
+                    .Where(s => s.FormId == formId && s.Status == "Draft")
+                    .OrderByDescending(s => s.SubmittedAt)
+                    .Select(s => new
+                    {
+                        Id = s.Id,
+                        SubmittedAt = s.SubmittedAt,
+                        Status = "Draft"
+                    })
+                    .Take(20)
+                    .ToListAsync();
+
+                return Ok(drafts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Internal server error: " + ex.Message);
+            }
+        }
+
+
+        [HttpGet("draft/{submissionId}")]
+        public async Task<IActionResult> GetDraftById(int submissionId)
+        {
+            var submission = await _context.FormSubmissions
+                .Include(s => s.SubmissionData)
+                .FirstOrDefaultAsync(s => s.Id == submissionId && s.Status == "Draft");
+
+            if (submission == null)
+                return NotFound("Draft not found");
+
+            return Ok(new
+            {
+                submission.Id,
+                submission.FormId,
+                submission.SubmittedAt,
+                submissionData = submission.SubmissionData.Select(d => new
+                {
+                    d.FieldLabel,
+                    d.FieldValue
+                })
+            });
+        }
+
 
 
         [HttpGet("fields")]
@@ -691,6 +752,7 @@ namespace productionLine.Server.Controllers
             {
                 var result = (await (from s in (from s in _context.FormSubmissions
                                                 where s.FormId == formId
+                                                && s.Status == "Submitted"
                                                 orderby s.SubmittedAt descending
                                                 select s).Take(30)
                                      select new

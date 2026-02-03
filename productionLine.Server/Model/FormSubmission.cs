@@ -29,8 +29,8 @@ namespace productionLine.Server.Model
 
         [JsonPropertyName("approvals")]
         public List<FormApproval> Approvals { get; set; } = new();
-
-
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = "Submitted";
     }
 
     [Table("FF_FORMSUBMISSIONDATA")]

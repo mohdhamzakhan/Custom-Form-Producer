@@ -14,6 +14,10 @@ export default function DynamicForm() {
     const [formErrors, setFormErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    // from /drafts endpoint
+    const [drafts, setDrafts] = useState([]);
+
+    const [activeTab, setActiveTab] = useState("submitted"); // submitted | draft
     const [recentSubmissions, setRecentSubmissions] = useState([]);
     const [editingSubmissionId, setEditingSubmissionId] = useState(null);
     const [fontSize, setFontSize] = useState(16); // default 16px
@@ -25,6 +29,31 @@ export default function DynamicForm() {
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
     const isEditMode = useRef(false); // Add this new ref
+
+    const getGridRows = (fieldId) => {
+        const value = formValues[fieldId];
+
+        // If already an array, return it
+        if (Array.isArray(value)) {
+            return value;
+        }
+
+        // If it's a string, try to parse it as JSON
+        if (typeof value === 'string' && value.trim() !== '') {
+            try {
+                const parsed = JSON.parse(value);
+                if (Array.isArray(parsed)) {
+                    return parsed;
+                }
+            } catch (e) {
+                console.error(`Failed to parse grid data for field ${fieldId}:`, e);
+            }
+        }
+
+        // Default to empty array
+        return [];
+    };
+
 
     const keyFieldValues = useMemo(() => {
         if (!formData?.keyFieldMappings?.length) return {};
@@ -39,6 +68,13 @@ export default function DynamicForm() {
     const keyFieldValuesString = useMemo(() => {
         return JSON.stringify(keyFieldValues);
     }, [keyFieldValues]);
+    const submittedSubmissions = recentSubmissions.filter(
+        s => s.status !== "Draft"
+    );
+
+    const draftSubmissions = recentSubmissions.filter(
+        s => s.status === "Draft"
+    );
 
     useEffect(() => {
         const fetchFormData = async () => {
@@ -168,6 +204,7 @@ export default function DynamicForm() {
                 setLoading(false);
 
                 await fetchRecentSubmissions();
+                await loadDrafts();
 
             } catch (err) {
                 setError(err.message || "Failed to fetch form data");
@@ -369,6 +406,19 @@ export default function DynamicForm() {
             return prevValues; // Return same reference to prevent re-render
         });
     }, [formData]); // ONLY depend on formData
+
+    useEffect(() => {
+        if (!isModalOpen) return;
+
+        const loadData = async () => {
+            await loadDrafts();
+            await fetchRecentSubmissions();
+        };
+
+        loadData();
+    }, [isModalOpen]);
+
+
 
     // Add this before the useEffect
 
@@ -635,36 +685,6 @@ export default function DynamicForm() {
         };
     }, []);
 
-
-    // Update handleGridChange to clear dependent values
-    //const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
-    //    setFormValues(prev => {
-    //        const updatedRows = [...(prev[fieldId] || [])];
-    //        const field = formData.fields.find(f => f.id === fieldId);
-
-    //        if (entireRow) {
-    //            updatedRows[rowIndex] = entireRow;
-    //        } else {
-    //            updatedRows[rowIndex] = {
-    //                ...updatedRows[rowIndex],
-    //                [columnName]: value
-    //            };
-
-    //            // Clear dependent fields when parent changes
-    //            if (field) {
-    //                field.columns.forEach(col => {
-    //                    if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
-    //                        updatedRows[rowIndex][col.name] = "";
-    //                    }
-    //                });
-    //            }
-    //        }
-
-
-    //        return { ...prev, [fieldId]: updatedRows };
-    //    });
-    //};
-
     const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
         setFormValues(prev => {
             const updatedRows = [...(prev[fieldId] || [])];
@@ -696,9 +716,6 @@ export default function DynamicForm() {
         });
     };
 
-
-
-    // Check if a remark is required for the current field value
     const needsRemark = (field, value) => {
         if (!field.requireRemarks || field.requireRemarks.length === 0) {
             return false;
@@ -764,7 +781,7 @@ export default function DynamicForm() {
             return rawValue.split(",").map(s => s.trim());
         }
 
-        if (field.type === "grid") {
+        if (field.type === "grid" || field.type === "questionGrid") {
             try {
                 return JSON.parse(rawValue);
             } catch {
@@ -978,22 +995,6 @@ export default function DynamicForm() {
             });
         }
     };
-
-    function validateRows(rows, columns) {
-        for (const row of rows) {
-            for (const col of columns) {
-                if (
-                    col.type === "dropdown" &&
-                    col.remarksOptions?.includes(row[col.name]) &&
-                    !row[`${col.name}_remarks`]
-                ) {
-                    return { valid: false, message: `Remarks required for ${col.name}` };
-                }
-            }
-        }
-        return { valid: true };
-    }
-
 
     const evaluateFormula = (formula) => {
         console.log(formula);
@@ -1238,31 +1239,19 @@ export default function DynamicForm() {
         const date = new Date(dateString);
         return !isNaN(date.getTime());
     };
-    //const cleanGridData = (gridData) => {
-    //    if (!Array.isArray(gridData)) return gridData;
+    
+    const handleSubmit = async (status = "Submitted") => {
+        //e.preventDefault();
 
-    //    return gridData.map(row => {
-    //        const cleanedRow = {};
-    //        Object.keys(row).forEach(key => {
-    //            // Only include non-empty values or non-remark fields
-    //            if (!key.endsWith('_remarks') || (key.endsWith('_remarks') && row[key] && row[key].trim() !== '')) {
-    //                cleanedRow[key] = row[key];
-    //            }
-    //        });
-    //        return cleanedRow;
-    //    });
-    //};
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-
-        const validationErrors = validateForm();
+        const validationErrors = status === "Submitted" ? validateForm() : {};
         setFormErrors(validationErrors);
         setSubmitted(true);
 
         if (Object.keys(validationErrors).length === 0) {
             const submissionData = {
                 formId: formData.id,
-                submissionId: editingSubmissionId, // ðŸ‘ˆ include if editing
+                submissionId: editingSubmissionId,
+                status,
                 submissionData: []
             };
 
@@ -2188,7 +2177,7 @@ export default function DynamicForm() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(formValues[field.id] || []).map((row, rowIndex) => {
+                                    {getGridRows(field.id).map((row, rowIndex) => {
                                         // Auto-populate hidden/disabled columns before rendering
                                         (field.columns || []).forEach(col => {
                                             if (col.visible === false || col.disabled === true) {
@@ -2776,13 +2765,13 @@ export default function DynamicForm() {
                                                         <button
                                                             type="button"
                                                             onClick={() => removeGridRow(field.id, rowIndex)}
-                                                            disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
-                                                            className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                            disabled={getGridRows(field.id).length <= (field.min_rows || 0)}
+                                                            className={`${getGridRows(field.id).length <= (field.min_rows || 0)
                                                                 ? 'text-gray-400 cursor-not-allowed'
                                                                 : 'text-red-500 hover:text-red-700'
                                                                 }`}
                                                             title={
-                                                                (formValues[field.id] || []).length <= (field.min_rows || 0)
+                                                                getGridRows(field.id).length <= (field.min_rows || 0)
                                                                     ? `Minimum ${field.min_rows} rows required`
                                                                     : 'Remove this row'
                                                             }
@@ -2797,14 +2786,14 @@ export default function DynamicForm() {
                                 </tbody>
                             </table>
                         </div>
-                        {(formValues[field.id] || []).length < (field.maxRows || Infinity) && (
+                        {getGridRows(field.id).length < (field.maxRows || Infinity) && (
                             <button
                                 type="button"
                                 onClick={() => addGridRow(field.id, field.columns)}
                                 className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
                                 title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || '∞'})`}
                             >
-                                Add Row {field.maxRows ? `(${(formValues[field.id] || []).length}/${field.maxRows})` : ''}
+                                Add Row {field.maxRows ? `(${getGridRows(field.id).length}/${field.maxRows})` : ''}
                             </button>
                         )}
 
@@ -2913,7 +2902,7 @@ export default function DynamicForm() {
 
                                 {/* Data Rows */}
                                 <tbody>
-                                    {(formValues[field.id] || []).map((row, rowIndex) => (
+                                    {getGridRows(field.id).map((row, rowIndex) => (
                                         <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
                                             {field.columns.map((col, colIdx) => (
                                                 <td
@@ -3068,13 +3057,13 @@ export default function DynamicForm() {
 
                         {/* Add Question Button */}
                         {field.allowAddRows === true &&
-                            (formValues[field.id] || []).length < (field.maxRows || Infinity) && (
+                           getGridRows(field.id).length < (field.maxRows || Infinity) && (
                                 <button
                                     type="button"
                                     onClick={() => addGridRow(field.id, field.columns)}
                                     className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm"
                                 >
-                                    Add Question ({(formValues[field.id] || []).length}/{field.maxRows || "∞"})
+                                Add Question ({getGridRows(field.id).length}/{field.maxRows || "∞"}
                                 </button>
                             )}
 
@@ -3090,12 +3079,10 @@ export default function DynamicForm() {
         }
     };
 
-    
-
 
     const addGridRow = (fieldId, columns) => {
         const field = formData.fields.find(f => f.id === fieldId);
-        const currentRows = formValues[fieldId] || [];
+        const currentRows = getGridRows(fieldId); // USE getGridRows instead of formValues[fieldId] || []
 
         if (field.maxRows && currentRows.length >= field.maxRows) {
             alert(`Maximum ${field.maxRows} rows allowed`);
@@ -3129,9 +3116,10 @@ export default function DynamicForm() {
         }));
     };
 
+
     const removeGridRow = (fieldId, rowIndex) => {
         const field = formData.fields.find(f => f.id === fieldId);
-        const currentRows = formValues[fieldId] || [];
+        const currentRows = getGridRows(fieldId); // USE getGridRows instead of formValues[fieldId] || []
 
         // Check if min_rows limit would be violated
         if (field.min_rows && currentRows.length <= field.min_rows) {
@@ -3144,6 +3132,43 @@ export default function DynamicForm() {
             ...prev,
             [fieldId]: updatedRows
         }));
+    };
+
+
+    const loadDrafts = async () => {
+        const res = await fetch(
+            `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/drafts`
+        );
+        const data = await res.json();
+
+        console.log("DRAFT API RESPONSE:", data);
+
+        setDrafts(data);
+    };
+
+
+    const loadDraftIntoForm = async (submissionId) => {
+        const res = await fetch(
+            `${APP_CONSTANTS.API_BASE_URL}/api/forms/draft/${submissionId}`
+        );
+        const data = await res.json();
+
+        setEditingSubmissionId(data.id);
+
+        const values = {};
+        const remarksData = {};
+
+        data.submissionData.forEach(item => {
+            if (item.fieldLabel.endsWith("(Remark)")) {
+                const fieldId = item.fieldLabel.replace(" (Remark)", "");
+                remarksData[fieldId] = item.fieldValue;
+            } else {
+                values[item.fieldLabel] = item.fieldValue;
+            }
+        });
+
+        setFormValues(values);
+        setRemarks(remarksData);
     };
 
 
@@ -3218,100 +3243,207 @@ export default function DynamicForm() {
                     </div>
 
 
-                    <div className="mt-6">
+                    <div className="mt-8 flex flex-wrap items-center gap-4">
+                        {/* Primary Action */}
                         <button
                             type="submit"
-                            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                            className="
+            bg-blue-600 hover:bg-blue-700
+            text-white font-semibold
+            py-2.5 px-6 rounded-md
+            shadow-sm
+            focus:outline-none focus:ring-2 focus:ring-blue-400
+        "
                         >
-                            Save
+                            Submit
                         </button>
 
+                        {/* Secondary Action */}
+                        <button
+                            type="button"
+                            onClick={() => handleSubmit("Draft")}
+                            className="
+            bg-gray-100 hover:bg-gray-200
+            text-gray-800 font-medium
+            py-2.5 px-6 rounded-md
+            border border-gray-300
+            focus:outline-none focus:ring-2 focus:ring-gray-300
+        "
+                        >
+                            Save Draft
+                        </button>
+
+                        {/* Utility Action */}
                         <button
                             type="button"
                             onClick={() => setIsModalOpen(true)}
-                            className="ml-4 bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                            className="
+            bg-green-600 hover:bg-green-700
+            text-white font-medium
+            py-2.5 px-6 rounded-md
+            shadow-sm
+            focus:outline-none focus:ring-2 focus:ring-green-400
+        "
                         >
                             View Last 20 Submissions
                         </button>
                     </div>
+
                 </div>
             </form>
 
             {renderImageModal()}
 
             {isModalOpen && (
-                <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
-                    <div className="bg-white rounded-lg shadow-lg p-6 w-11/12 max-w-3xl relative">
-                        <h2 className="text-2xl font-bold mb-4">Last 20 Submissions</h2>
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+                    <div className="bg-white rounded-lg shadow-lg w-11/12 max-w-4xl relative">
 
-                        {/* Table */}
-                        {recentSubmissions.length > 0 ? (
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full bg-white border border-gray-300">
-                                    <thead>
-                                        <tr>
-                                            <th className="py-2 px-4 border-b">ID</th>
-                                            <th className="py-2 px-4 border-b">Submitted At</th>
-                                            <th className="py-2 px-4 border-b">Status</th>
-                                            <th className="py-2 px-4 border-b">Actions</th> {/* NEW COLUMN */}
-                                            <th className="py-2 px-4 border-b">View</th> {/* NEW COLUMN */}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {recentSubmissions.map((submission) => (
-                                            <tr key={submission.id}>
-                                                <td className="py-2 px-4 border-b">{submission.id}</td>
-                                                <td className="py-2 px-4 border-b">{new Date(submission.submittedAt).toLocaleString()}</td>
-                                                <td className="py-2 px-4 border-b">
-                                                    <span className={`
-                      ${submission.status === "Approved" ? "text-green-600" : ""}
-                      ${submission.status === "Pending" ? "text-yellow-600" : ""}
-                      ${submission.status === "Rejected" ? "text-red-600" : ""}
-                      font-semibold
-                    `}>
-                                                        {submission.status}
-                                                    </span>
-                                                </td>
-                                                <td className="py-2 px-4 border-b">
-                                                    {console.log(submission.form?.approvers?.length)}
-                                                    {submission.status === "Pending" && (
-                                                        <button
-                                                            className="text-blue-500 hover:underline"
-                                                            onClick={() => handleEditSubmission(submission.id)}
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                    )}
-                                                </td>
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b">
+                            <h2 className="text-xl font-semibold">Submissions</h2>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="text-gray-500 hover:text-gray-800 text-2xl font-bold"
+                            >
+                                &times;
+                            </button>
+                        </div>
 
-                                                <td className="py-2 px-4 border-b">
-                                                    {console.log(submission.form?.approvers?.length)}
-                                                    <button
-                                                        className="text-blue-500 hover:underline"
-                                                        onClick={() => handleViewSubmission(submission.id)}
-                                                    >
-                                                        View
-                                                    </button>
-                                                </td>
+                        {/* Tabs */}
+                        <div className="flex border-b px-6">
+                            <button
+                                onClick={() => setActiveTab("submitted")}
+                                className={`py-2 px-4 font-medium border-b-2 transition
+                        ${activeTab === "submitted"
+                                        ? "border-blue-600 text-blue-600"
+                                        : "border-transparent text-gray-500 hover:text-gray-700"}
+                    `}
+                            >
+                                Submitted
+                            </button>
+
+                            <button
+                                onClick={() => setActiveTab("draft")}
+                                className={`py-2 px-4 font-medium border-b-2 transition
+                        ${activeTab === "draft"
+                                        ? "border-blue-600 text-blue-600"
+                                        : "border-transparent text-gray-500 hover:text-gray-700"}
+                    `}
+                            >
+                                Drafts
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 max-h-[70vh] overflow-y-auto">
+
+                            {/* ---------------- SUBMITTED TAB ---------------- */}
+                            {activeTab === "submitted" && (
+                                submittedSubmissions.length > 0 ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full border border-gray-300">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="py-2 px-4 border-b">ID</th>
+                                                    <th className="py-2 px-4 border-b">Submitted At</th>
+                                                    <th className="py-2 px-4 border-b">Status</th>
+                                                    <th className="py-2 px-4 border-b">Actions</th>
+                                                    <th className="py-2 px-4 border-b">View</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {submittedSubmissions.map(submission => (
+                                                    <tr key={submission.id} className="hover:bg-gray-50">
+                                                        <td className="py-2 px-4 border-b">{submission.id}</td>
+                                                        <td className="py-2 px-4 border-b">
+                                                            {new Date(submission.submittedAt).toLocaleString()}
+                                                        </td>
+                                                        <td className="py-2 px-4 border-b font-semibold">
+                                                            <span
+                                                                className={
+                                                                    submission.status === "Approved"
+                                                                        ? "text-green-600"
+                                                                        : submission.status === "Pending"
+                                                                            ? "text-yellow-600"
+                                                                            : "text-red-600"
+                                                                }
+                                                            >
+                                                                {submission.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-2 px-4 border-b">
+                                                            {submission.status === "Pending" && (
+                                                                <button
+                                                                    className="text-blue-600 hover:underline"
+                                                                    onClick={() => handleEditSubmission(submission.id)}
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-2 px-4 border-b">
+                                                            <button
+                                                                className="text-blue-600 hover:underline"
+                                                                onClick={() => handleViewSubmission(submission.id)}
+                                                            >
+                                                                View
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-500 text-center">
+                                        No submitted submissions.
+                                    </p>
+                                )
+                            )}
+
+                            {/* ---------------- DRAFT TAB ---------------- */}
+                            {activeTab === "draft" && (
+                                drafts.length > 0 ? (
+                                    <table className="min-w-full border border-gray-300">
+                                        <thead>
+                                            <tr>
+                                                <th className="py-2 px-4 border-b">Draft ID</th>
+                                                <th className="py-2 px-4 border-b">Last Saved</th>
+                                                <th className="py-2 px-4 border-b">Actions</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : (
-                            <p>No submissions available.</p>
-                        )}
+                                        </thead>
+                                        <tbody>
+                                            {drafts.map(draft => (
+                                                <tr key={draft.id}>
+                                                    <td className="py-2 px-4 border-b">{draft.id}</td>
+                                                    <td className="py-2 px-4 border-b">
+                                                        {new Date(draft.submittedAt).toLocaleString()}
+                                                    </td>
+                                                    <td className="py-2 px-4 border-b">
+                                                        <button
+                                                            className="text-blue-600 hover:underline"
+                                                            onClick={() => {
+                                                                loadDraftIntoForm(draft.id);
+                                                                setIsModalOpen(false);
+                                                            }}
+                                                        >
+                                                            Resume
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                    <p className="text-gray-500 text-center">No drafts available.</p>
+                                )
+                            )}
 
-                        {/* Close Button */}
-                        <button
-                            onClick={() => setIsModalOpen(false)}
-                            className="absolute top-2 right-2 text-gray-600 hover:text-gray-900 text-2xl font-bold"
-                        >
-                            &times;
-                        </button>
+                        </div>
                     </div>
                 </div>
             )}
+
 
 
         </div>
