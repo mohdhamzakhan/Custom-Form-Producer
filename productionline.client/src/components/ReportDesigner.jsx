@@ -409,7 +409,7 @@ export default function EnhancedReportDesigner() {
                                         columns.forEach(col => {
                                             expandedFields.push({
                                                 id: `${field.id}:${col.id}`,
-                                                label: `${field.label} - ${col.name}`,
+                                                label: `${field.label} → ${col.name}`,
                                                 type: col.type || "text",
                                                 formId: formId,
                                                 originalLabel: field.label
@@ -474,7 +474,7 @@ export default function EnhancedReportDesigner() {
                                         columns.forEach(col => {
                                             expandedFields.push({
                                                 id: `${field.id}:${col.id}`,
-                                                label: `${field.label} - ${col.name}`,
+                                                label: `${field.label} → ${col.name}`,
                                                 type: col.type || "text"
                                             });
                                         });

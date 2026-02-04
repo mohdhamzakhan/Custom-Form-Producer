@@ -14,10 +14,8 @@ export default function DynamicForm() {
     const [formErrors, setFormErrors] = useState({});
     const [submitted, setSubmitted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    // from /drafts endpoint
     const [drafts, setDrafts] = useState([]);
-
-    const [activeTab, setActiveTab] = useState("submitted"); // submitted | draft
+    const [activeTab, setActiveTab] = useState("submitted");
     const [recentSubmissions, setRecentSubmissions] = useState([]);
     const [editingSubmissionId, setEditingSubmissionId] = useState(null);
     const [fontSize, setFontSize] = useState(16); // default 16px
@@ -29,31 +27,6 @@ export default function DynamicForm() {
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
     const isEditMode = useRef(false); // Add this new ref
-
-    const getGridRows = (fieldId) => {
-        const value = formValues[fieldId];
-
-        // If already an array, return it
-        if (Array.isArray(value)) {
-            return value;
-        }
-
-        // If it's a string, try to parse it as JSON
-        if (typeof value === 'string' && value.trim() !== '') {
-            try {
-                const parsed = JSON.parse(value);
-                if (Array.isArray(parsed)) {
-                    return parsed;
-                }
-            } catch (e) {
-                console.error(`Failed to parse grid data for field ${fieldId}:`, e);
-            }
-        }
-
-        // Default to empty array
-        return [];
-    };
-
 
     const keyFieldValues = useMemo(() => {
         if (!formData?.keyFieldMappings?.length) return {};
@@ -68,6 +41,7 @@ export default function DynamicForm() {
     const keyFieldValuesString = useMemo(() => {
         return JSON.stringify(keyFieldValues);
     }, [keyFieldValues]);
+
     const submittedSubmissions = recentSubmissions.filter(
         s => s.status !== "Draft"
     );
@@ -407,6 +381,7 @@ export default function DynamicForm() {
         });
     }, [formData]); // ONLY depend on formData
 
+    // Add this before the useEffect
     useEffect(() => {
         if (!isModalOpen) return;
 
@@ -418,12 +393,16 @@ export default function DynamicForm() {
         loadData();
     }, [isModalOpen]);
 
+    const loadDrafts = async () => {
+        const res = await fetch(
+            `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/drafts`
+        );
+        const data = await res.json();
 
+        console.log("DRAFT API RESPONSE:", data);
 
-    // Add this before the useEffect
-
-
-
+        setDrafts(data);
+    };
     const clearLinkedTextboxFields = () => {
         console.log('ðŸ§¹ Attempting to clear linked textbox fields');
 
@@ -685,6 +664,36 @@ export default function DynamicForm() {
         };
     }, []);
 
+
+    // Update handleGridChange to clear dependent values
+    //const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
+    //    setFormValues(prev => {
+    //        const updatedRows = [...(prev[fieldId] || [])];
+    //        const field = formData.fields.find(f => f.id === fieldId);
+
+    //        if (entireRow) {
+    //            updatedRows[rowIndex] = entireRow;
+    //        } else {
+    //            updatedRows[rowIndex] = {
+    //                ...updatedRows[rowIndex],
+    //                [columnName]: value
+    //            };
+
+    //            // Clear dependent fields when parent changes
+    //            if (field) {
+    //                field.columns.forEach(col => {
+    //                    if (col.type === "dependentDropdown" && col.parentColumn === columnName) {
+    //                        updatedRows[rowIndex][col.name] = "";
+    //                    }
+    //                });
+    //            }
+    //        }
+
+
+    //        return { ...prev, [fieldId]: updatedRows };
+    //    });
+    //};
+
     const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
         setFormValues(prev => {
             const updatedRows = [...(prev[fieldId] || [])];
@@ -716,6 +725,9 @@ export default function DynamicForm() {
         });
     };
 
+
+
+    // Check if a remark is required for the current field value
     const needsRemark = (field, value) => {
         if (!field.requireRemarks || field.requireRemarks.length === 0) {
             return false;
@@ -781,7 +793,7 @@ export default function DynamicForm() {
             return rawValue.split(",").map(s => s.trim());
         }
 
-        if (field.type === "grid" || field.type === "questionGrid") {
+        if (field.type === "grid") {
             try {
                 return JSON.parse(rawValue);
             } catch {
@@ -995,6 +1007,22 @@ export default function DynamicForm() {
             });
         }
     };
+
+    function validateRows(rows, columns) {
+        for (const row of rows) {
+            for (const col of columns) {
+                if (
+                    col.type === "dropdown" &&
+                    col.remarksOptions?.includes(row[col.name]) &&
+                    !row[`${col.name}_remarks`]
+                ) {
+                    return { valid: false, message: `Remarks required for ${col.name}` };
+                }
+            }
+        }
+        return { valid: true };
+    }
+
 
     const evaluateFormula = (formula) => {
         console.log(formula);
@@ -1239,9 +1267,22 @@ export default function DynamicForm() {
         const date = new Date(dateString);
         return !isNaN(date.getTime());
     };
-    
-    const handleSubmit = async (status = "Submitted") => {
-        //e.preventDefault();
+    //const cleanGridData = (gridData) => {
+    //    if (!Array.isArray(gridData)) return gridData;
+
+    //    return gridData.map(row => {
+    //        const cleanedRow = {};
+    //        Object.keys(row).forEach(key => {
+    //            // Only include non-empty values or non-remark fields
+    //            if (!key.endsWith('_remarks') || (key.endsWith('_remarks') && row[key] && row[key].trim() !== '')) {
+    //                cleanedRow[key] = row[key];
+    //            }
+    //        });
+    //        return cleanedRow;
+    //    });
+    //};
+    const handleSubmit = async (e, status = "Submitted") => {
+        e.preventDefault(); // Always prevent native submit FIRST
 
         const validationErrors = status === "Submitted" ? validateForm() : {};
         setFormErrors(validationErrors);
@@ -1251,11 +1292,10 @@ export default function DynamicForm() {
             const submissionData = {
                 formId: formData.id,
                 submissionId: editingSubmissionId,
-                status,
-                submissionData: []
+                submissionData: [],
+                status
             };
 
-            // Find and collect form fields by type from formData
             const fieldTypes = {};
             formData.fields.forEach(field => {
                 fieldTypes[field.id] = field.type;
@@ -1265,31 +1305,29 @@ export default function DynamicForm() {
                 let fieldValue = formValues[fieldId];
                 const fieldType = fieldTypes[fieldId];
 
+                // CRITICAL: Clean DOM references before processing
+                if (fieldValue && typeof fieldValue === 'object' && 'nodeName' in fieldValue) {
+                    fieldValue = fieldValue.value || fieldValue.textContent || '';
+                }
+
                 if ((fieldType === 'grid' || fieldType === 'questionGrid') && Array.isArray(fieldValue)) {
-                    // Clean grid data before saving
                     fieldValue = JSON.stringify(cleanGridData(fieldValue));
                 } else if (Array.isArray(fieldValue)) {
-                    // For checkbox groups, join the selected values
                     fieldValue = fieldValue.join(",");
                 }
 
-                // Handle different field types
                 if (Array.isArray(fieldValue)) {
-                    // For checkbox groups, join the selected values
                     fieldValue = fieldValue.join(', ');
                 } else if (fieldTypes[fieldId] === 'date' && fieldValue) {
-                    // Format date values to ISO string for backend storage
                     if (fieldValue instanceof Date) {
                         const year = fieldValue.getFullYear();
                         const month = String(fieldValue.getMonth() + 1).padStart(2, '0');
                         const day = String(fieldValue.getDate()).padStart(2, '0');
                         fieldValue = `${year}-${month}-${day}`;
                     }
-                } else if (fieldValue === null || fieldValue === undefined) {
-                    // Handle null/undefined values
+                } else if (fieldValue === null || fieldValue === undefined || fieldValue === '') {
                     fieldValue = "";
                 } else {
-                    // Convert all other values to string
                     fieldValue = String(fieldValue);
                 }
 
@@ -1298,7 +1336,6 @@ export default function DynamicForm() {
                     fieldValue: fieldValue
                 });
 
-                // Add remarks as separate entries if present
                 if (remarks[fieldId] && remarks[fieldId].trim() !== "") {
                     submissionData.submissionData.push({
                         fieldLabel: `${fieldId} (Remark)`,
@@ -1308,35 +1345,32 @@ export default function DynamicForm() {
             });
 
             try {
-                console.log("Submitting JSON:", JSON.stringify(submissionData, null, 2));
+                const payload = JSON.stringify(submissionData); // Safe now
+                console.log("Submitting:", payload);
 
                 const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formData.id}/submit`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify(submissionData),
+                    headers: { "Content-Type": "application/json" },
+                    body: payload,
                 });
 
                 if (response.ok) {
                     const result = await response.json();
-                    console.log("Form submitted successfully:", result);
+                    console.log("Success:", result);
                     alert("Form submitted successfully!");
-
-                    // Optional: Reset form or redirect
-                    resetForm(); // You would need to implement this function
-                    // Or redirect: window.location.href = "/success";
+                    resetForm();
                 } else {
                     const errorText = await response.text();
-                    console.error("Submission failed:", errorText);
-                    alert("Error submitting form: " + errorText);
+                    console.error("Failed:", errorText);
+                    alert("Error: " + errorText);
                 }
             } catch (error) {
-                console.error("Request failed:", error);
+                console.error("Network error:", error);
                 alert("Network error. Please try again.");
             }
         }
     };
+
 
     const cleanGridData = (gridData) => {
         if (!Array.isArray(gridData)) return gridData;
@@ -2177,7 +2211,7 @@ export default function DynamicForm() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {getGridRows(field.id).map((row, rowIndex) => {
+                                    {(formValues[field.id] || []).map((row, rowIndex) => {
                                         // Auto-populate hidden/disabled columns before rendering
                                         (field.columns || []).forEach(col => {
                                             if (col.visible === false || col.disabled === true) {
@@ -2765,13 +2799,13 @@ export default function DynamicForm() {
                                                         <button
                                                             type="button"
                                                             onClick={() => removeGridRow(field.id, rowIndex)}
-                                                            disabled={getGridRows(field.id).length <= (field.min_rows || 0)}
-                                                            className={`${getGridRows(field.id).length <= (field.min_rows || 0)
+                                                            disabled={(formValues[field.id] || []).length <= (field.min_rows || 0)}
+                                                            className={`${(formValues[field.id] || []).length <= (field.min_rows || 0)
                                                                 ? 'text-gray-400 cursor-not-allowed'
                                                                 : 'text-red-500 hover:text-red-700'
                                                                 }`}
                                                             title={
-                                                                getGridRows(field.id).length <= (field.min_rows || 0)
+                                                                (formValues[field.id] || []).length <= (field.min_rows || 0)
                                                                     ? `Minimum ${field.min_rows} rows required`
                                                                     : 'Remove this row'
                                                             }
@@ -2786,14 +2820,14 @@ export default function DynamicForm() {
                                 </tbody>
                             </table>
                         </div>
-                        {getGridRows(field.id).length < (field.maxRows || Infinity) && (
+                        {(formValues[field.id] || []).length < (field.maxRows || Infinity) && (
                             <button
                                 type="button"
                                 onClick={() => addGridRow(field.id, field.columns)}
                                 className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded"
                                 title={`Add Row (${(formValues[field.id] || []).length}/${field.maxRows || '∞'})`}
                             >
-                                Add Row {field.maxRows ? `(${getGridRows(field.id).length}/${field.maxRows})` : ''}
+                                Add Row {field.maxRows ? `(${(formValues[field.id] || []).length}/${field.maxRows})` : ''}
                             </button>
                         )}
 
@@ -2902,7 +2936,7 @@ export default function DynamicForm() {
 
                                 {/* Data Rows */}
                                 <tbody>
-                                    {getGridRows(field.id).map((row, rowIndex) => (
+                                    {(formValues[field.id] || []).map((row, rowIndex) => (
                                         <tr key={rowIndex} className={`border-b border-gray-200 ${colorScheme.hover}`}>
                                             {field.columns.map((col, colIdx) => (
                                                 <td
@@ -3041,8 +3075,8 @@ export default function DynamicForm() {
                                                         onClick={() => removeGridRow(field.id, rowIndex)}
                                                         disabled={(formValues[field.id] || []).length <= (field.minRows || 1)}
                                                         className={`${(formValues[field.id] || []).length <= (field.minRows || 1)
-                                                                ? "text-gray-400 cursor-not-allowed"
-                                                                : "text-red-500 hover:text-red-700"
+                                                            ? "text-gray-400 cursor-not-allowed"
+                                                            : "text-red-500 hover:text-red-700"
                                                             } text-sm font-medium`}
                                                     >
                                                         Remove
@@ -3057,13 +3091,13 @@ export default function DynamicForm() {
 
                         {/* Add Question Button */}
                         {field.allowAddRows === true &&
-                           getGridRows(field.id).length < (field.maxRows || Infinity) && (
+                            (formValues[field.id] || []).length < (field.maxRows || Infinity) && (
                                 <button
                                     type="button"
                                     onClick={() => addGridRow(field.id, field.columns)}
                                     className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm"
                                 >
-                                Add Question ({getGridRows(field.id).length}/{field.maxRows || "∞"}
+                                    Add Question ({(formValues[field.id] || []).length}/{field.maxRows || "∞"})
                                 </button>
                             )}
 
@@ -3080,9 +3114,11 @@ export default function DynamicForm() {
     };
 
 
+
+
     const addGridRow = (fieldId, columns) => {
         const field = formData.fields.find(f => f.id === fieldId);
-        const currentRows = getGridRows(fieldId); // USE getGridRows instead of formValues[fieldId] || []
+        const currentRows = formValues[fieldId] || [];
 
         if (field.maxRows && currentRows.length >= field.maxRows) {
             alert(`Maximum ${field.maxRows} rows allowed`);
@@ -3116,10 +3152,9 @@ export default function DynamicForm() {
         }));
     };
 
-
     const removeGridRow = (fieldId, rowIndex) => {
         const field = formData.fields.find(f => f.id === fieldId);
-        const currentRows = getGridRows(fieldId); // USE getGridRows instead of formValues[fieldId] || []
+        const currentRows = formValues[fieldId] || [];
 
         // Check if min_rows limit would be violated
         if (field.min_rows && currentRows.length <= field.min_rows) {
@@ -3132,43 +3167,6 @@ export default function DynamicForm() {
             ...prev,
             [fieldId]: updatedRows
         }));
-    };
-
-
-    const loadDrafts = async () => {
-        const res = await fetch(
-            `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/drafts`
-        );
-        const data = await res.json();
-
-        console.log("DRAFT API RESPONSE:", data);
-
-        setDrafts(data);
-    };
-
-
-    const loadDraftIntoForm = async (submissionId) => {
-        const res = await fetch(
-            `${APP_CONSTANTS.API_BASE_URL}/api/forms/draft/${submissionId}`
-        );
-        const data = await res.json();
-
-        setEditingSubmissionId(data.id);
-
-        const values = {};
-        const remarksData = {};
-
-        data.submissionData.forEach(item => {
-            if (item.fieldLabel.endsWith("(Remark)")) {
-                const fieldId = item.fieldLabel.replace(" (Remark)", "");
-                remarksData[fieldId] = item.fieldValue;
-            } else {
-                values[item.fieldLabel] = item.fieldValue;
-            }
-        });
-
-        setFormValues(values);
-        setRemarks(remarksData);
     };
 
 
@@ -3288,7 +3286,6 @@ export default function DynamicForm() {
                             View Last 20 Submissions
                         </button>
                     </div>
-
                 </div>
             </form>
 
@@ -3423,7 +3420,7 @@ export default function DynamicForm() {
                                                         <button
                                                             className="text-blue-600 hover:underline"
                                                             onClick={() => {
-                                                                loadDraftIntoForm(draft.id);
+                                                                handleEditSubmission(draft.id);
                                                                 setIsModalOpen(false);
                                                             }}
                                                         >
@@ -3443,7 +3440,6 @@ export default function DynamicForm() {
                     </div>
                 </div>
             )}
-
 
 
         </div>

@@ -29,8 +29,8 @@ export default function EnhancedReportViewer() {
     const [maximizedChart, setMaximizedChart] = useState(null);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false); // Add this state
-    const [groupingConfig, setGroupingConfig] = useState([]);  // ADD THIS
-    const [isGrouped, setIsGrouped] = useState(true);         // ADD THIS
+    //const [groupingConfig, setGroupingConfig] = useState([]);  // ADD THIS
+    //const [isGrouped, setIsGrouped] = useState(true);         // ADD THIS
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -41,6 +41,8 @@ export default function EnhancedReportViewer() {
     const [isExporting, setIsExporting] = useState(false);
     const [showBlankRows, setShowBlankRows] = useState(false);
     const [showChart, setShowChart] = useState(true);
+
+    const [groupBySubmission, setGroupBySubmission] = useState(true);
 
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -188,9 +190,9 @@ export default function EnhancedReportViewer() {
                     });
                 }
 
-                const loadedGroupingConfig = res.data.groupingConfig || [];
-                setGroupingConfig(res.data.groupingConfig || []);
-                setIsGrouped((res.data.groupingConfig || []).length > 0);
+                //const loadedGroupingConfig = res.data.groupingConfig || [];
+                //setGroupingConfig(res.data.groupingConfig || []);
+                //setIsGrouped((res.data.groupingConfig || []).length > 0);
                 setChartConfigs(charts);
                 setLoading(false);
 
@@ -1018,14 +1020,14 @@ export default function EnhancedReportViewer() {
                 >
                     🎯 Dashboard
                 </button>
-                {groupingConfig.length > 0 && (
-                    <button
-                        onClick={() => setIsGrouped(!isGrouped)}
-                        className={isGrouped ? 'active' : ''}
-                    >
-                        🏷️ {isGrouped ? 'Grouped' : 'Flat'} View
-                    </button>
-                )}
+                {/*{groupingConfig.length > 0 && (*/}
+                {/*    <button*/}
+                {/*        onClick={() => setIsGrouped(!isGrouped)}*/}
+                {/*        className={isGrouped ? 'active' : ''}*/}
+                {/*    >*/}
+                {/*        🏷️ {isGrouped ? 'Grouped' : 'Flat'} View*/}
+                {/*    </button>*/}
+                {/*)}*/}
 
                 {displayMode === 'table' && (
                     <>
@@ -1053,20 +1055,12 @@ export default function EnhancedReportViewer() {
         console.log('📊 summaryRows from state:', summaryRows);
         console.log('📊 summaryRows.length:', summaryRows.length);
         console.log('filteredDataLength:', filteredReportData.length);
+        console.log('groupBySubmission:', groupBySubmission);
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        // Check if we have multiple rows per submission
-        const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
-        const hasMultipleRowsPerSubmission = filteredReportData.length > submissions.length;
-
-        console.log('Submissions:', submissions.length);
-        console.log('Total rows:', filteredReportData.length);
-        console.log('Has multiple rows per submission:', hasMultipleRowsPerSubmission);
-
-        // ✅ ALWAYS use aggregated view if multiple rows exist
-        if (hasMultipleRowsPerSubmission) {
-            console.log('🎯 Using AGGREGATED view (one row per submission)');
-            console.log('⚠️ WARNING: Aggregated view does NOT show summary rows!');
+        // Check if grouping is enabled
+        if (groupBySubmission) {
+            console.log('🎯 Using GROUPED view by Submission ID');
             return renderNewGroupedTable();
         }
 
@@ -1080,11 +1074,10 @@ export default function EnhancedReportViewer() {
     const renderNewGroupedTable = () => {
         const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
 
-        console.log('📊 RENDER NEW GROUPED TABLE');
+        console.log('📊 RENDER GROUPED TABLE BY SUBMISSION ID');
         console.log('Total submissions:', submissions.length);
         console.log('📊 summaryRows:', summaryRows);
 
-        // ✅ FILTER FOR VISIBLE FIELDS ONLY
         const visibleFields = selectedFields.filter(fieldId => {
             if (typeof fieldId === 'object') {
                 return fieldId.visible !== false;
@@ -1103,8 +1096,6 @@ export default function EnhancedReportViewer() {
         });
 
         console.log('Visible fields:', visibleFields.length);
-
-
 
         return (
             <>
@@ -1141,7 +1132,7 @@ export default function EnhancedReportViewer() {
                                             fontWeight: '600',
                                             position: 'sticky',
                                             top: 0,
-                                            zIndex: 100,  /* ✅ Keep at 100 */
+                                            zIndex: 100,
                                             boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                                         }}>
                                             {cleanedLabel}
@@ -1161,7 +1152,6 @@ export default function EnhancedReportViewer() {
                                         {visibleFields.map((fieldId, j) => {
                                             const field = fields.find(f => f.id === (fieldId.id || fieldId));
 
-                                            // 🔥 CHECK IF THIS IS A CALCULATED FIELD
                                             const isCalculatedField = field?.type === 'calculated' ||
                                                 calculatedFields.some(cf => cf.label === field?.label);
 
@@ -1183,7 +1173,7 @@ export default function EnhancedReportViewer() {
                                                 );
                                             }
 
-                                            // 🔥 REGULAR FIELDS: AGGREGATE
+                                            // Regular fields: aggregate by submission ID
                                             const rows = filteredReportData.filter(r => r.submissionId === subId);
                                             let displayValue = '—';
                                             let isTextField = false;
@@ -1194,7 +1184,7 @@ export default function EnhancedReportViewer() {
                                                     return cell?.value;
                                                 })
                                                 .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '');
-                                            
+
                                             const tooltipContent =
                                                 allValues.length > 1 ? (
                                                     isTextField ? (
@@ -1264,6 +1254,12 @@ export default function EnhancedReportViewer() {
 
                                             return (
                                                 <td
+                                                    key={j}
+                                                    style={{
+                                                        border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
+                                                        padding: '12px',
+                                                        maxWidth: '300px'
+                                                    }}
                                                     onMouseEnter={() => {
                                                         if (tooltipContent) {
                                                             setActiveTooltip(tooltipContent);
@@ -1274,8 +1270,6 @@ export default function EnhancedReportViewer() {
                                                     }}
                                                     onMouseLeave={() => setActiveTooltip(null)}
                                                 >
-
-
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         <span>{displayValue}</span>
 
@@ -1286,19 +1280,15 @@ export default function EnhancedReportViewer() {
                                                         )}
                                                     </div>
                                                 </td>
-
-                                               
-
                                             );
                                         })}
                                     </tr>
                                 );
                             })}
 
-                            {/* ✅ ADD SUMMARY ROWS SECTION */}
                             {summaryRows.length > 0 && (
                                 <>
-                                    {console.log('✅ Rendering summary rows in aggregated view:', summaryRows.length)}
+                                    {console.log('✅ Rendering summary rows in grouped view:', summaryRows.length)}
                                     <tr className="summary-divider">
                                         <td colSpan={visibleFields.length} className="summary-divider-cell">
                                             <div className="summary-divider-line">
@@ -1344,7 +1334,6 @@ export default function EnhancedReportViewer() {
                         {activeTooltip}
                     </div>
                 )}
-
             </>
         );
     };
@@ -2081,39 +2070,39 @@ export default function EnhancedReportViewer() {
             console.log('Full first row structure:', JSON.stringify(reportData[0], null, 2).substring(0, 500));
         }
 
-        if (isGrouped && groupingConfig.length > 0) {
-            console.log('🏷️ Processing with grouping...');
+        //if (isGrouped && groupingConfig.length > 0) {
+        //    console.log('🏷️ Processing with grouping...');
 
-            const { flattenedData } = processGroupedData(
-                reportData,
-                groupingConfig,
-                fields,
-                calculatedFields
-            );
+        //    const { flattenedData } = processGroupedData(
+        //        reportData,
+        //        groupingConfig,
+        //        fields,
+        //        calculatedFields
+        //    );
 
-            console.log('📊 Flattened data from grouping:', flattenedData);
+        //    console.log('📊 Flattened data from grouping:', flattenedData);
 
-            const withCalculations = applyRowLevelCalculations(
-                flattenedData,
-                calculatedFields,
-                fields
-            );
+        //    const withCalculations = applyRowLevelCalculations(
+        //        flattenedData,
+        //        calculatedFields,
+        //        fields
+        //    );
 
-            const finalData = withCalculations.map(row => ({
-                ...row,
-                data: [...(row.data || []), ...calculatedFields.map(calcField => {
-                    console.log(`🔥 CALCULATING: ${calcField.label}`);  // ← DEBUG
-                    const calculatedValue = evaluateCalculatedField(calcField, row.data || [], reportData, fields);
-                    return {
-                        fieldLabel: calcField.label,
-                        value: formatCalculatedValue(calculatedValue, calcField),
-                        fieldType: 'calculated'
-                    };
-                })]
-            }));
+        //    const finalData = withCalculations.map(row => ({
+        //        ...row,
+        //        data: [...(row.data || []), ...calculatedFields.map(calcField => {
+        //            console.log(`🔥 CALCULATING: ${calcField.label}`);  // ← DEBUG
+        //            const calculatedValue = evaluateCalculatedField(calcField, row.data || [], reportData, fields);
+        //            return {
+        //                fieldLabel: calcField.label,
+        //                value: formatCalculatedValue(calculatedValue, calcField),
+        //                fieldType: 'calculated'
+        //            };
+        //        })]
+        //    }));
 
-            return { processedData: finalData, summaryRows: [] };
-        }
+        //    return { processedData: finalData, summaryRows: [] };
+        //}
 
         if (!calculatedFields || calculatedFields.length === 0) {
             return {
