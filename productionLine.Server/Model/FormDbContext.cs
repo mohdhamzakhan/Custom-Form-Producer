@@ -14,6 +14,9 @@ namespace productionLine.Server.Model
         public DbSet<FormSubmissionData> FormSubmissionData { get; set; }
         public DbSet<FormApprover> FormApprovers { get; set; }
         public DbSet<FormAccess> FormAccess { get; set; }
+
+        public DbSet<FormSignature> FormSignatures { get; set; }
+        public DbSet<FormToAdd> FormToAdd { get; set; }
         public DbSet<FormApproval> FormApprovals { get; set; }
         public DbSet<Report> Reports { get; set; }
         public DbSet<ReportAccess> ReportAccesses { get; set; }

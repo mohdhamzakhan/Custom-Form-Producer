@@ -12,6 +12,7 @@ namespace productionLine.Server.DTO
         public List<FieldDto> Fields { get; set; } = new();
         public List<ApproverDto> Approvers { get; set; }
         public List<ApproverDto> allowedUsers { get; set; }
+        public List<ApproverDto> allowToAccess { get; set; }
     }
 
     public class ApproverDto

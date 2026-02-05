@@ -135,7 +135,7 @@ export default function FormSubmissionReport() {
 
             const data = await response.json();
 
-            console.log(data)
+            console.log("Submission Data", data)
             setSubmissions(data);
         } catch (err) {
             setError(err.message || "Failed to fetch pending approvals");
@@ -193,6 +193,8 @@ export default function FormSubmissionReport() {
 
     const groupSubmissionsBySubmissionId = () => {
         // For pending-only view, backend already returns one row per submission
+
+        console.log("Test", submissions);
         if (viewMode === "pendingOnly") {
             return submissions.map(s => ({
                 id: s.id,
@@ -318,7 +320,8 @@ export default function FormSubmissionReport() {
         const userGroups = user.slice(1);
 
         const matchingApprover = formApprovers.find(a =>
-            a.name === username || userGroups.includes(a.name)
+            a.name.toLowerCase() === username.toLowerCase() ||
+            userGroups.some(g => g.toLowerCase() === a.name.toLowerCase())
         );
         if (!matchingApprover) return false;
 
@@ -329,7 +332,7 @@ export default function FormSubmissionReport() {
         if (allApproved) return false;
 
         const hasAlreadyApproved = approvals.some(a =>
-            (a.approverName === username || userGroups.includes(a.approverName)) &&
+            (a.approverName.toLowerCase() === username.toLowerCase() || userGroups.includes(a.approverName)) &&
             a.status === "Approved"
         );
         if (hasAlreadyApproved) return false;

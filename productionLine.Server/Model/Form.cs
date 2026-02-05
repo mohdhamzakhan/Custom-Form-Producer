@@ -54,5 +54,8 @@ namespace productionLine.Server.Model
             get => string.IsNullOrEmpty(KeyFieldMappingsJson) ? null : JsonSerializer.Deserialize<List<KeyFieldMapping>>(KeyFieldMappingsJson);
             set => KeyFieldMappingsJson = JsonSerializer.Serialize(value);
         }
+
+        [Column("ALLOWEDTOACCESS")]
+        public List<FormToAdd> AllowedtoAccess { get; set; } = new List<FormToAdd>();
     }
 }

@@ -61,6 +61,11 @@ const FormBuilder = () => {
     const [accessSearchResults, setAccessSearchResults] = useState([]);
     const [showAccessConfig, setShowAccessConfig] = useState(false);
 
+    const [allowedtoAccess, setAllowedtoAccess] = useState([]);
+    const [accessFormSearchTerm, setAccessFormSearchTerm] = useState("");
+    const [accessFormSearchResults, setAccessFormSearchResults] = useState([]);
+    const [showFormAccessConfig, setShowFormAccessConfig] = useState(false);
+
 
     // Add this function to fetch linked form details
     // Replace your fetchLinkedFormDetails function with this safe version
@@ -264,6 +269,19 @@ const FormBuilder = () => {
         }
     }, [accessSearchTerm, searchAdDirectory]);
 
+    useEffect(() => {
+        if (accessFormSearchTerm.length >= 3) {
+            searchAdDirectory(accessFormSearchTerm).then(results => {
+                setAccessFormSearchResults(results || []);
+            });
+        } else {
+            setAccessFormSearchResults([]);
+        }
+    }, [accessFormSearchTerm, searchAdDirectory]);
+
+    useEffect(() => {
+        console.log("allowedtoAccess state:", allowedtoAccess);
+    }, [allowedtoAccess]);
 
     const fetchAvailableForms = async () => {
         setLoadingForms(true);
@@ -786,6 +804,7 @@ const FormBuilder = () => {
             setFormFields(sortedFields);
             setApprovers(data.approvers || []);
             setAllowedUsers(data.allowedUsers || []);
+            setAllowedtoAccess(data.allowToAccess || []);
             setLoading(false);
 
         } catch (error) {
@@ -931,6 +950,13 @@ const FormBuilder = () => {
 
                 // Process allowed users for access control
                 allowedUsers: allowedUsers.map((u) => ({
+                    adObjectId: u.id || u.adObjectId,
+                    name: u.name,
+                    email: u.email,
+                    type: u.type,
+                    formId: baseForm.id
+                })),
+                allowedtoAccess: allowedtoAccess.map((u) => ({
                     adObjectId: u.id || u.adObjectId,
                     name: u.name,
                     email: u.email,
@@ -1362,6 +1388,12 @@ const FormBuilder = () => {
                 imageFile: null,
                 maxFileSize: 5242880
             }),
+            ...(type === "signature" && {
+                signatureWidth: 400,
+                signatureHeight: 200,
+                penColor: "#000000",
+                backgroundColor: "#ffffff",
+            }),
             ...(type === "questionGrid" && {
                 columns: [
                     {
@@ -1444,8 +1476,30 @@ const FormBuilder = () => {
     };
 
     const removeAllowedUser = (index) => {
-        setAllowedUsers(allowedUsers.filter((_, i) => i !== index));
+        setAllowedUsers(prev =>
+            prev.filter((_, i) => i !== index)
+        );
     };
+
+    // Access control functions
+    const addAccessAllowedUser = (item) => {
+        if (allowedtoAccess.some(u => u.id === item.id)) {
+            alert("This user/group has already been added.");
+            return;
+        }
+        setAllowedtoAccess([...allowedtoAccess, item]);
+        setAccessFormSearchTerm("");
+        setAccessFormSearchResults([]);
+    };
+
+    const removeAccessAllowedUser = (index) => {
+        setAllowedtoAccess(prev =>
+            prev.filter((_, i) => i !== index)
+        );
+    };
+
+
+
 
     const getAllFormFieldsWithGridColumns = (fields) => {
         const allFields = [];
@@ -1841,7 +1895,7 @@ const FormBuilder = () => {
                                     <p className="text-xs text-gray-600 mb-3">
                                         Select fields that will be used to match records between forms. Grid columns are shown as "Grid Name  Column Name"
                                     </p>
-                                    {/* NO need to touch*/ }
+                                    {/* NO need to touch*/}
                                     <div className="space-y-2">
                                         {keyFields.map((keyField, index) => {
                                             // Get available fields for current form (including grid columns)
@@ -2242,9 +2296,105 @@ const FormBuilder = () => {
                         )}
                     </div>
 
+                    {/* Entry Control Section */}
+                    <div className="mb-6">
+                        <div
+                            className="flex items-center gap-2 cursor-pointer"
+                            onClick={() => setShowFormAccessConfig(!showFormAccessConfig)}
+                        >
+                            <h2 className="text-xl font-semibold">Who can do the entry in the Form</h2>
+                            {showFormAccessConfig ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
+
+                        {showFormAccessConfig && (
+                            <div className="bg-green-50 p-4 rounded border mt-2">
+                                <div className="mb-3 text-sm text-gray-700">
+                                    <strong>Note:</strong> Only users and groups added here will be able to access and fill out this form.
+                                    If no users are specified, the form will be accessible to everyone.
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-1">Search Users or Groups:</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={accessFormSearchTerm}
+                                            onChange={(e) => setAccessFormSearchTerm(e.target.value)}
+                                            placeholder="Search Active Directory for access control..."
+                                            className="w-full px-3 py-2 border rounded"
+                                        />
+                                        {accessFormSearchTerm.length >= 3 && accessFormSearchResults.length === 0 && (
+                                            <div className="absolute right-3 top-2 text-sm text-gray-500">No results</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {accessFormSearchResults.length > 0 && (
+                                    <div className="max-h-40 overflow-y-auto mb-4 border rounded bg-white">
+                                        {accessFormSearchResults.map(item => (
+                                            <div
+                                                key={item.id}
+                                                className="flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer"
+                                                onClick={() => addAccessAllowedUser(item)}
+                                            >
+                                                {item.type === 'user'
+                                                    ? <User size={16} className="text-blue-600" />
+                                                    : <Users size={16} className="text-blue-600" />
+                                                }
+                                                <div>
+                                                    <div className="font-medium">{item.name}</div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {item.type === 'user' ? item.email : `Group (${item.members?.length || 0} members)`}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="mt-4">
+                                    <h3 className="font-medium mb-2">Allowed Users & Groups:</h3>
+                                    {allowedtoAccess.length === 0 ? (
+                                        <div className="text-gray-500 italic p-3 bg-white rounded border">
+                                            No access restrictions set. Form will be accessible to all users.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {allowedtoAccess.map((user, index) => (
+                                                <div
+                                                    key={user.id || index}
+                                                    className="flex items-center justify-between p-3 bg-white rounded border"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {user.type === 'user'
+                                                            ? <User size={18} className="text-blue-600" />
+                                                            : <Users size={18} className="text-blue-600" />
+                                                        }
+                                                        <div>
+                                                            <div className="font-medium">{user.name}</div>
+                                                            <div className="text-xs text-gray-500">
+                                                                {user.type === 'user' ? user.email : 'Group'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeAccessAllowedUser(index)}
+                                                        className="text-red-500 hover:text-red-600"
+                                                    >
+                                                        <X size={18} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
 
                     <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
-                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid"].map(
+                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid","signature"].map(
                             (type) => (
                                 <button
                                     key={type}
@@ -2946,6 +3096,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <option value="timecalculation">Time Calculation</option>
                                         <option value="dependentDropdown">Dependent Dropdown</option>
                                         <option value="label">Label</option>
+                                        <option value="signature">Signature</option>
                                         {linkedForm && <option value="linkedTextbox">Linked Field</option>}
                                     </select>
                                 </div>
@@ -3080,8 +3231,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         </div>
                                     </div>
                                 )}
-
-
                                 {column.type === "dropdown" && (
                                     <div className="w-full mt-2">
                                         <label className="block text-xs text-gray-500 mb-1">Options (comma separated)</label>
@@ -3287,61 +3436,6 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         )}
                                     </div>
                                 )}
-
-                                {/*{column.type === "dependentDropdown" && (*/}
-                                {/*    <div className="w-full space-y-4">*/}
-                                {/*        <div>*/}
-                                {/*            <label className="block text-sm font-medium mb-1">Parent Column</label>*/}
-                                {/*            <select*/}
-                                {/*                value={column.parentColumn || ""}*/}
-                                {/*                onChange={(e) => {*/}
-                                {/*                    const updatedColumns = [...field.columns];*/}
-                                {/*                    updatedColumns[colIndex] = {*/}
-                                {/*                        ...updatedColumns[colIndex],*/}
-                                {/*                        parentColumn: e.target.value,*/}
-                                {/*                        dependentOptions: {}*/}
-                                {/*                    };*/}
-                                {/*                    updateField({ columns: updatedColumns });*/}
-                                {/*                }}*/}
-                                {/*                className="w-full border rounded p-2"*/}
-                                {/*            >*/}
-                                {/*                <option value="">Select Parent Column</option>*/}
-                                {/*                {field.columns*/}
-                                {/*                    .filter(c => c.type === "dropdown" && c.id !== column.id)*/}
-                                {/*                    .map(parentCol => (*/}
-                                {/*                        <option key={parentCol.id} value={parentCol.name}>*/}
-                                {/*                            {parentCol.name}*/}
-                                {/*                        </option>*/}
-                                {/*                    ))}*/}
-                                {/*            </select>*/}
-                                {/*        </div>*/}
-
-                                {/*        */}{/* Child options configuration */}
-                                {/*        {column.parentColumn && (*/}
-                                {/*            <div className="space-y-2">*/}
-                                {/*                {field.columns*/}
-                                {/*                    .find(c => c.name === column.parentColumn)*/}
-                                {/*                    ?.options?.map(parentOption => (*/}
-                                {/*                        <div key={parentOption} className="border p-2 rounded">*/}
-                                {/*                            <div className="font-medium mb-2">When {column.parentColumn} is "{parentOption}"</div>*/}
-                                {/*                            <textarea*/}
-                                {/*                                value={(column.dependentOptions?.[parentOption] || []).join(",")}*/}
-                                {/*                                onChange={(e) => {*/}
-                                {/*                                    const values = e.target.value.split(",").map(v => v.trim());*/}
-                                {/*                                    const updatedColumns = [...field.columns];*/}
-                                {/*                                    updatedColumns[colIndex].dependentOptions[parentOption] = values;*/}
-                                {/*                                    updateField({ columns: updatedColumns });*/}
-                                {/*                                }}*/}
-                                {/*                                placeholder="Enter comma-separated options"*/}
-                                {/*                                className="w-full border rounded p-2"*/}
-                                {/*                            />*/}
-                                {/*                        </div>*/}
-                                {/*                    ))}*/}
-                                {/*            </div>*/}
-                                {/*        )}*/}
-                                {/*    </div>*/}
-                                {/*)}*/}
-
                                 {column.type === "numeric" && (
                                     <div className="w-full grid grid-cols-3 gap-3 mt-2">
                                         <div>
@@ -3389,7 +3483,55 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         </div>
                                     </div>
                                 )}
-
+                                {column.type === "signature" && (
+                                    <div className="w-full space-y-2 mt-2">
+                                        <div className="flex gap-2">
+                                            <div className="w-1/3">
+                                                <label className="block text-xs text-gray-500 mb-1">Width (px)</label>
+                                                <input
+                                                    type="number"
+                                                    value={column.signatureWidth || 300}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[colIndex].signatureWidth = parseInt(e.target.value) || 300;
+                                                        updateField({ ...field, columns: updatedColumns });
+                                                    }}
+                                                    min="150"
+                                                    max="500"
+                                                    className="w-full px-2 py-1 border rounded text-xs"
+                                                />
+                                            </div>
+                                            <div className="w-1/3">
+                                                <label className="block text-xs text-gray-500 mb-1">Height (px)</label>
+                                                <input
+                                                    type="number"
+                                                    value={column.signatureHeight || 150}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[colIndex].signatureHeight = parseInt(e.target.value) || 150;
+                                                        updateField({ ...field, columns: updatedColumns });
+                                                    }}
+                                                    min="80"
+                                                    max="300"
+                                                    className="w-full px-2 py-1 border rounded text-xs"
+                                                />
+                                            </div>
+                                            <div className="w-1/3">
+                                                <label className="block text-xs text-gray-500 mb-1">Pen Color</label>
+                                                <input
+                                                    type="color"
+                                                    value={column.penColor || "#000000"}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[colIndex].penColor = e.target.value;
+                                                        updateField({ ...field, columns: updatedColumns });
+                                                    }}
+                                                    className="w-full h-8 border rounded"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 {column.type === "textbox" && (
                                     <div className="w-full space-y-2 mt-2">
                                         <div className="flex gap-2">
@@ -4059,6 +4201,71 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 </p>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {field.type === "signature" && (
+                <div className="mb-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Canvas Width (px)</label>
+                            <input
+                                type="number"
+                                value={field.signatureWidth || 400}
+                                onChange={(e) => updateField({ signatureWidth: parseInt(e.target.value) || 400 })}
+                                min="200"
+                                max="800"
+                                className="w-full px-2 py-1 border rounded"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Canvas Height (px)</label>
+                            <input
+                                type="number"
+                                value={field.signatureHeight || 200}
+                                onChange={(e) => updateField({ signatureHeight: parseInt(e.target.value) || 200 })}
+                                min="100"
+                                max="400"
+                                className="w-full px-2 py-1 border rounded"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Pen Color</label>
+                            <input
+                                type="color"
+                                value={field.penColor || "#000000"}
+                                onChange={(e) => updateField({ penColor: e.target.value })}
+                                className="w-full h-10 border rounded"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-gray-500 mb-1">Background Color</label>
+                            <input
+                                type="color"
+                                value={field.backgroundColor || "#ffffff"}
+                                onChange={(e) => updateField({ backgroundColor: e.target.value })}
+                                className="w-full h-10 border rounded"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="p-3 bg-gray-50 rounded border">
+                        <p className="text-xs text-gray-600 mb-2">Preview:</p>
+                        <div
+                            className="border-2 border-dashed rounded flex items-center justify-center text-gray-400"
+                            style={{
+                                width: `${field.signatureWidth || 400}px`,
+                                height: `${field.signatureHeight || 200}px`,
+                                backgroundColor: field.backgroundColor || "#ffffff",
+                                maxWidth: '100%'
+                            }}
+                        >
+                            Signature Canvas ({field.signatureWidth || 400} × {field.signatureHeight || 200})
+                        </div>
                     </div>
                 </div>
             )}

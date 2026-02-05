@@ -10,3 +10,6 @@ td {
   padding-left: 1rem;
   padding-right: 1rem;
 }
+.signature-canvas {
+    touch-action: none;
+}

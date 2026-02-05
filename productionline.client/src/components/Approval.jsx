@@ -64,12 +64,19 @@ export default function ApprovalPage() {
 
             // Find the user's approval level
             let approvalLevel = 1; // Default to level 1
-            if (submission?.form?.approvers) {
-                const userApprover = submission.form.approvers.find(a => a.name === user[0]);
+
+            if (submission?.form?.approvers?.length) {
+                const currentUser = (user?.[0] || "").toLowerCase();
+
+                const userApprover = submission.form.approvers.find(
+                    a => (a.name || "").toLowerCase() === currentUser
+                );
+
                 if (userApprover) {
                     approvalLevel = userApprover.level;
                 }
             }
+
 
             console.log(approvalLevel)
 
@@ -210,9 +217,39 @@ export default function ApprovalPage() {
         return Array.from(columnSet);
     };
 
+    const getStatusBadge = status => {
+        switch (status) {
+            case "Approved":
+                return "bg-green-100 text-green-700";
+            case "Rejected":
+                return "bg-red-100 text-red-700";
+            case "Pending":
+                return "bg-yellow-100 text-yellow-700";
+            default:
+                return "bg-gray-100 text-gray-600";
+        }
+    };
 
+    // ---------------------------
+    // Build approval lists
+    // ---------------------------
     const processedData = processSubmissionData();
     const previousApprovals = getSortedApprovals();
+
+    // ---------------------------
+    // Group by Approval Level
+    // ---------------------------
+    const groupedApprovals = Object.values(
+        previousApprovals.reduce((acc, item) => {
+            acc[item.approvalLevel] = acc[item.approvalLevel] || {
+                level: item.approvalLevel,
+                items: []
+            };
+            acc[item.approvalLevel].items.push(item);
+            return acc;
+        }, {})
+    );
+
 
     return (
         <Layout>
@@ -305,36 +342,59 @@ export default function ApprovalPage() {
                 </div>
 
                 {/* Previous Approvals Section */}
-                {previousApprovals.length > 0 && (
-                    <div className="mb-6 bg-gray-50 p-4 rounded border">
-                        <h3 className="text-lg font-semibold mb-2">Previous Approvals</h3>
+                {/* Previous Approvals Section */}
+                {groupedApprovals.length > 0 && (
+                    <div className="mb-6 rounded-lg border bg-gray-50 p-5">
+                        <h3 className="text-lg font-semibold mb-4">
+                            Previous Approvals
+                        </h3>
+
                         <div className="space-y-4">
-                            {previousApprovals.map((approval, index) => (
-                                <div key={index} className="p-3 border-l-4 border-gray-300 bg-white">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <p className="font-medium">
-                                                {approval.approverName}
-                                                <span className="text-sm text-gray-500 ml-2">
-                                                    (Level {approval.approvalLevel})
+                            {groupedApprovals.map(group => (
+                                <details key={group.level} className="rounded border bg-white">
+
+                                    <summary className="cursor-pointer px-4 py-3 flex justify-between items-center font-medium">
+                                        <span>Level {group.level}</span>
+                                        <span className="text-sm text-gray-500">
+                                            {group.items.length} record(s)
+                                        </span>
+                                    </summary>
+
+                                    <div className="p-4 space-y-3">
+                                        {group.items.map((approval, idx) => (
+                                            <div key={idx} className="rounded border p-3 bg-gray-50">
+
+                                                <div className="flex justify-between">
+                                                    <p className="font-semibold">
+                                                        {approval.approverName}
+                                                    </p>
+
+                                                    <p className="text-sm text-gray-500">
+                                                        {approval.approvedAt
+                                                            ? formatDate(approval.approvedAt)
+                                                            : "—"}
+                                                    </p>
+                                                </div>
+
+                                                <span
+                                                    className={`inline-block mt-1 rounded-full px-3 py-1 text-xs font-semibold ${getStatusBadge(
+                                                        approval.status
+                                                    )}`}
+                                                >
+                                                    {approval.status}
                                                 </span>
-                                            </p>
-                                            <p className={`font-bold ${getStatusColor(approval.status)}`}>
-                                                {approval.status}
-                                            </p>
-                                        </div>
-                                        <p className="text-sm text-gray-500">
-                                            {formatDate(approval.approvedAt)}
-                                        </p>
+
+                                                {approval.comments && (
+                                                    <p className="mt-2 text-sm text-gray-700">
+                                                        <span className="font-medium">Comments:</span>{" "}
+                                                        {approval.comments}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
-                                    {approval.comments && (
-                                        <div className="mt-2">
-                                            <p className="text-sm text-gray-700">
-                                                <span className="font-medium">Comments:</span> {approval.comments}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+
+                                </details>
                             ))}
                         </div>
                     </div>

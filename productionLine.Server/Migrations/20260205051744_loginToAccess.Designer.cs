@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260205051744_loginToAccess")]
+    partial class loginToAccess
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -386,43 +389,6 @@ namespace productionLine.Server.Migrations
                     b.HasIndex("FormId");
 
                     b.ToTable("FF_FORMFIELD");
-                });
-
-            modelBuilder.Entity("productionLine.Server.Model.FormSignature", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(19)")
-                        .HasColumnName("ID");
-
-                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("FieldLabel")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("FIELDLABEL");
-
-                    b.Property<int>("FormSubmissionId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("FORMSUBMISSIONID");
-
-                    b.Property<long>("FormSubmissionId1")
-                        .HasColumnType("NUMBER(19)");
-
-                    b.Property<string>("SignatureData")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("SIGNATUREDATA");
-
-                    b.Property<DateTime>("SignedAt")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("SIGNEDAT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FormSubmissionId1");
-
-                    b.ToTable("FF_FORMSIGNATURE");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormSubmission", b =>
@@ -1012,17 +978,6 @@ namespace productionLine.Server.Migrations
                         .IsRequired();
 
                     b.Navigation("Form");
-                });
-
-            modelBuilder.Entity("productionLine.Server.Model.FormSignature", b =>
-                {
-                    b.HasOne("productionLine.Server.Model.FormSubmission", "FormSubmission")
-                        .WithMany()
-                        .HasForeignKey("FormSubmissionId1")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FormSubmission");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.FormSubmission", b =>

@@ -232,12 +232,12 @@ namespace productionLine.Server.Controllers
             Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
                 .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
                 .Include((Form f) => f.AllowedUsers)
+                .Include((Form f) => f.AllowedtoAccess)
                 .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
             if (form == null)
             {
                 return NotFound("Form not found.");
             }
-
             FormDto formDto = new FormDto
             {
                 Id = form.Id,
@@ -263,6 +263,15 @@ namespace productionLine.Server.Controllers
                     Type = a.Type,
                     Level = a.Level
                 }).ToList() ?? new List<ApproverDto>()),
+                allowToAccess = (form.AllowedtoAccess?.Select((FormToAdd a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
                 Fields = form.Fields.Select((FormField f) => new FieldDto
                 {
                     Id = f.Id,
@@ -276,7 +285,22 @@ namespace productionLine.Server.Controllers
                     IsDecimal = f.Decimal,
                     Max = f.Max,
                     Min = f.Min,
-                    RequireRemarksOutOfRange = f.RequireRemarksOutOfRange ?? false,
+
+                    // Add these missing linked textbox properties:
+                    LinkedFormId = f.LinkedFormId,
+                    LinkedFieldId = f.LinkedFieldId,
+                    LinkedFieldType = f.LinkedFieldType,
+                    LinkedGridFieldId = f.LinkedGridFieldId,
+                    LinkedColumnId = f.LinkedColumnId,  // This is the key - map from database
+                    DisplayMode = f.DisplayMode,
+                    DisplayFormat = f.DisplayFormat,
+                    AllowManualEntry = f.AllowManualEntry,
+                    ShowLookupButton = f.ShowLookupButton,
+                    KeyFieldMappingsJson = f.KeyFieldMappingsJson,
+                    KeyFieldMappings = f.KeyFieldMappings,
+                    IMAGEOPTIONS = f.IMAGEOPTIONS,
+                    Order = f.Order,
+                    ImageData = f.IMAGEOPTIONS,
                     minLength = f.minLength,
                     maxLength = f.maxLength,
                     lengthValidationMessage = f.lengthValidationMessage,
@@ -285,25 +309,6 @@ namespace productionLine.Server.Controllers
                     DefaultRowsJson = f.DefaultRowsJson,
                     DefaultRows = f.DefaultRows,
 
-
-                    // Add these missing linked textbox properties:
-                    LinkedFormId = f.LinkedFormId,
-                    LinkedFieldId = f.LinkedFieldId,
-                    LinkedFieldType = f.LinkedFieldType,           // Missing
-                    LinkedGridFieldId = f.LinkedGridFieldId,       // Missing
-                    LinkedColumnId = f.LinkedColumnId,             // Missing
-                    DisplayMode = f.DisplayMode,                   // Missing
-                    DisplayFormat = f.DisplayFormat,               // Missing
-                    AllowManualEntry = f.AllowManualEntry,         // Missing
-                    ShowLookupButton = f.ShowLookupButton,         // Missing
-                    KeyFieldMappingsJson = f.KeyFieldMappingsJson, // Missing - use JSON version
-                    KeyFieldMappings = f.KeyFieldMappings,
-                    IMAGEOPTIONS = f.IMAGEOPTIONS,
-                    ImageData = f.IMAGEOPTIONS,
-                    Order = f.Order,
-                    
-                    
-                    
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
@@ -347,11 +352,12 @@ namespace productionLine.Server.Controllers
                         labelStyle = ct.labelStyle,
                         labelText = ct.labelText,
                         textAlign = ct.textAlign,
-                        lengthValidationMessage=ct.lengthValidationMessage,
-                        maxLength=ct.maxLength,
+                        lengthValidationMessage = ct.lengthValidationMessage,
+                        maxLength = ct.maxLength,
                         minLength = ct.minLength,
                         disabled = ct.disable,
                         visible = ct.visible
+
 
                     }).ToList() ?? new List<GridColumnDto>()),
 
@@ -363,12 +369,6 @@ namespace productionLine.Server.Controllers
                     FieldReferencesJson = f.FieldReferencesJson
                 }).ToList()
             };
-
-            foreach (var field in form.Fields.Where(f => f.Type == "image"))
-            {
-                Console.WriteLine($"Field {field.Id} IMAGEOPTIONS: {field.IMAGEOPTIONS}");
-            }
-
             return Ok(formDto);
         }
         [HttpPost("upload-image")]

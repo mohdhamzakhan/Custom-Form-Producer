@@ -4,6 +4,8 @@ import "react-datepicker/dist/react-datepicker.css";
 import { useParams } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
+import { useNavigate } from "react-router-dom";
+import SignatureCanvas from 'react-signature-canvas';
 
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
@@ -15,6 +17,7 @@ export default function DynamicForm() {
     const [submitted, setSubmitted] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [drafts, setDrafts] = useState([]);
+    const [rejected, setRejected] = useState([]);
     const [activeTab, setActiveTab] = useState("submitted");
     const [recentSubmissions, setRecentSubmissions] = useState([]);
     const [editingSubmissionId, setEditingSubmissionId] = useState(null);
@@ -26,7 +29,13 @@ export default function DynamicForm() {
     const [imageModalOpen, setImageModalOpen] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedImageName, setSelectedImageName] = useState('');
+    const [userNames, setUserNames] = useState([]);
     const isEditMode = useRef(false); // Add this new ref
+    const navigate = useNavigate();
+    const [showSignatureModal, setShowSignatureModal] = useState(false);
+    const [activeSignature, setActiveSignature] = useState(null);
+    const signaturePadRef = useRef(null);
+
 
     const keyFieldValues = useMemo(() => {
         if (!formData?.keyFieldMappings?.length) return {};
@@ -49,6 +58,56 @@ export default function DynamicForm() {
     const draftSubmissions = recentSubmissions.filter(
         s => s.status === "Draft"
     );
+
+    useEffect(() => {
+        console.log("🔐 Authorization check triggered");
+
+        if (!formData) return;
+
+        const allowedAccess = formData.allowToAccess || [];
+        console.log("allowToAccess:", allowedAccess);
+        console.log("userNames:", userNames);
+
+        // 🔐 If restricted & no user → redirect
+        if (allowedAccess.length > 0 && (!userNames || userNames.length === 0)) {
+            navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+            return;
+        }
+
+        // 🌐 If unrestricted → allow everyone
+        if (allowedAccess.length === 0) return;
+
+        const isAuthorized = userNames.some(u =>
+            allowedAccess.some(a =>
+                a.name?.toLowerCase() === u.toLowerCase()
+            )
+        );
+
+        if (!isAuthorized) {
+            alert("You are not authorized to access this form.");
+            navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        }
+
+    }, [formData, userNames, navigate]);
+    useEffect(() => {
+        if (showSignatureModal && activeSignature && signaturePadRef.current) {
+            // Wait for modal to render
+            setTimeout(() => {
+                const existing = formValues?.[activeSignature.fieldId]?.[activeSignature.rowIndex]?.[activeSignature.colName];
+
+                if (existing && signaturePadRef.current) {
+                    try {
+                        signaturePadRef.current.fromDataURL(existing);
+                    } catch (err) {
+                        console.error("Failed to load signature:", err);
+                        signaturePadRef.current.clear();
+                    }
+                } else if (signaturePadRef.current) {
+                    signaturePadRef.current.clear();
+                }
+            }, 100);
+        }
+    }, [showSignatureModal, activeSignature]);
 
     useEffect(() => {
         const fetchFormData = async () => {
@@ -179,6 +238,8 @@ export default function DynamicForm() {
 
                 await fetchRecentSubmissions();
                 await loadDrafts();
+                await loadRejected();
+
 
             } catch (err) {
                 setError(err.message || "Failed to fetch form data");
@@ -205,7 +266,7 @@ export default function DynamicForm() {
             // Prevent infinite loops
             if (updatingLinkedFields.current) return;
 
-            console.log('ðŸš€ loadLinkedDataAutomatically called');
+            console.log('loadLinkedDataAutomatically called');
 
             if (!formData?.linkedFormId || !formData?.keyFieldMappings?.length) {
                 return;
@@ -387,11 +448,13 @@ export default function DynamicForm() {
 
         const loadData = async () => {
             await loadDrafts();
+            await loadRejected();
             await fetchRecentSubmissions();
         };
 
         loadData();
     }, [isModalOpen]);
+
 
     const loadDrafts = async () => {
         const res = await fetch(
@@ -403,6 +466,18 @@ export default function DynamicForm() {
 
         setDrafts(data);
     };
+
+    const loadRejected = async () => {
+        const res = await fetch(
+            `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/rejected`
+        );
+        const data = await res.json();
+
+        console.log("DRAFT API RESPONSE:", data);
+
+        setRejected(data);
+    };
+
     const clearLinkedTextboxFields = () => {
         console.log('ðŸ§¹ Attempting to clear linked textbox fields');
 
@@ -1242,7 +1317,12 @@ export default function DynamicForm() {
                         `${field.label} must not exceed ${field.maxLength} characters`;
                 }
             }
-
+            // Add this check in the validateForm function
+            if (field.type === "signature" && field.required) {
+                if (!value || value === "") {
+                    errors[field.id] = `${field.label} is required`;
+                }
+            }
             // Remarks validation (as already handled)
             if (checkRemarkTriggers(field, value) && (!remarks[field.id] || remarks[field.id].trim() === "")) {
                 errors[`${field.id}_remark`] = "Remark is required for this value";
@@ -1282,94 +1362,114 @@ export default function DynamicForm() {
     //    });
     //};
     const handleSubmit = async (e, status = "Submitted") => {
-        e.preventDefault(); // Always prevent native submit FIRST
+        e.preventDefault();
 
         const validationErrors = status === "Submitted" ? validateForm() : {};
         setFormErrors(validationErrors);
         setSubmitted(true);
 
-        if (Object.keys(validationErrors).length === 0) {
-            const submissionData = {
-                formId: formData.id,
-                submissionId: editingSubmissionId,
-                submissionData: [],
-                status
-            };
+        if (Object.keys(validationErrors).length > 0) return;
 
-            const fieldTypes = {};
-            formData.fields.forEach(field => {
-                fieldTypes[field.id] = field.type;
-            });
+        const submissionData = {
+            formId: formData.id,
+            submissionId: editingSubmissionId,
+            submissionData: [],
+            status
+        };
 
-            Object.keys(formValues).forEach(fieldId => {
-                let fieldValue = formValues[fieldId];
-                const fieldType = fieldTypes[fieldId];
+        const fieldTypes = {};
+        formData.fields.forEach(field => {
+            fieldTypes[field.id] = field.type;
+        });
 
-                // CRITICAL: Clean DOM references before processing
-                if (fieldValue && typeof fieldValue === 'object' && 'nodeName' in fieldValue) {
-                    fieldValue = fieldValue.value || fieldValue.textContent || '';
-                }
+        Object.keys(formValues).forEach(fieldId => {
+            let fieldValue = formValues[fieldId];
+            const fieldType = fieldTypes[fieldId];
 
-                if ((fieldType === 'grid' || fieldType === 'questionGrid') && Array.isArray(fieldValue)) {
-                    fieldValue = JSON.stringify(cleanGridData(fieldValue));
-                } else if (Array.isArray(fieldValue)) {
-                    fieldValue = fieldValue.join(",");
-                }
+            // Clean DOM references
+            if (fieldValue && typeof fieldValue === "object" && "nodeName" in fieldValue) {
+                fieldValue = fieldValue.value || fieldValue.textContent;
+            }
 
+            // Process different field types
+            if (fieldType === "grid" || fieldType === "questionGrid") {
                 if (Array.isArray(fieldValue)) {
-                    fieldValue = fieldValue.join(', ');
-                } else if (fieldTypes[fieldId] === 'date' && fieldValue) {
-                    if (fieldValue instanceof Date) {
-                        const year = fieldValue.getFullYear();
-                        const month = String(fieldValue.getMonth() + 1).padStart(2, '0');
-                        const day = String(fieldValue.getDate()).padStart(2, '0');
-                        fieldValue = `${year}-${month}-${day}`;
-                    }
-                } else if (fieldValue === null || fieldValue === undefined || fieldValue === '') {
+                    fieldValue = JSON.stringify(cleanGridData(fieldValue));
+                }
+            } else if (Array.isArray(fieldValue)) {
+                fieldValue = fieldValue.join(", ");
+            } else if (fieldTypes[fieldId] === "date" && fieldValue) {
+                if (fieldValue instanceof Date) {
+                    const year = fieldValue.getFullYear();
+                    const month = String(fieldValue.getMonth() + 1).padStart(2, "0");
+                    const day = String(fieldValue.getDate()).padStart(2, "0");
+                    fieldValue = `${year}-${month}-${day}`;
+                } else if (fieldValue === null || fieldValue === undefined) {
                     fieldValue = "";
                 } else {
                     fieldValue = String(fieldValue);
                 }
+            }
 
-                submissionData.submissionData.push({
-                    fieldLabel: fieldId,
-                    fieldValue: fieldValue
-                });
-
-                if (remarks[fieldId] && remarks[fieldId].trim() !== "") {
-                    submissionData.submissionData.push({
-                        fieldLabel: `${fieldId} (Remark)`,
-                        fieldValue: remarks[fieldId]
-                    });
-                }
+            submissionData.submissionData.push({
+                fieldLabel: fieldId,
+                fieldValue: fieldValue
             });
 
-            try {
-                const payload = JSON.stringify(submissionData); // Safe now
-                console.log("Submitting:", payload);
-
-                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formData.id}/submit`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: payload,
+            if (remarks[fieldId] && remarks[fieldId].trim() !== "") {
+                submissionData.submissionData.push({
+                    fieldLabel: `${fieldId} Remark`,
+                    fieldValue: remarks[fieldId]
                 });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    console.log("Success:", result);
-                    alert("Form submitted successfully!");
-                    resetForm();
-                } else {
-                    const errorText = await response.text();
-                    console.error("Failed:", errorText);
-                    alert("Error: " + errorText);
-                }
-            } catch (error) {
-                console.error("Network error:", error);
-                alert("Network error. Please try again.");
             }
+        });
+
+        try {
+            const payload = JSON.stringify(submissionData);
+
+            // 🔍 DEBUG: Log everything before submitting
+            const url = `${APP_CONSTANTS.API_BASE_URL}/api/forms/${formData.id}/submit`;
+            console.log("=== SUBMIT DEBUG ===");
+            console.log("URL:", url);
+            console.log("Payload:", payload);
+            console.log("==================");
+
+            const response = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: payload,
+            });
+
+            // 🔍 DEBUG: Log response details
+            console.log("Response Status:", response.status);
+            console.log("Response OK:", response.ok);
+            console.log("Response Headers:", [...response.headers.entries()]);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("❌ Server Error:", errorText);
+                alert(`Error: ${errorText}`);
+                return;
+            }
+
+            const result = await response.json();
+            console.log("✅ Success:", result);
+            alert("Form submitted successfully!");
+            resetForm();
+
+        } catch (error) {
+            console.error("❌ Network Error:", error);
+            console.error("Error Name:", error.name);
+            console.error("Error Message:", error.message);
+            console.error("Error Stack:", error.stack);
+
+            // Better error message
+            alert(`Network error. Please check:\n1. Server is running at ${APP_CONSTANTS.API_BASE_URL}\n2. CORS is configured\n3. Check browser console for details`);
         }
     };
+
 
 
     const cleanGridData = (gridData) => {
@@ -1962,6 +2062,53 @@ export default function DynamicForm() {
                     </div>
                 );
 
+            case "signature":
+                return (
+                    <div className="mb-4 w-full">
+                        <label className="block text-gray-700 text-sm font-bold mb-2">
+                            {field.label}{" "}
+                            {field.required && <span className="text-red-500">*</span>}
+                        </label>
+                        <div className="border-2 border-gray-300 rounded">
+                            <SignatureCanvas
+                                ref={(ref) => {
+                                    if (!window.signaturePads) window.signaturePads = {};
+                                    window.signaturePads[field.id] = ref;
+                                }}
+                                canvasProps={{
+                                    width: field.signatureWidth || 400,
+                                    height: field.signatureHeight || 200,
+                                    className: 'signature-canvas',
+                                    style: { backgroundColor: field.backgroundColor || '#ffffff' }
+                                }}
+                                penColor={field.penColor || '#000000'}
+                                onEnd={() => {
+                                    const dataUrl = window.signaturePads[field.id]?.toDataURL();
+                                    if (dataUrl) {
+                                        handleInputChange(field.id, dataUrl, field.type, field);
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    window.signaturePads[field.id]?.clear();
+                                    handleInputChange(field.id, "", field.type, field);
+                                }}
+                                className="bg-gray-500 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded text-sm"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                        {formErrors[field.id] && (
+                            <p className="text-red-500 text-xs mt-1">
+                                {formErrors[field.id]}
+                            </p>
+                        )}
+                    </div>
+                );
 
             // In your input rendering, only add onBlur to bridge fields
             case "textbox":
@@ -2556,6 +2703,39 @@ export default function DynamicForm() {
                                                                 );
                                                             }
 
+                                                            if (col.type === "signature") {
+                                                                return (
+                                                                    <div className="flex flex-col items-center gap-1">
+                                                                        {row[col.name] ? (
+                                                                            <img
+                                                                                src={row[col.name]}
+                                                                                alt="signature"
+                                                                                className="h-16 border rounded"
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-gray-400 text-xs">No Signature</span>
+                                                                        )}
+
+                                                                        <button
+                                                                            type="button"
+                                                                            className="text-blue-600 text-xs underline"
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault(); // Prevent form submission
+                                                                                e.stopPropagation(); // Stop event bubbling
+                                                                                setActiveSignature({
+                                                                                    fieldId: field.id,
+                                                                                    rowIndex,
+                                                                                    colName: col.name
+                                                                                });
+                                                                                setShowSignatureModal(true);
+                                                                            }}
+                                                                        >
+                                                                            {row[col.name] ? "Edit" : "Sign"}
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            }
+
                                                             if (col.type === "checkbox") {
                                                                 // Handle boolean checkbox (single true/false value)
                                                                 if (!col.options || col.options.length === 0) {
@@ -3011,6 +3191,39 @@ export default function DynamicForm() {
                                                         />
                                                     )}
 
+                                                    {col.type === "signature" && (
+                                                        <div className="flex flex-col items-center gap-1">
+
+                                                            {row[col.name] ? (
+                                                                <img
+                                                                    src={row[col.name]}
+                                                                    alt="signature"
+                                                                    className="h-16 border rounded"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-gray-400 text-xs">No Signature</span>
+                                                            )}
+
+                                                            <button
+                                                                type="button"
+                                                                className="text-blue-600 text-xs underline"
+                                                                onClick={() => {
+                                                                    setActiveSignature({
+                                                                        fieldId: field.id,
+                                                                        rowIndex,
+                                                                        colName: col.name
+                                                                    });
+                                                                    setShowSignatureModal(true);
+                                                                }}
+                                                            >
+                                                                {row[col.name] ? "Edit" : "Sign"}
+                                                            </button>
+
+                                                        </div>
+                                                    )}
+
+
+
                                                     {/* DROPDOWN COLUMN */}
                                                     {col.type === "dropdown" && (
                                                         <select
@@ -3329,6 +3542,17 @@ export default function DynamicForm() {
                             >
                                 Drafts
                             </button>
+
+                            <button
+                                onClick={() => setActiveTab("rejected")}
+                                className={`py-2 px-4 font-medium border-b-2 transition
+                        ${activeTab === "rejected"
+                                        ? "border-blue-600 text-blue-600"
+                                        : "border-transparent text-gray-500 hover:text-gray-700"}
+                    `}
+                            >
+                                Rejected
+                            </button>
                         </div>
 
                         {/* Content */}
@@ -3436,11 +3660,116 @@ export default function DynamicForm() {
                                 )
                             )}
 
+                            {/* ---------------- Rejected TAB ---------------- */}
+                            {activeTab === "rejected" && (
+                                rejected.length > 0 ? (
+                                    <table className="min-w-full border border-gray-300">
+                                        <thead>
+                                            <tr>
+                                                <th className="py-2 px-4 border-b">Draft ID</th>
+                                                <th className="py-2 px-4 border-b">Last Saved</th>
+                                                <th className="py-2 px-4 border-b">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rejected.map(rejected => (
+                                                <tr key={rejected.id}>
+                                                    <td className="py-2 px-4 border-b">{rejected.id}</td>
+                                                    <td className="py-2 px-4 border-b">
+                                                        {new Date(rejected.submittedAt).toLocaleString()}
+                                                    </td>
+                                                    <td className="py-2 px-4 border-b">
+                                                        <button
+                                                            className="text-blue-600 hover:underline"
+                                                            onClick={() => {
+                                                                handleEditSubmission(rejected.id);
+                                                                setIsModalOpen(false);
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                ) : (
+                                        <p className="text-gray-500 text-center">No rejected available.</p>
+                                )
+                            )}
+
                         </div>
                     </div>
                 </div>
             )}
 
+            {showSignatureModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+
+                    <div className="bg-white rounded-lg p-4 w-[400px]">
+
+                        <h2 className="text-lg font-semibold mb-2">
+                            Sign Below
+                        </h2>
+
+                        <div className="border">
+
+                            <SignatureCanvas
+                                ref={signaturePadRef}
+                                penColor="black"
+                                canvasProps={{
+                                    width: 360,
+                                    height: 180,
+                                    className: "w-full"
+                                }}
+                            />
+
+                        </div>
+
+                        <div className="flex justify-between mt-3">
+
+                            <button
+                                onClick={() => signaturePadRef.current.clear()}
+                                className="text-gray-600"
+                            >
+                                Clear
+                            </button>
+
+                            <div className="flex gap-2">
+
+                                <button
+                                    onClick={() => setShowSignatureModal(false)}
+                                    className="px-3 py-1 border rounded"
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        const dataUrl =
+                                            signaturePadRef.current.toDataURL();
+
+                                        handleGridChange(
+                                            activeSignature.fieldId,
+                                            activeSignature.rowIndex,
+                                            activeSignature.colName,
+                                            dataUrl
+                                        );
+
+                                        setShowSignatureModal(false);
+                                    }}
+                                    className="px-3 py-1 bg-blue-600 text-white rounded"
+                                >
+                                    Save
+                                </button>
+
+                            </div>
+
+                        </div>
+                    </div>
+
+                </div>
+            )}
 
         </div>
     );

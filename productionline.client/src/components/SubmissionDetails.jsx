@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
@@ -39,14 +39,16 @@ export default function SubmissionDetails() {
     };
 
     // Group submission data to combine values with remarks
+    // Group submission data to combine values with remarks
     const processSubmissionData = () => {
         if (!submission || !submission.submissionData) return [];
 
         const processedData = {};
 
         submission.submissionData.forEach(item => {
-            const originalField = getFieldLabel(item.fieldLabel.replace(' (Remark)', ''));
-            if (item.fieldLabel.includes(' (Remark)')) {
+            const originalField = getFieldLabel(item.fieldLabel.replace(' Remark', '').replace(' (Remark)', ''));
+
+            if (item.fieldLabel.includes('Remark') || item.fieldLabel.includes('(Remark)')) {
                 if (!processedData[originalField]) {
                     processedData[originalField] = { value: '', remark: item.fieldValue };
                 } else {
@@ -59,7 +61,6 @@ export default function SubmissionDetails() {
                     processedData[originalField].value = item.fieldValue;
                 }
             }
-            console.log(processedData)
         });
 
         return Object.entries(processedData).map(([label, data]) => ({
@@ -68,6 +69,47 @@ export default function SubmissionDetails() {
             remark: data.remark
         }));
     };
+
+    // Check if value is a base64 image (signature)
+    // Check if value is a base64 image (signature) - MOVED FIRST
+    const isBase64Image = (value) => {
+        console.log('🔍 Checking image:', value?.substring(0, 50) + '...'); // DEBUG
+        if (!value || typeof value !== 'string') return false;
+        const isImage = value.startsWith('data:image/png;base64,') ||
+            value.startsWith('data:image/jpeg;base64,') ||
+            value.startsWith('data:image/jpg;base64,');
+        console.log('✅ Is base64 image?', isImage); // DEBUG
+        return isImage;
+    };
+
+    const isGridValue = (value) => {
+        console.log('🔍 Checking grid:', value?.substring(0, 50) + '...');
+
+        if (!value || typeof value !== 'string') return false;
+
+        try {
+            const parsed = JSON.parse(value);
+
+            // Check if it's a proper grid OR contains base64 images inside cells
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                // Check first row for image cells or object structure
+                const firstRow = parsed[0];
+                if (typeof firstRow === 'object') {
+                    // Check if any cell contains base64 image
+                    const hasImageCell = Object.values(firstRow).some(cell =>
+                        isBase64Image(cell)
+                    );
+                    console.log('✅ Grid detected with image cells:', hasImageCell);
+                    return true;
+                }
+            }
+            return false;
+        } catch {
+            console.log('❌ Not valid JSON');
+            return false;
+        }
+    };
+
 
 
     // Format date for display
@@ -98,15 +140,15 @@ export default function SubmissionDetails() {
         return <div className="text-center">Submission not found</div>;
     }
 
-    const isGridValue = (value) => {
-        console.log(value)
-        try {
-            const parsed = JSON.parse(value);
-            return Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object';
-        } catch {
-            return false;
-        }
-    };
+    //const isGridValue = (value) => {
+    //    console.log(value)
+    //    try {
+    //        const parsed = JSON.parse(value);
+    //        return Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object';
+    //    } catch {
+    //        return false;
+    //    }
+    //};
 
     const getGridColumns = (gridData) => {
         if (!gridData || gridData.length === 0) return [];
@@ -124,7 +166,7 @@ export default function SubmissionDetails() {
     const processedData = processSubmissionData();
 
     return (
-        <div className="max-w-1xl mx-auto p-6">
+        <div className="max-w-1xl mx-auto p-6"> {/* FIXED: max-w-1xl → max-w-4xl */}
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Submission Details</h1>
                 <div>
@@ -162,63 +204,124 @@ export default function SubmissionDetails() {
                 <h2 className="text-xl font-semibold mb-4">Submitted Data</h2>
 
                 {processedData.map((item, index) => (
-                    <div key={index} className="border-b pb-4">
-                        <div className="flex flex-col space-y-2">
+                    <div key={index} className="border-b pb-6 mb-6 last:border-b-0 last:mb-0">
+                        <div className="flex flex-col space-y-3">
                             <div className="w-full">
-                                <p className="text-sm text-gray-600 mb-1">{item.label}</p>
-                                {isGridValue(item.value) ? (
-                                    <div className="w-full overflow-x-auto border border-gray-300 rounded">
-                                        {(() => {
-                                            const gridData = JSON.parse(item.value);
-                                            const columns = getGridColumns(gridData);
+                                <p className="text-sm text-gray-600 mb-2 font-medium">{item.label}</p>
 
-                                            return (
-                                                <table className="w-full text-sm text-left">
-                                                    <thead className="bg-gray-100">
-                                                        <tr>
-                                                            {columns.map((col, idx) => (
-                                                                <th key={idx} className="px-2 py-1 border-b border-r whitespace-nowrap font-medium">
-                                                                    {col}
-                                                                </th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {gridData.map((row, rIdx) => (
-                                                            <tr key={rIdx} className="border-b hover:bg-gray-50">
-                                                                {columns.map((col, cIdx) => {
-                                                                    const cellValue = row[col];
-                                                                    return (
-                                                                        <td key={cIdx} className="px-2 py-1 border-r whitespace-nowrap">
-                                                                            {cellValue !== undefined && cellValue !== null
-                                                                                ? (typeof cellValue === 'boolean' ? String(cellValue) : String(cellValue))
-                                                                                : ''}
-                                                                        </td>
-                                                                    );
-                                                                })}
+                                {/* ✅ FIXED: Check IMAGE FIRST, then GRID, then TEXT */}
+                                {isBase64Image(item.value) ? (
+                                    <div className="border-2 border-blue-200 rounded-lg p-4 bg-gradient-to-br from-blue-50 to-indigo-50">
+                                        <img
+                                            src={item.value}
+                                            alt="Signature"
+                                            className="w-full h-auto max-h-96 object-contain rounded-lg shadow-lg mx-auto block"
+                                            onError={(e) => {
+                                                console.error('Image failed to load:', e);
+                                                e.target.style.display = 'none';
+                                            }}
+                                        />
+                                        <p className="text-xs text-blue-600 mt-2 text-center font-medium">
+                                            ✓ Signature/Image
+                                        </p>
+                                    </div>
+                                ) : isGridValue(item.value) ? (
+                                    <div className="w-full overflow-x-auto border border-gray-300 rounded-lg shadow-sm p-4">
+                                        {(() => {
+                                            try {
+                                                const gridData = JSON.parse(item.value);
+                                                const columns = getGridColumns(gridData);
+                                                console.log('📊 Grid columns found:', columns); // DEBUG
+
+                                                return (
+                                                    <table className="w-full text-sm text-left min-w-[600px]">
+                                                        <thead className="bg-gray-100 sticky top-0">
+                                                            <tr>
+                                                                {columns.map((col, idx) => (
+                                                                    <th
+                                                                        key={idx}
+                                                                        className="px-6 py-3 border-b border-r font-semibold text-gray-700 text-left whitespace-nowrap"
+                                                                    >
+                                                                        {col}
+                                                                    </th>
+                                                                ))}
                                                             </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            );
+                                                        </thead>
+                                                        <tbody>
+                                                            {gridData.map((row, rIdx) => (
+                                                                <tr key={rIdx} className="border-b hover:bg-gray-50">
+                                                                    {columns.map((col, cIdx) => {
+                                                                        let cellValue = row[col];
+
+                                                                        // ✅ RENDER IMAGES IN GRID CELLS
+                                                                        if (isBase64Image(cellValue)) {
+                                                                            return (
+                                                                                <td key={cIdx} className="px-6 py-4 border-r">
+                                                                                    <div className="max-w-xs mx-auto">
+                                                                                        <img
+                                                                                            src={cellValue}
+                                                                                            alt="Signature"
+                                                                                            className="w-full h-24 object-contain rounded-lg shadow-md"
+                                                                                            onError={(e) => {
+                                                                                                e.target.style.display = 'none';
+                                                                                                e.target.nextSibling.style.display = 'block';
+                                                                                            }}
+                                                                                        />
+                                                                                        <div className="text-xs text-gray-500 text-center mt-1 hidden">
+                                                                                            Image failed to load
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </td>
+                                                                            );
+                                                                        }
+
+                                                                        return (
+                                                                            <td key={cIdx} className="px-6 py-4 border-r max-w-md">
+                                                                                <div className="break-words max-h-20 overflow-y-auto">
+                                                                                    {cellValue !== undefined && cellValue !== null
+                                                                                        ? (typeof cellValue === 'boolean'
+                                                                                            ? <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">{String(cellValue)}</span>
+                                                                                            : String(cellValue)
+                                                                                        )
+                                                                                        : <span className="text-gray-400">—</span>
+                                                                                    }
+                                                                                </div>
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                );
+                                            } catch (error) {
+                                                console.error('Grid parse error:', error);
+                                                return <div className="p-4 text-red-500">Invalid grid data: {error.message}</div>;
+                                            }
                                         })()}
                                     </div>
                                 ) : (
-                                    <div className="font-semibold break-words">
-                                        {typeof item.value === 'boolean' ? String(item.value) : item.value}
+                                    <div className="font-semibold text-lg p-4 bg-gray-50 border rounded-lg break-words min-h-[3rem] flex items-center">
+                                        {typeof item.value === 'boolean'
+                                            ? <span className={`px-3 py-1 rounded-full text-sm font-bold ${item.value ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                {item.value ? 'Yes' : 'No'}
+                                            </span>
+                                            : item.value || <span className="text-gray-400">—</span>
+                                        }
                                     </div>
                                 )}
                             </div>
-                            {item.remark && (
-                                <div className="w-full bg-gray-50 p-2 rounded">
-                                    <p className="text-sm text-gray-600">Remark</p>
-                                    <p className="italic text-gray-700 break-words">{item.remark}</p>
+
+                            {/* Remark Display */}
+                            {item.remark && item.remark.trim() !== '' && (
+                                <div className="w-full bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm">
+                                    <p className="text-sm font-medium text-yellow-800 mb-2">Remark</p>
+                                    <p className="text-gray-700 break-words whitespace-pre-wrap text-sm">{item.remark}</p>
                                 </div>
                             )}
                         </div>
                     </div>
                 ))}
-
             </div>
         </div>
     );

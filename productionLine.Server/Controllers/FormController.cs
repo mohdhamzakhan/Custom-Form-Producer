@@ -1,8 +1,6 @@
-﻿using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using productionLine.Server.DTO;
 using productionLine.Server.Model;
 using System.DirectoryServices.AccountManagement;
@@ -16,10 +14,12 @@ namespace productionLine.Server.Controllers
     [ApiController]
     public class FormController : ControllerBase
     {
+        private readonly IMemoryCache _cache;
         private readonly FormDbContext _context;
-        public FormController(FormDbContext context)
+        public FormController(FormDbContext context, IMemoryCache cache)
         {
             _context = context;
+            _cache = cache;
         }
 
         [HttpGet]
@@ -148,6 +148,7 @@ namespace productionLine.Server.Controllers
                 .ThenInclude((FormField f) => f.RemarkTriggers)
                 .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
                 .Include((Form f) => f.AllowedUsers.OrderBy((FormAccess a) => a.Name))
+                .Include((Form f) => f.AllowedtoAccess.OrderBy((FormToAdd a) => a.Name))
                 .FirstOrDefaultAsync((Form f) => f.Id == id);
             if (existingForm == null)
             {
@@ -283,37 +284,51 @@ namespace productionLine.Server.Controllers
                 };
                 _context.FormFields.Add(newField);
             }
-            _context.FormApprovers.RemoveRange(existingForm.Approvers);
-            foreach (FormApprover approver in form.Approvers)
+            // -----------------------------
+            // Update Approvers
+            // -----------------------------
+
+            var existingApprovers = existingForm.Approvers.ToList();
+            _context.FormApprovers.RemoveRange(existingApprovers);
+
+            foreach (var approver in form.Approvers)
             {
-                FormApprover formApprover = new FormApprover
+                var formApprover = new FormApprover
                 {
                     AdObjectId = approver.AdObjectId,
                     Email = approver.Email,
-                    Form = approver.Form,
                     FormId = id,
                     Level = approver.Level,
                     Name = approver.Name,
                     Type = approver.Type
                 };
+
                 _context.FormApprovers.Add(formApprover);
             }
-            _context.FormAccess.RemoveRange(existingForm.AllowedUsers);
 
-            foreach (FormAccess access in form.AllowedUsers)
+
+            // -----------------------------
+            // Update Allowed Users (Access)
+            // -----------------------------
+
+            var existingAllowedUsers = existingForm.AllowedtoAccess.ToList();
+            _context.FormToAdd.RemoveRange(existingAllowedUsers);
+
+            foreach (var user in form.AllowedtoAccess)
             {
-                FormAccess formAccess = new FormAccess
+                var formAccess = new FormToAdd
                 {
-                    AdObjectId = access.AdObjectId,
-                    Email = access.Email,
-                    Form = access.Form,
+                    AdObjectId = user.AdObjectId,
+                    Email = user.Email,
                     FormId = id,
-                    Level = access.Level,
-                    Name = access.Name,
-                    Type = access.Type
+                    Level = user.Level,
+                    Name = user.Name,
+                    Type = user.Type
                 };
-                _context.FormAccess.Add(formAccess);
+
+                _context.FormToAdd.Add(formAccess);
             }
+
             try
             {
                 await _context.SaveChangesAsync();
@@ -354,6 +369,7 @@ namespace productionLine.Server.Controllers
             Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
                 .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
                 .Include((Form f) => f.AllowedUsers)
+                .Include((Form f) => f.AllowedtoAccess)
                 .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
             if (form == null)
             {
@@ -376,6 +392,15 @@ namespace productionLine.Server.Controllers
                     Level = a.Level
                 }).ToList() ?? new List<ApproverDto>()),
                 allowedUsers = (form.AllowedUsers?.Select((FormAccess a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
+                allowToAccess = (form.AllowedtoAccess?.Select((FormToAdd a) => new ApproverDto
                 {
                     Id = a.Id,
                     AdObjectId = a.AdObjectId,
@@ -489,22 +514,24 @@ namespace productionLine.Server.Controllers
     int formId,
     [FromBody] FormSubmissionDTO submissionDTO)
         {
-            if (formId != submissionDTO.FormId)
-                return BadRequest("Form ID in URL does not match the one in submission data");
-
-            if (submissionDTO.SubmissionData == null || !submissionDTO.SubmissionData.Any())
-                return BadRequest("No form data provided");
-
-            // =========================
-            // SAFE SUBMITTED DATE LOGIC
-            // =========================
-            DateTime submittedAt = DateTime.Now;
-
-            //Console.WriteLine("SubmittedAt Raw Value: " + submissionDTO.SubmittedAt);
-            if (!string.IsNullOrWhiteSpace(submissionDTO.SubmittedAt))
+            try
             {
-                var formats = new[]
-{
+                if (formId != submissionDTO.FormId)
+                    return BadRequest("Form ID in URL does not match the one in submission data");
+
+                if (submissionDTO.SubmissionData == null || !submissionDTO.SubmissionData.Any())
+                    return BadRequest("No form data provided");
+
+                // =========================
+                // SAFE SUBMITTED DATE LOGIC
+                // =========================
+                DateTime submittedAt = DateTime.Now;
+
+                //Console.WriteLine("SubmittedAt Raw Value: " + submissionDTO.SubmittedAt);
+                if (!string.IsNullOrWhiteSpace(submissionDTO.SubmittedAt))
+                {
+                    var formats = new[]
+    {
     // =========================
     // ISO 8601 (BEST / STANDARD)
     // =========================
@@ -558,111 +585,202 @@ namespace productionLine.Server.Controllers
     "HH:mm"
 };
 
-                DateTime parsed;
-                if (DateTime.TryParseExact(
-                    submissionDTO.SubmittedAt.Trim(),
-        formats,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out parsed))
-                {
-                    submittedAt = parsed;
-                }
-            }
-
-
-            Form form = await _context.Forms
-                .Include(f => f.Approvers.OrderBy(a => a.Level))
-                .FirstOrDefaultAsync(f => f.Id == formId);
-
-            if (form == null)
-                return NotFound("Form not found");
-
-            FormSubmission formSubmission;
-
-            if (submissionDTO.SubmissionId.HasValue && submissionDTO.SubmissionId.Value > 0)
-            {
-                formSubmission = await _context.FormSubmissions
-                    .Include(s => s.SubmissionData)
-                    .Include(s => s.Approvals)
-                    .FirstOrDefaultAsync(s => s.Id == submissionDTO.SubmissionId.Value);
-
-                if (formSubmission == null)
-                    return NotFound("Submission not found");
-
-                _context.FormSubmissionData.RemoveRange(formSubmission.SubmissionData);
-                _context.FormApprovals.RemoveRange(formSubmission.Approvals);
-
-                formSubmission.SubmittedAt = submittedAt;
-                formSubmission.SubmissionData = new List<FormSubmissionData>();
-                formSubmission.Approvals = new List<FormApproval>();
-                formSubmission.Status = submissionDTO.Status ?? "Submitted";
-            }
-            else
-            {
-                formSubmission = new FormSubmission
-                {
-                    FormId = formId,
-                    SubmittedAt = submittedAt,
-                    SubmissionData = new List<FormSubmissionData>(),
-                    Approvals = new List<FormApproval>(),
-                    Status = submissionDTO.Status ?? "Submitted"
-                };
-
-                _context.FormSubmissions.Add(formSubmission);
-            }
-
-            foreach (var data in submissionDTO.SubmissionData)
-            {
-                formSubmission.SubmissionData.Add(new FormSubmissionData
-                {
-                    FieldLabel = data.FieldLabel,
-                    FieldValue = data.FieldValue
-                });
-            }
-
-            await _context.SaveChangesAsync();
-            if (formSubmission.Status == "Submitted")
-            {
-
-                if (form.Approvers == null || !form.Approvers.Any())
-                {
-                    formSubmission.Approvals.Add(new FormApproval
+                    DateTime parsed;
+                    if (DateTime.TryParseExact(
+                        submissionDTO.SubmittedAt.Trim(),
+            formats,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.None,
+                        out parsed))
                     {
-                        FormSubmissionId = formSubmission.Id,
-                        ApprovalLevel = 0,
-                        ApproverId = 0,
-                        ApproverName = "System Approval",
-                        Status = "Approved",
-                        Comments = "Auto Approved",
-                        ApprovedAt = DateTime.Now
-                    });
+                        submittedAt = parsed;
+                    }
+                }
+
+
+                Form form = await _context.Forms
+                    .Include(f => f.Approvers.OrderBy(a => a.Level))
+                    .FirstOrDefaultAsync(f => f.Id == formId);
+
+                if (form == null)
+                    return NotFound("Form not found");
+
+                FormSubmission formSubmission;
+
+                if (submissionDTO.SubmissionId.HasValue && submissionDTO.SubmissionId.Value > 0)
+                {
+                    formSubmission = await _context.FormSubmissions
+                        .Include(s => s.SubmissionData)
+                        .Include(s => s.Approvals)
+                        .FirstOrDefaultAsync(s => s.Id == submissionDTO.SubmissionId.Value);
+
+                    if (formSubmission == null)
+                        return NotFound("Submission not found");
+
+                    _context.FormSubmissionData.RemoveRange(formSubmission.SubmissionData);
+                    //_context.FormApprovals.RemoveRange(formSubmission.Approvals);
+
+                    formSubmission.SubmittedAt = submittedAt;
+                    formSubmission.SubmissionData = new List<FormSubmissionData>();
+                    var survivors = formSubmission.Approvals
+                        .Where(a => a.Status == "Approved" || a.Status == "Rejected")
+                        .ToList();
+
+                    var pendings = formSubmission.Approvals
+                        .Where(a => a.Status == "Pending")
+                        .ToList();
+
+                    _context.FormApprovals.RemoveRange(pendings);
+
+                    formSubmission.Approvals.Clear();
+
+                    foreach (var a in survivors)
+                    {
+                        formSubmission.Approvals.Add(a);
+                    }
                 }
                 else
                 {
-                    foreach (var approver in form.Approvers)
+                    formSubmission = new FormSubmission
                     {
-                        formSubmission.Approvals.Add(new FormApproval
+                        FormId = formId,
+                        SubmittedAt = submittedAt,
+                        SubmissionData = new List<FormSubmissionData>(),
+                        Approvals = new List<FormApproval>(),
+                        Status = submissionDTO.Status ?? "Submitted"
+                    };
+
+                    _context.FormSubmissions.Add(formSubmission);
+                }
+
+                foreach (var data in submissionDTO.SubmissionData)
+                {
+                    if (IsSignatureData(data.FieldValue))
+                    {
+                        // This is signature data - handle it specially if needed
+                        // For now, just save it normally
+                        formSubmission.SubmissionData.Add(new FormSubmissionData
                         {
-                            FormSubmissionId = formSubmission.Id,
-                            ApprovalLevel = approver.Level,
-                            ApproverId = 1,
-                            ApproverName = approver.Name,
-                            Status = "Pending"
+                            FieldLabel = data.FieldLabel,
+                            FieldValue = data.FieldValue
+                        });
+                    }
+                    else
+                    {
+                        // Regular data
+                        formSubmission.SubmissionData.Add(new FormSubmissionData
+                        {
+                            FieldLabel = data.FieldLabel,
+                            FieldValue = data.FieldValue
                         });
                     }
                 }
-            }
-            await _context.SaveChangesAsync();
 
-            return Ok(new
+
+
+                // Save deletion of old Pending approvals first
+                await _context.SaveChangesAsync();
+
+                if (formSubmission.Status == "Submitted")
+                {
+                    if (form.Approvers == null || !form.Approvers.Any())
+                    {
+                        var approval = new FormApproval
+                        {
+                            FormSubmissionId = formSubmission.Id,
+                            ApprovalLevel = 0,
+                            ApproverId = 0,
+                            ApproverName = "System Approval",
+                            Status = "Approved",
+                            Comments = "Auto Approved",
+                            ApprovedAt = DateTime.Now
+                        };
+
+                        _context.FormApprovals.Add(approval);
+                    }
+                    else
+                    {
+                        foreach (var approver in form.Approvers)
+                        {
+                            var approval = new FormApproval
+                            {
+                                FormSubmissionId = formSubmission.Id,
+                                ApprovalLevel = approver.Level,
+                                ApproverId = 1,
+                                ApproverName = approver.Name,
+                                Status = "Pending"
+                            };
+
+                            // 🔥 IMPORTANT
+                            _context.FormApprovals.Add(approval);
+                        }
+                    }
+                }
+
+
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    id = formSubmission.Id,
+                    message = submissionDTO.SubmissionId.HasValue
+                        ? "Form updated successfully"
+                        : "Form submitted successfully"
+                });
+            }
+            catch (Exception ex)
             {
-                id = formSubmission.Id,
-                message = submissionDTO.SubmissionId.HasValue
-                    ? "Form updated successfully"
-                    : "Form submitted successfully"
-            });
+                // LOG THE ERROR
+                Console.WriteLine($"Error in SubmitForm: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = $"Server error: {ex.Message}"
+                });
+            }
         }
+
+        [HttpPost("upload-signature")]
+        public async Task<IActionResult> UploadSignature([FromBody] SignatureUploadDTO dto)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dto.SignatureData))
+                    return BadRequest("No signature data provided");
+
+                // Remove data:image/png;base64, prefix
+                string base64 = dto.SignatureData.Contains(',')
+                    ? dto.SignatureData.Split(',')[1]
+                    : dto.SignatureData;
+
+                byte[] imageBytes = Convert.FromBase64String(base64);
+
+                string fileName = $"{dto.SignatureKey}_{DateTime.Now:yyyyMMddHHmmss}.png";
+                string folderPath = Path.Combine("wwwroot", "signatures");
+
+                if (!Directory.Exists(folderPath))
+                    Directory.CreateDirectory(folderPath);
+
+                string filePath = Path.Combine(folderPath, fileName);
+                await System.IO.File.WriteAllBytesAsync(filePath, imageBytes);
+
+                return Ok(new { path = $"/signatures/{fileName}" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Failed to upload signature: {ex.Message}");
+            }
+        }
+        private bool IsSignatureData(string fieldValue)
+        {
+            // Check if the value is a base64 encoded image (signature)
+            return !string.IsNullOrEmpty(fieldValue) &&
+                   fieldValue.StartsWith("data:image/png;base64,");
+        }
+
         [HttpGet("{form}/drafts")]
         public async Task<IActionResult> GetDraftSubmissions(string form)
         {
@@ -685,7 +803,7 @@ namespace productionLine.Server.Controllers
                         SubmittedAt = s.SubmittedAt,
                         Status = "Draft"
                     })
-                    .Take(20)
+                    .Take(50)
                     .ToListAsync();
 
                 return Ok(drafts);
@@ -720,8 +838,6 @@ namespace productionLine.Server.Controllers
             });
         }
 
-
-
         [HttpGet("fields")]
         public async Task<IActionResult> GetFields([FromQuery] int formId)
         {
@@ -740,7 +856,6 @@ namespace productionLine.Server.Controllers
             return Ok(fields);
         }
 
-
         // Assuming you have a controller like [Route("api/forms")]
         [HttpGet("{form}/lastsubmissions")]
         public async Task<IActionResult> GetLastSubmissions(string form)
@@ -754,7 +869,7 @@ namespace productionLine.Server.Controllers
                                                 where s.FormId == formId
                                                 && s.Status == "Submitted"
                                                 orderby s.SubmittedAt descending
-                                                select s).Take(30)
+                                                select s).Take(50)
                                      select new
                                      {
                                          Id = s.Id,
@@ -791,23 +906,74 @@ namespace productionLine.Server.Controllers
             }
         }
 
-
         [HttpPost("GetALLForm")]
         public async Task<IActionResult> GetAllForm([FromBody] List<string> names)
         {
-            return Ok(await _context.Forms.Where((Form f) => !f.Approvers.Any() || f.Approvers.Any((FormApprover a) => names.Contains(a.Name))).Include((Form f) => f.Approvers).ToListAsync());
+            var lowerNames = names.Select(n => n.ToLower()).ToList();
+
+            var res = await _context.Forms
+                .Where(f =>
+                    !f.Approvers.Any() ||
+                    f.Approvers.Any(a => lowerNames.Contains(a.Name.ToLower()))
+                )
+                .Include(f => f.Approvers)
+                .ToListAsync();
+            return Ok(res);
         }
 
         [HttpGet("GetALLForms/{submissionId}")]
         public async Task<IActionResult> GetAllForms(int submissionId)
         {
-            FormSubmission submission = await _context.FormSubmissions.Include((FormSubmission s) => s.SubmissionData).Include((FormSubmission s) => s.Approvals).Include((FormSubmission s) => s.Form)
-                .ThenInclude((Form f) => f.Approvers)
-                .FirstOrDefaultAsync((FormSubmission s) => s.FormId == submissionId);
-            if (submission == null)
+            string cacheKey = $"submission_{submissionId}";
+
+            if (!_cache.TryGetValue(cacheKey, out object submission))
             {
-                return BadRequest("Unable to retirve the data may be there is no submission");
+                submission = await _context.FormSubmissions
+                    .AsNoTracking()
+                    .Where(s => s.FormId == submissionId)
+                    .Select(s => new
+                    {
+                        s.Id,
+                        s.FormId,
+                        s.SubmittedAt,
+
+                        Form = new
+                        {
+                            s.Form.Id,
+                            s.Form.Name,
+                            s.Form.FormLink,
+                            Approvers = s.Form.Approvers.Select(a => new
+                            {
+                                a.Id,
+                                a.Name,
+                                a.Level
+                            })
+                        },
+
+                        SubmissionData = s.SubmissionData.Select(d => new
+                        {
+                            d.Id,
+                            d.FieldLabel,
+                            d.FieldValue
+                        }),
+
+                        Approvals = s.Approvals.Select(a => new
+                        {
+                            a.Id,
+                            a.ApprovalLevel,
+                            a.ApproverName,
+                            a.Status,
+                            a.ApprovedAt
+                        })
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (submission == null)
+                    return NotFound("Submission not found.");
+
+                _cache.Set(cacheKey, submission, TimeSpan.FromMinutes(5));
             }
+
             return Ok(submission);
         }
 
@@ -929,23 +1095,43 @@ namespace productionLine.Server.Controllers
         {
             try
             {
-                if (await _context.FormSubmissions.Include((FormSubmission s) => s.Form).ThenInclude((Form f) => f.Approvers).FirstOrDefaultAsync((FormSubmission s) => s.Id == submissionId) == null)
+                // Load submission once
+                var submission = await _context.FormSubmissions
+                    .Include(s => s.Form)
+                        .ThenInclude(f => f.Approvers)
+                    .FirstOrDefaultAsync(s => s.Id == submissionId);
+
+                if (submission == null)
                 {
                     return NotFound("Submission not found");
                 }
-                FormApproval existingApproval = await _context.FormApprovals.FirstOrDefaultAsync((FormApproval a) => a.FormSubmissionId == submissionId && a.ApprovalLevel == approvalDto.Level && a.ApproverName == approvalDto.ApproverName && a.Status == "Pending");
+
+                // Normalize approver name
+                var approverName = approvalDto.ApproverName.ToLower();
+
+                var existingApproval = await _context.FormApprovals
+                    .FirstOrDefaultAsync(a =>
+                        a.FormSubmissionId == submissionId &&
+                        a.ApprovalLevel == approvalDto.Level &&
+                        a.ApproverName.ToLower() == approverName &&
+                        a.Status == "Pending");
+
                 if (existingApproval != null)
                 {
                     existingApproval.Status = approvalDto.Status;
                     existingApproval.ApprovedAt = DateTime.Now;
                     existingApproval.Comments = approvalDto.Comments;
+
                     await _context.SaveChangesAsync();
+
                     return Ok(new
                     {
                         message = "Approval action recorded successfully"
                     });
                 }
+
                 return BadRequest("No pending approval found for this approver at this level.");
+
             }
             catch (Exception ex)
             {
@@ -971,6 +1157,53 @@ namespace productionLine.Server.Controllers
             return Ok(fields);
         }
 
+        [HttpGet("{form}/rejected")]
+        public async Task<IActionResult> GetAllRejected(string form)
+        {
+            int formId = await _context.Forms
+                .Where(f => f.FormLink == form.ToLower())
+                .Select(f => f.Id)
+                .FirstOrDefaultAsync();
+
+            if (formId == 0)
+                return NotFound("Form not found");
+
+            try
+            {
+                var submissions = await _context.FormSubmissions
+            .Where(s =>
+                s.FormId == formId &&
+                s.Approvals.Any(a => a.Status == "Rejected"))
+            .OrderByDescending(s => s.SubmittedAt)
+            .Take(50)
+            .Select(s => new PendingSubmissionDto
+            {
+                Id = s.Id,
+                SubmittedAt = s.SubmittedAt,
+                FormName = s.Form.Name,
+                FormId = s.FormId,
+                FormLink = s.Form.FormLink,
+
+                Approvals = s.Approvals
+                    .Where(a => a.Status == "Rejected")
+                    .Select(a => new ApprovalDto
+                    {
+                        ApprovalLevel = a.ApprovalLevel,
+                        ApproverName = a.ApproverName,
+                        Status = a.Status
+                    })
+                    .ToList()
+            })
+            .ToListAsync();
+
+                return Ok(submissions);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Internal server error: " + ex.Message);
+            }
+        }
+
 
         //[HttpPost("pending-submissions")]
         //public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
@@ -984,33 +1217,59 @@ namespace productionLine.Server.Controllers
         [HttpPost("pending-submissions")]
         public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
         {
-            if (userNames == null || userNames.Count == 0)
-                return Ok(Array.Empty<PendingSubmissionDto>());
+            try
+            {
+                if (userNames == null || userNames.Count == 0)
+                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-            var submissions = await _context.FormSubmissions
-                .Where(s => s.Approvals.Any(a =>
-                    userNames.Contains(a.ApproverName) &&
-                    a.Status == "Pending"))
-                .OrderByDescending(s => s.SubmittedAt)
-                .Take(100)
-                .Select(s => new PendingSubmissionDto
-                {
-                    Id = s.Id,
-                    SubmittedAt = s.SubmittedAt,
-                    FormName = s.Form.Name,
-                    FormId = s.FormId,              // 👈 use FK
-                    FormLink = s.Form.FormLink,     // 👈 if you want link in URL
+                var normalizedUserNames = userNames
+                    .Select(u => u.ToLower())
+                    .ToList();
 
-                    Approvals = s.Approvals.Select(a => new ApprovalDto
-                    {
-                        ApprovalLevel = a.ApprovalLevel,
-                        ApproverName = a.ApproverName,
-                        Status = a.Status
-                    }).ToList()
-                })
-                .ToListAsync();
 
-            return Ok(submissions);
+                var submissions = await _context.FormSubmissions
+    .AsNoTracking()
+    .Include(s => s.Form)
+        .ThenInclude(f => f.Approvers)
+    .Where(s =>
+        s.Form.Approvers.Any(a =>
+            normalizedUserNames.Contains(a.Name.ToLower()))
+        &&
+        s.Approvals.Any(a => a.Status == "Pending")
+    )
+    .OrderByDescending(s => s.SubmittedAt)
+    .Select(s => new PendingSubmissionDto
+    {
+        Id = s.Id,
+        SubmittedAt = s.SubmittedAt,
+        FormName = s.Form.Name,
+        FormId = s.FormId,
+        FormLink = s.Form.FormLink,
+
+        Approvals = s.Approvals
+            .Where(a => a.Status == "Pending")
+            .OrderBy(a => a.ApprovalLevel)
+            .Take(1)
+            .Select(a => new ApprovalDto
+            {
+                ApprovalLevel = a.ApprovalLevel,
+                ApproverName = a.ApproverName,
+                Status = a.Status
+            })
+            .ToList()
+    })
+    .ToListAsync();
+
+
+
+
+
+                return Ok(submissions);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest();
+            }
         }
 
         [HttpGet("linked-data/{formId}")]

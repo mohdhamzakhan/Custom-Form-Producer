@@ -866,22 +866,25 @@ namespace productionLine.Server.Controllers
                 var query = _context.ReportTemplates.AsQueryable();
 
                 var reports = await query
-                    .Where(r => r.CreatedBy == username ||
-                               (r.SharedWithRole != null &&
-                                r.SharedWithRole.Contains($"\"name\":\"{username}\"")))
-                    .Select(r => new
-                    {
-                        r.Id,
-                        r.Name,
-                        r.SharedWithRole,
-                        r.IncludeRemarks,
-                        r.CreatedBy,
-                        CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
-                        r.FormId,
-                        r.IsMultiForm,  // ✅ NEW: Include multi-form flag
-                        FormIds = r.FormIds  // ✅ NEW: Include form IDs JSON
-                    })
-                    .ToListAsync();
+                        .Where(r =>
+                            r.CreatedBy.ToLower() == username.ToLower() ||
+                            (r.SharedWithRole != null &&
+                             r.SharedWithRole.ToLower().Contains($"\"name\":\"{username.ToLower()}\""))
+                        )
+                        .Select(r => new
+                        {
+                            r.Id,
+                            r.Name,
+                            r.SharedWithRole,
+                            r.IncludeRemarks,
+                            r.CreatedBy,
+                            CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"),
+                            r.FormId,
+                            r.IsMultiForm,
+                            FormIds = r.FormIds
+                        })
+                        .ToListAsync();
+
 
                 return Ok(reports);
             }
