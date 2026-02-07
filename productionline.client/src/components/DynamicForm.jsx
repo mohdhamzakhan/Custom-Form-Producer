@@ -1362,7 +1362,10 @@ export default function DynamicForm() {
     //    });
     //};
     const handleSubmit = async (e, status = "Submitted") => {
-        e.preventDefault();
+        if (e) {
+            e.preventDefault();
+        }
+
 
         const validationErrors = status === "Submitted" ? validateForm() : {};
         setFormErrors(validationErrors);
@@ -3472,7 +3475,7 @@ export default function DynamicForm() {
                         {/* Secondary Action */}
                         <button
                             type="button"
-                            onClick={() => handleSubmit("Draft")}
+                            onClick={() => handleSubmit(null, "Draft")}
                             className="
             bg-gray-100 hover:bg-gray-200
             text-gray-800 font-medium

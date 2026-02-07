@@ -444,7 +444,7 @@ namespace productionLine.Server.Controllers
 
                 // ✅ Check if current time is during a break and get break name
                 var currentBreak = breakRanges.FirstOrDefault(range =>
-                    adjustedMinutes >= range.Start && adjustedMinutes <= range.End
+                    adjustedMinutes >= range.Start && adjustedMinutes < range.End
                 );
 
                 var isDuringBreak = currentBreak != null;

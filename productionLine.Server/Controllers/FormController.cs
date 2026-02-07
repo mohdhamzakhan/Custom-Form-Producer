@@ -5,6 +5,7 @@ using productionLine.Server.DTO;
 using productionLine.Server.Model;
 using System.DirectoryServices.AccountManagement;
 using System.Globalization;
+using System.Net;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
@@ -366,6 +367,9 @@ namespace productionLine.Server.Controllers
         [HttpGet("link/{formLink}")]
         public async Task<IActionResult> GetFormByLink(string formLink)
         {
+
+            formLink = WebUtility.UrlDecode(formLink);
+            formLink = formLink.Replace(" ", "-");
             Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
                 .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
                 .Include((Form f) => f.AllowedUsers)
@@ -784,6 +788,8 @@ namespace productionLine.Server.Controllers
         [HttpGet("{form}/drafts")]
         public async Task<IActionResult> GetDraftSubmissions(string form)
         {
+            form = WebUtility.UrlDecode(form);
+            form = form.Replace(" ", "-");
             int formId = await _context.Forms
                 .Where(f => f.FormLink == form.ToLower())
                 .Select(f => f.Id)
@@ -860,6 +866,8 @@ namespace productionLine.Server.Controllers
         [HttpGet("{form}/lastsubmissions")]
         public async Task<IActionResult> GetLastSubmissions(string form)
         {
+            form = WebUtility.UrlDecode(form);
+            form = form.Replace(" ", "-");
             int formId = await (from y in _context.Forms
                                 where y.FormLink == form.ToLower()
                                 select y.Id).FirstOrDefaultAsync();
@@ -1160,6 +1168,8 @@ namespace productionLine.Server.Controllers
         [HttpGet("{form}/rejected")]
         public async Task<IActionResult> GetAllRejected(string form)
         {
+            form = WebUtility.UrlDecode(form);
+            form = form.Replace(" ", "-");
             int formId = await _context.Forms
                 .Where(f => f.FormLink == form.ToLower())
                 .Select(f => f.Id)

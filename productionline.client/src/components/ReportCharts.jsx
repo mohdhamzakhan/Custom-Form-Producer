@@ -1831,7 +1831,7 @@ const ReportCharts = React.memo(({
                                                     <ReferenceArea
                                                         key={`break-${breakStart}`}
                                                         x1={shiftChartData[breakStart].time}
-                                                        x2={shiftChartData[index - 1].time}
+                                                        x2={shiftChartData[index].time}
                                                         fill="#ffcccc"
                                                         fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
                                                         label={{

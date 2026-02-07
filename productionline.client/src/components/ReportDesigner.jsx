@@ -182,7 +182,7 @@ export default function EnhancedReportDesigner() {
     const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current");
     const [fieldVisibility, setFieldVisibility] = useState({});
     const [isLoading, setIsLoading] = useState(false);
-
+    
     // ✅ NEW: Multi-form support
     const [multiFormMode, setMultiFormMode] = useState(false);
     const [selectedForms, setSelectedForms] = useState([]); // Array of form IDs
@@ -210,19 +210,28 @@ export default function EnhancedReportDesigner() {
     };
 
     const [showFloatingActions, setShowFloatingActions] = useState(false);
+    const scrollContainerRef = useRef(null);
+    
     useEffect(() => {
-        const el = contentRef.current;
-        if (!el) return;
+        const scrollableContainer = scrollContainerRef.current;
 
-        const onScroll = () => {
-            setShowFloatingActions(el.scrollTop > 250);
+        if (!scrollableContainer) {
+            return;
+        }
+
+        const handleScroll = () => {
+            const scrollTop = scrollableContainer.scrollTop;
+            setShowFloatingActions(scrollTop > 150);
         };
 
-        el.addEventListener("scroll", onScroll);
-        return () => el.removeEventListener("scroll", onScroll);
+        scrollableContainer.addEventListener("scroll", handleScroll);
+        handleScroll(); // initial check
+
+        return () => scrollableContainer.removeEventListener("scroll", handleScroll);
     }, []);
 
-    const contentRef = useRef(null);
+
+
     const navigate = useNavigate();
     const toggleMultiFormMode = () => {
         if (!multiFormMode) {
@@ -1853,7 +1862,9 @@ export default function EnhancedReportDesigner() {
                 windowSize: c.windowSize || 3
             })),
             ChartConfigs: chartConfigsToSave,
-            IsMultiForm: multiFormMode
+            GroupingConfig: groupingConfig,  // ✅ ADDED: Missing field
+            IsMultiForm: multiFormMode,
+            FormRelationships: relationships.length > 0 ? relationships : []  // ✅ ADDED: Missing field
         };
 
         try {
@@ -1929,34 +1940,10 @@ export default function EnhancedReportDesigner() {
         <>
             <style>{dragDropStyles}</style>
 
-            {showFloatingActions && (
-                <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 transition-all">
-                    <button
-                        onClick={copyReportDesign}
-                        className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded flex items-center"
-                    >
-                        <Copy className="w-4 h-4 mr-2" />
-                        Duplicate Report
-                    </button>
-                    <button
-                        onClick={previewReport}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
-                    >
-                        <FileText className="w-4 h-4 mr-2" />
-                        Preview
-                    </button>
-                    <button
-                        onClick={saveTemplate}
-                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded flex items-center"
-                    >
-                        <Download className="w-4 h-4 mr-2" />
-                        Save Template
-                    </button>
-                </div>
-            )}
-            <div className="flex h-screen bg-gray-100">
+            
+            <div className="flex min-h-screen bg-gray-100">
                 {/* Left Panel */}
-                <div className="w-80 bg-white border-r border-gray-200 overflow-y-auto">
+                <div className="w-80 bg-white border-r border-gray-200 sticky top-0 h-screen overflow-y-auto"> 
                     <div className="p-4 border-b">
                         <h2 className="text-lg font-semibold">Report Designer</h2>
 
@@ -2363,7 +2350,7 @@ export default function EnhancedReportDesigner() {
 
 
                 {/* Main Content Area */}
-                <div ref={contentRef} className="flex-1 overflow-y-auto">
+                <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
                     <div className="p-6">
                         {/* Header */}
                         <div className="flex items-center justify-between mb-6">
@@ -2748,6 +2735,31 @@ export default function EnhancedReportDesigner() {
                     </div>
                 </div>
             </div>
+            {true && (
+                <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 transition-all">
+                    <button
+                        onClick={copyReportDesign}
+                        className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicate Report
+                    </button>
+                    <button
+                        onClick={previewReport}
+                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Preview
+                    </button>
+                    <button
+                        onClick={saveTemplate}
+                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded flex items-center"
+                    >
+                        <Download className="w-4 h-4 mr-2" />
+                        Save Template
+                    </button>
+                </div>
+            )}
         </>
     );
 }

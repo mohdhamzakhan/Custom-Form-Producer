@@ -212,12 +212,17 @@ const FormBuilder = () => {
 
     useEffect(() => {
         const onScroll = () => {
-            setShowFloatingActions(window.scrollY > 250);
+            console.log("scrollY:", window.scrollY);
+            setShowFloatingActions(window.scrollY > 150);
         };
 
         window.addEventListener("scroll", onScroll);
+        onScroll();
+
         return () => window.removeEventListener("scroll", onScroll);
     }, []);
+
+
 
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
@@ -282,6 +287,14 @@ const FormBuilder = () => {
     useEffect(() => {
         console.log("allowedtoAccess state:", allowedtoAccess);
     }, [allowedtoAccess]);
+
+    const onScroll = () => {
+        const shouldShow = el.scrollTop > 150;
+        setShowFloatingActions(prev =>
+            prev !== shouldShow ? shouldShow : prev
+        );
+    };
+
 
     const fetchAvailableForms = async () => {
         setLoadingForms(true);
@@ -2047,7 +2060,7 @@ const FormBuilder = () => {
                         </div>
                     </div>
                     {/* Floating Action Buttons */}
-                    {showFloatingActions && (
+                    {true && (
                         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 transition-all">
                             <button
                                 onClick={() => setShowCopyFormat((prev) => !prev)}

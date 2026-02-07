@@ -867,10 +867,11 @@ namespace productionLine.Server.Controllers
 
                 var reports = await query
                         .Where(r =>
-                            r.CreatedBy.ToLower() == username.ToLower() ||
-                            (r.SharedWithRole != null &&
-                             r.SharedWithRole.ToLower().Contains($"\"name\":\"{username.ToLower()}\""))
-                        )
+    !r.IsDeleted &&  // Assumes IsDeleted is non-nullable bool
+    (r.CreatedBy.ToLower() == username.ToLower() ||
+     (r.SharedWithRole != null &&
+      r.SharedWithRole.ToLower().Contains($"\"name\":\"{username.ToLower()}\"")))
+)
                         .Select(r => new
                         {
                             r.Id,

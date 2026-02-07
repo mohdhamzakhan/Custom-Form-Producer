@@ -73,45 +73,54 @@ export default function SubmissionDetails() {
     // Check if value is a base64 image (signature)
     // Check if value is a base64 image (signature) - MOVED FIRST
     const isBase64Image = (value) => {
-        console.log('🔍 Checking image:', value?.substring(0, 50) + '...'); // DEBUG
-        if (!value || typeof value !== 'string') return false;
+        // Handle non-string values
+        if (!value) return false;
+        if (typeof value !== 'string') {
+            console.log('❌ Not a string for image check, type:', typeof value);
+            return false;
+        }
+
+        console.log('🔍 Checking image:', value.substring(0, 50) + '...');
+
         const isImage = value.startsWith('data:image/png;base64,') ||
             value.startsWith('data:image/jpeg;base64,') ||
             value.startsWith('data:image/jpg;base64,');
-        console.log('✅ Is base64 image?', isImage); // DEBUG
+
+        console.log('✅ Is base64 image?', isImage);
         return isImage;
     };
 
     const isGridValue = (value) => {
-        console.log('🔍 Checking grid:', value?.substring(0, 50) + '...');
+        // Handle non-string values
+        if (!value) return false;
+        if (typeof value !== 'string') {
+            console.log('❌ Not a string, type:', typeof value);
+            return false;
+        }
 
-        if (!value || typeof value !== 'string') return false;
+        console.log('🔍 Checking grid:', value.substring(0, 100) + '...');
 
         try {
             const parsed = JSON.parse(value);
 
-            // Check if it's a proper grid OR contains base64 images inside cells
+            // Check if it's an array with at least one element
             if (Array.isArray(parsed) && parsed.length > 0) {
-                // Check first row for image cells or object structure
                 const firstRow = parsed[0];
-                if (typeof firstRow === 'object') {
-                    // Check if any cell contains base64 image
-                    const hasImageCell = Object.values(firstRow).some(cell =>
-                        isBase64Image(cell)
-                    );
-                    console.log('✅ Grid detected with image cells:', hasImageCell);
+
+                // Check if first element is an object (not a primitive)
+                if (typeof firstRow === 'object' && firstRow !== null && !Array.isArray(firstRow)) {
+                    console.log('✅ Grid detected');
                     return true;
                 }
             }
+
+            console.log('❌ Not a grid structure');
             return false;
-        } catch {
+        } catch (e) {
             console.log('❌ Not valid JSON');
             return false;
         }
     };
-
-
-
     // Format date for display
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -226,77 +235,88 @@ export default function SubmissionDetails() {
                                         </p>
                                     </div>
                                 ) : isGridValue(item.value) ? (
-                                    <div className="w-full overflow-x-auto border border-gray-300 rounded-lg shadow-sm p-4">
+                                    <div className="overflow-x-auto">
                                         {(() => {
                                             try {
                                                 const gridData = JSON.parse(item.value);
                                                 const columns = getGridColumns(gridData);
-                                                console.log('📊 Grid columns found:', columns); // DEBUG
+                                                console.log('📊 Grid columns found:', columns);
+                                                console.log('📊 Grid rows:', gridData.length);
 
                                                 return (
-                                                    <table className="w-full text-sm text-left min-w-[600px]">
-                                                        <thead className="bg-gray-100 sticky top-0">
-                                                            <tr>
-                                                                {columns.map((col, idx) => (
-                                                                    <th
-                                                                        key={idx}
-                                                                        className="px-6 py-3 border-b border-r font-semibold text-gray-700 text-left whitespace-nowrap"
-                                                                    >
-                                                                        {col}
-                                                                    </th>
-                                                                ))}
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {gridData.map((row, rIdx) => (
-                                                                <tr key={rIdx} className="border-b hover:bg-gray-50">
-                                                                    {columns.map((col, cIdx) => {
-                                                                        let cellValue = row[col];
+                                                    <div className="border border-gray-300 rounded-lg overflow-hidden">
+                                                        <table className="min-w-full divide-y divide-gray-200">
+                                                            <thead className="bg-gray-50">
+                                                                <tr>
+                                                                    {columns.map((col, idx) => (
+                                                                        <th
+                                                                            key={idx}
+                                                                            className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0"
+                                                                        >
+                                                                            {col}
+                                                                        </th>
+                                                                    ))}
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                                {gridData.map((row, rIdx) => (
+                                                                    <tr key={rIdx} className="hover:bg-gray-50">
+                                                                        {columns.map((col, cIdx) => {
+                                                                            let cellValue = row[col];
 
-                                                                        // ✅ RENDER IMAGES IN GRID CELLS
-                                                                        if (isBase64Image(cellValue)) {
-                                                                            return (
-                                                                                <td key={cIdx} className="px-6 py-4 border-r">
-                                                                                    <div className="max-w-xs mx-auto">
+                                                                            // ✅ RENDER IMAGES IN GRID CELLS
+                                                                            if (isBase64Image(cellValue)) {
+                                                                                return (
+                                                                                    <td key={cIdx} className="px-4 py-3 border-r border-gray-200 last:border-r-0">
                                                                                         <img
                                                                                             src={cellValue}
-                                                                                            alt="Signature"
-                                                                                            className="w-full h-24 object-contain rounded-lg shadow-md"
+                                                                                            alt={`${col} image`}
+                                                                                            className="max-w-[200px] max-h-[100px] object-contain"
                                                                                             onError={(e) => {
                                                                                                 e.target.style.display = 'none';
                                                                                                 e.target.nextSibling.style.display = 'block';
                                                                                             }}
                                                                                         />
-                                                                                        <div className="text-xs text-gray-500 text-center mt-1 hidden">
+                                                                                        <div className="text-red-500 text-sm hidden">
                                                                                             Image failed to load
                                                                                         </div>
-                                                                                    </div>
+                                                                                    </td>
+                                                                                );
+                                                                            }
+
+                                                                            // ✅ Handle nested objects or arrays
+                                                                            if (typeof cellValue === 'object' && cellValue !== null) {
+                                                                                cellValue = JSON.stringify(cellValue);
+                                                                            }
+
+                                                                            // Regular cell
+                                                                            return (
+                                                                                <td key={cIdx} className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200 last:border-r-0 whitespace-nowrap">
+                                                                                    {cellValue !== undefined && cellValue !== null && cellValue !== '' ? (
+                                                                                        typeof cellValue === 'boolean' ? (
+                                                                                            <span className="font-semibold">{String(cellValue)}</span>
+                                                                                        ) : (
+                                                                                            String(cellValue)
+                                                                                        )
+                                                                                    ) : (
+                                                                                        <span className="text-gray-400">—</span>
+                                                                                    )}
                                                                                 </td>
                                                                             );
-                                                                        }
-
-                                                                        return (
-                                                                            <td key={cIdx} className="px-6 py-4 border-r max-w-md">
-                                                                                <div className="break-words max-h-20 overflow-y-auto">
-                                                                                    {cellValue !== undefined && cellValue !== null
-                                                                                        ? (typeof cellValue === 'boolean'
-                                                                                            ? <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">{String(cellValue)}</span>
-                                                                                            : String(cellValue)
-                                                                                        )
-                                                                                        : <span className="text-gray-400">—</span>
-                                                                                    }
-                                                                                </div>
-                                                                            </td>
-                                                                        );
-                                                                    })}
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
+                                                                        })}
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
                                                 );
                                             } catch (error) {
                                                 console.error('Grid parse error:', error);
-                                                return <div className="p-4 text-red-500">Invalid grid data: {error.message}</div>;
+                                                return (
+                                                    <div className="text-red-600 p-3 bg-red-50 rounded border border-red-200">
+                                                        Invalid grid data: {error.message}
+                                                    </div>
+                                                );
                                             }
                                         })()}
                                     </div>
