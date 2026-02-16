@@ -2766,6 +2766,61 @@ export default function EnhancedReportViewer() {
                 cleanFormula = cleanFormula.slice(11, -1);
             }
 
+            // ======================================================
+            // SPECIAL CASE: SUM(A) / SUM(B)
+            // ======================================================
+            const sumDivideMatch = cleanFormula.match(
+                /^SUM\((.+)\)\s*\/\s*SUM\((.+)\)$/i
+            );
+
+            console.log("It is a divide Function")
+            if (sumDivideMatch) {
+
+                const numeratorExpr = sumDivideMatch[1];
+                const denominatorExpr = sumDivideMatch[2];
+
+                // -------- SUM(A) ----------
+                let numerator = 0;
+
+                allReportData.forEach(row => {
+                    let expr = numeratorExpr;
+
+                    expr = expr.replace(/"([^"]+)"/g, (_, field) => {
+                        const v = getFieldValue(field, row.data, fields);
+                        return !isNaN(v) ? Number(v) : 0;
+                    });
+
+                    try {
+                        numerator += eval(expr);
+                    } catch {
+                        numerator += 0;
+                    }
+                });
+
+                // -------- SUM(B) ----------
+                let denominator = 0;
+
+                allReportData.forEach(row => {
+                    let expr = denominatorExpr;
+
+                    expr = expr.replace(/"([^"]+)"/g, (_, field) => {
+                        const v = getFieldValue(field, row.data, fields);
+                        return !isNaN(v) ? Number(v) : 0;
+                    });
+
+                    try {
+                        denominator += eval(expr);
+                    } catch {
+                        denominator += 0;
+                    }
+                });
+
+                if (denominator === 0) return 0;
+
+                return numerator / denominator;
+            }
+
+
             // ✅ NEW: Check for aggregate function wrappers
             const aggregateFunctionMatch = cleanFormula.match(/^(SUM|AVG|MAX|MIN|COUNT|PERCENTAGE)\((.*)\)$/i);
 

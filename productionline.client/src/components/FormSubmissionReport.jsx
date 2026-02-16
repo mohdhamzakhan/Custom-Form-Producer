@@ -342,6 +342,13 @@ export default function FormSubmissionReport() {
         if (userLevel === 1) return true;
 
         for (let level = 1; level < userLevel; level++) {
+            // Check if this level exists in the form's approver list
+            const levelExists = formApprovers.some(ap => ap.level === level);
+
+            // If this level doesn't exist in the form, skip it
+            if (!levelExists) continue;
+
+            // If level exists, check if it's been approved
             const levelHasApproval = approvals.some(a => {
                 const approvingUser = formApprovers.find(ap => ap.name === a.approverName);
                 return approvingUser && approvingUser.level === level && a.status === "Approved";
@@ -355,11 +362,18 @@ export default function FormSubmissionReport() {
     const canEditSubmission = (submission) => {
         // Can edit if:
         // 1. No approvals yet, OR
-        // 2. Has approvals but none are approved yet (all are pending)
+        // 2. Has approvals but none are approved yet (all are pending) AND no approval level is 2 or above
 
-        { console.log("Hamza", submission) }
+        console.log("Hamza", submission);
+
         if (!submission.approvals || submission.approvals.length === 0) {
             return true;
+        }
+
+        // Check if any approver has level 2 or above
+        const hasLevel2OrAbove = submission.approvals.some(a => a.approvalLevel >= 2);
+        if (hasLevel2OrAbove) {
+            return false;
         }
 
         // Check if any approval has been given (Approved or Rejected)
