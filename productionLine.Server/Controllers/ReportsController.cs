@@ -194,6 +194,7 @@ namespace productionLine.Server.Controllers
                     template.IncludeApprovals = dto.IncludeApprovals;
                     template.IncludeRemarks = dto.IncludeRemarks;
                     template.SharedWithRole = dto.SharedWithRole;
+                    template.LayoutMode = dto.LayoutMode;
 
                     _context.ReportFields.RemoveRange(template.Fields);
                     _context.ReportFilters.RemoveRange(template.Filters);
@@ -252,7 +253,7 @@ namespace productionLine.Server.Controllers
                         IncludeApprovals = dto.IncludeApprovals,
                         IncludeRemarks = dto.IncludeRemarks,
                         SharedWithRole = dto.SharedWithRole,
-
+                        LayoutMode = dto.LayoutMode,
                         Fields = dto.Fields.Select((f, index) => new ReportField
                         {
                             FieldId = f.FieldId,
@@ -305,7 +306,7 @@ namespace productionLine.Server.Controllers
         }
 
         [HttpPost("run/{templateId}")]
-        public async Task<IActionResult> RunReport(int templateId, [FromBody] Dictionary<string, string> runtimeValues)
+        public async Task<IActionResult> RunReport(int templateId, [FromBody] RunReportRequest request)
         {
             var template = await _context.ReportTemplates
                 .Include(t => t.Fields)
@@ -315,7 +316,9 @@ namespace productionLine.Server.Controllers
             if (template == null)
                 return NotFound("Template not found.");
 
-            // ✅ NEW: Check if this is a multi-form report
+            // ✅ NEW: Check report layout mode
+            bool isVerticalLayout = request.VerticalLayout ?? false;
+
             List<int> formIds = new List<int>();
 
             if (template.IsMultiForm && !string.IsNullOrEmpty(template.FormIds))
@@ -334,8 +337,8 @@ namespace productionLine.Server.Controllers
                 formIds = new List<int> { template.FormId };
             }
 
-            // ✅ NEW: Fetch submissions from all forms
             var allSubmissions = new List<FormSubmission>();
+            var formFieldMappings = new Dictionary<int, List<FormField>>();
 
             foreach (var formId in formIds)
             {
@@ -344,6 +347,8 @@ namespace productionLine.Server.Controllers
                     .FirstOrDefaultAsync(f => f.Id == formId);
 
                 if (form == null) continue;
+
+                formFieldMappings[formId] = form.Fields.ToList();
 
                 var formSubmissions = await _context.FormSubmissions
                     .Include(s => s.Approvals)
@@ -354,27 +359,129 @@ namespace productionLine.Server.Controllers
                 allSubmissions.AddRange(formSubmissions);
             }
 
-            var filtered = ApplyFilters(template.Filters, allSubmissions, runtimeValues);
+            var filtered = ApplyFilters(template.Filters, allSubmissions, request.RuntimeFilters ?? new Dictionary<string, string>());
 
-            var allFields = template.Fields.ToList();
+            // ✅ NEW: Choose layout processing
+            if (isVerticalLayout)
+            {
+                return Ok(ProcessVerticalLayout(filtered, template, formFieldMappings));
+            }
+            else
+            {
+                return Ok(ProcessHorizontalLayout(filtered, template, formFieldMappings));
+            }
+        }
+
+        // ✅ NEW: Process vertical layout (stacked columns)
+        private List<object> ProcessVerticalLayout(
+     List<FormSubmission> submissions,
+     ReportTemplate template,
+     Dictionary<int, List<FormField>> formFieldMappings)
+        {
             var result = new List<object>();
 
-            foreach (var sub in filtered)
+            // ✅ FIX: Group template fields by their LABEL (not by Order)
+            // This ensures "Auditor Name" from Form A, Form B, Form C all map to one column
+            var fieldsByLabel = template.Fields
+                .GroupBy(f => f.FieldLabel)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            // ✅ Get unique column labels (one per unique field label)
+            var columnLabels = fieldsByLabel.Keys.OrderBy(k =>
+                template.Fields.First(f => f.FieldLabel == k).Order
+            ).ToList();
+
+            Console.WriteLine($"📊 Vertical Layout: {columnLabels.Count} unique columns");
+            Console.WriteLine($"📋 Columns: {string.Join(", ", columnLabels)}");
+
+            // ✅ Get form names for display
+            var formNames = new Dictionary<int, string>();
+            foreach (var formId in formFieldMappings.Keys)
             {
-                // Get the form for this submission
-                var form = await _context.Forms
-                    .Include(f => f.Fields)
-                    .FirstOrDefaultAsync(f => f.Id == sub.FormId);
+                var form = _context.Forms.FirstOrDefault(f => f.Id == formId);
+                if (form != null)
+                {
+                    formNames[formId] = form.Name;
+                }
+            }
 
-                if (form == null) continue;
+            // ✅ Process each submission
+            foreach (var sub in submissions)
+            {
+                var formFields = formFieldMappings.ContainsKey(sub.FormId)
+                    ? formFieldMappings[sub.FormId]
+                    : new List<FormField>();
 
-                var formFields = form.Fields.ToList();
+                var rowData = new List<object>();
 
-                // ✅ NEW: Only process fields that belong to this submission's form
-                var relevantFields = allFields.Where(f =>
-                    f.FormId == null || // Legacy fields without form tracking
-                    f.FormId == 0 ||    // Default/unassigned
-                    f.FormId == sub.FormId // Matches this submission's form
+                // ✅ For each unique column, find the matching field from THIS submission's form
+                foreach (var columnLabel in columnLabels)
+                {
+                    // Find the template field for this label that belongs to this submission's form
+                    var reportField = fieldsByLabel[columnLabel].FirstOrDefault(f =>
+                        f.FormId == null || f.FormId == 0 || f.FormId == sub.FormId
+                    );
+
+                    if (reportField == null)
+                    {
+                        // No field from this form for this column
+                        rowData.Add(new
+                        {
+                            fieldLabel = columnLabel,
+                            value = "-",
+                            fieldType = "text",
+                            visible = true
+                        });
+                        continue;
+                    }
+
+                    // ✅ Get the actual data from submission
+                    var formField = formFields.FirstOrDefault(f => f.Label == reportField.FieldLabel);
+                    var match = formField != null
+                        ? sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString())
+                        : null;
+
+                    rowData.Add(new
+                    {
+                        fieldLabel = columnLabel, // ✅ Use unified column name
+                        value = match?.FieldValue ?? "-",
+                        fieldType = formField?.Type ?? "text",
+                        visible = reportField.Visible
+                    });
+                }
+
+                result.Add(new
+                {
+                    submissionId = sub.Id,
+                    submittedAt = sub.SubmittedAt,
+                    formId = sub.FormId,
+                    formName = formNames.ContainsKey(sub.FormId)
+                        ? formNames[sub.FormId]
+                        : $"Form {sub.FormId}",
+                    data = rowData
+                });
+            }
+
+            Console.WriteLine($"✅ Vertical layout processed: {result.Count} rows with {columnLabels.Count} columns each");
+            return result;
+        }
+
+        // ✅ EXISTING: Keep horizontal layout (original behavior)
+        private List<object> ProcessHorizontalLayout(
+            List<FormSubmission> submissions,
+            ReportTemplate template,
+            Dictionary<int, List<FormField>> formFieldMappings)
+        {
+            var result = new List<object>();
+
+            foreach (var sub in submissions)
+            {
+                var formFields = formFieldMappings.ContainsKey(sub.FormId)
+                    ? formFieldMappings[sub.FormId]
+                    : new List<FormField>();
+
+                var relevantFields = template.Fields.Where(f =>
+                    f.FormId == null || f.FormId == 0 || f.FormId == sub.FormId
                 ).ToList();
 
                 var hasGridFields = relevantFields.Any(f => f.FieldLabel.Contains("→"));
@@ -391,9 +498,15 @@ namespace productionLine.Server.Controllers
                 }
             }
 
-            return Ok(result);
+            return result;
         }
 
+        // ✅ NEW: Request DTO
+        public class RunReportRequest
+        {
+            public Dictionary<string, string> RuntimeFilters { get; set; }
+            public bool? VerticalLayout { get; set; } // New property
+        }
         private List<object> GetExpandedGridData(FormSubmission sub, ICollection<ReportField> reportFields, List<FormField> formFields)
         {
             var result = new List<object>();
@@ -764,6 +877,7 @@ namespace productionLine.Server.Controllers
                     id = template.Id,
                     name = template.Name,
                     formId = template.FormId,
+                    layoutMode = template.LayoutMode,
                     formIds = formIds,  // ✅ NEW: Return all form IDs
                     isMultiForm = template.IsMultiForm,  // ✅ NEW: Return multi-form flag
                     fields = template.Fields.Select(f => new

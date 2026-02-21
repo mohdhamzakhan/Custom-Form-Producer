@@ -41,6 +41,7 @@ export default function EnhancedReportViewer() {
     const [isExporting, setIsExporting] = useState(false);
     const [showBlankRows, setShowBlankRows] = useState(false);
     const [showChart, setShowChart] = useState(true);
+    const [forms, setForms] = useState([]);
 
     const [groupBySubmission, setGroupBySubmission] = useState(true);
 
@@ -100,6 +101,13 @@ export default function EnhancedReportViewer() {
                 setLoading(true);
                 const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${templateId}`);
                 setTemplate(res.data);
+
+                // ✅ ADD THIS: Fetch forms if multi-form report
+                if (res.data.isMultiForm && res.data.formIds?.length > 0) {
+                    await fetchForms(res.data.formIds);
+                } else if (res.data.formId) {
+                    await fetchForms([res.data.formId]);
+                }
                 console.log('📋 TEMPLATE LOADED - calculatedFields:', res.data.calculatedFields);
                 setFilters(res.data.filters || []);
 
@@ -155,12 +163,10 @@ export default function EnhancedReportViewer() {
                             xField: res.data.chartConfig.xField,
                             position: { row: 0, col: 0, width: 12, height: 6 },
                             comboConfig: res.data.chartConfig.comboConfig || { barMetrics: [], lineMetrics: [] },
-                            // ✅ Handle legacy single shiftConfig
                             shiftConfigs: res.data.chartConfig.shiftConfig ? [res.data.chartConfig.shiftConfig] : null
                         }];
                     }
                 } else {
-                    // ✅ FIXED: Properly handle multiple chart configurations
                     charts = charts.map(chart => ({
                         id: chart.id || Date.now(),
                         title: chart.title || "Chart",
@@ -169,10 +175,8 @@ export default function EnhancedReportViewer() {
                         xField: chart.xField,
                         position: chart.position || { row: 0, col: 0, width: 12, height: 6 },
                         comboConfig: chart.comboConfig || { barMetrics: [], lineMetrics: [] },
-                        // ✅ CRITICAL FIX: Properly load shiftConfigs from database
                         shiftConfigs: chart.shiftConfigs || (chart.shiftConfig ? [chart.shiftConfig] : null),
-                        showChart: chart.showChart ?? true 
-
+                        showChart: chart.showChart ?? true
                     }));
                 }
 
@@ -190,26 +194,38 @@ export default function EnhancedReportViewer() {
                     });
                 }
 
-                //const loadedGroupingConfig = res.data.groupingConfig || [];
-                //setGroupingConfig(res.data.groupingConfig || []);
-                //setIsGrouped((res.data.groupingConfig || []).length > 0);
                 setChartConfigs(charts);
                 setLoading(false);
 
-                // FIX: Pass the calculatedFields directly instead of relying on state
+                // ✅ FIX: Use proper payload structure for initial report load
                 if (!res.data.filters || res.data.filters.length === 0) {
                     console.log('=== CALLING INITIAL REPORT WITH CALCULATED FIELDS ===');
                     console.log('calculatedFields to pass:', calculatedFields);
 
-                    // Call the report API directly with the fresh calculatedFields
                     try {
-                        const reportRes = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, {});
+                        // ✅ FIX: Create proper payload object
+                        const payload = {
+                            RuntimeFilters: {},  // Empty filters for initial load
+                            VerticalLayout: res.data.layoutMode === "vertical" || false
+                        };
+
+                        console.log('📤 Initial report payload:', payload);
+
+                        const reportRes = await axios.post(
+                            `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
+                            payload  // ✅ Changed from empty object {} to payload
+                        );
+
                         console.log('=== PROCESSING WITH FRESH DATA ===');
                         console.log('reportData:', reportRes.data);
                         console.log('calculatedFields:', calculatedFields);
                         console.log('fields:', resolvedFields);
 
-                        const { processedData, summaryRows } = processCalculatedFields(reportRes.data, calculatedFields, resolvedFields);
+                        const { processedData, summaryRows } = processCalculatedFields(
+                            reportRes.data,
+                            calculatedFields,
+                            resolvedFields
+                        );
 
                         console.log('processedData:', processedData);
                         console.log('summaryRows:', summaryRows);
@@ -217,10 +233,12 @@ export default function EnhancedReportViewer() {
                         setReportData(processedData);
                         setSummaryRows(summaryRows);
                     } catch (reportErr) {
-                        setError("Failed to run initial report: " + (reportErr.message || "Unknown error"));
+                        console.error('❌ Initial report error:', reportErr.response?.data || reportErr);
+                        setError("Failed to run initial report: " + (reportErr.response?.data?.message || reportErr.message || "Unknown error"));
                     }
                 }
             } catch (err) {
+                console.error('❌ Template load error:', err);
                 setError("Failed to load template: " + (err.message || "Unknown error"));
                 setLoading(false);
             }
@@ -275,6 +293,25 @@ export default function EnhancedReportViewer() {
         }
     }, [chartConfigs]);
 
+    // ✅ ADD THIS: Fetch form details
+    const fetchForms = async (formIds) => {
+        try {
+            const formPromises = formIds.map(id =>
+                axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${id}`)
+            );
+
+            const formResponses = await Promise.all(formPromises);
+            const fetchedForms = formResponses.map(res => res.data);
+
+            setForms(fetchedForms);
+            console.log('📋 Forms loaded:', fetchedForms);
+        } catch (err) {
+            console.error('❌ Failed to load forms:', err);
+            // Set empty array to prevent undefined errors
+            setForms([]);
+        }
+    };
+
     const fetchFilteredReport = async (silent = false) => {
         // Prevent overlapping calls
         if (isRefreshing) {
@@ -326,9 +363,13 @@ export default function EnhancedReportViewer() {
 
             else {
                 // Use regular endpoint
+                const payload = {
+                    RuntimeFilters: runtimeFilters,
+                    VerticalLayout: template.layoutMode === "vertical" // ✅ NEW
+                };
                 res = await axios.post(
                     `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
-                    runtimeFilters
+                    payload
                 );
 
                 const { processedData, summaryRows } = processCalculatedFields(
@@ -356,18 +397,32 @@ export default function EnhancedReportViewer() {
 
     const fetchFilteredReport1 = async () => {
         try {
-            //setLoading(true); // Show loading
-            setIsRefreshing(true); // Additional loading state
+            setIsRefreshing(true);
             console.log('=== FETCH FILTERED REPORT DEBUG ===');
             console.log('calculatedFields state:', calculatedFields);
             console.log('fields state:', fields);
 
-            const res = await axios.post(`${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`, runtimeFilters);
+            // ✅ FIX: Wrap runtimeFilters in proper request object
+            const payload = {
+                RuntimeFilters: runtimeFilters || {},
+                VerticalLayout: template?.layoutMode === "vertical" || false
+            };
+
+            console.log('📤 Sending payload:', payload);
+
+            const res = await axios.post(
+                `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
+                payload  // ✅ Changed from runtimeFilters to payload
+            );
 
             console.log('=== PROCESSING FILTERED REPORT ===');
             console.log('reportData:', res.data);
 
-            const { processedData, summaryRows } = processCalculatedFields(res.data, calculatedFields, fields);
+            const { processedData, summaryRows } = processCalculatedFields(
+                res.data,
+                calculatedFields,
+                fields
+            );
 
             console.log('processedData:', processedData);
             console.log('summaryRows:', summaryRows);
@@ -376,13 +431,11 @@ export default function EnhancedReportViewer() {
             setSummaryRows(summaryRows);
             setLoading(false);
         } catch (err) {
-            setError("Failed to run filtered report: " + (err.message || "Unknown error"));
-            //setLoading(false); // Hide loading
-            setIsRefreshing(false); // Hide additional loading state
-        }
-        finally {
-            //setLoading(false); // Hide loading
-            setIsRefreshing(false); // Hide additional loading state
+            console.error('❌ Fetch error:', err.response?.data || err.message);
+            setError("Failed to run filtered report: " + (err.response?.data?.message || err.message || "Unknown error"));
+            setIsRefreshing(false);
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
@@ -1070,10 +1123,57 @@ export default function EnhancedReportViewer() {
     const [activeTooltip, setActiveTooltip] = useState(null);
     const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
+    const renderVerticalTable = () => {
+        // Get unique columns from first row
+        const firstRow = reportData[0];
+        if (!firstRow || !firstRow.data) {
+            return (
+                <div className="text-center py-8 text-gray-500">
+                    No data available
+                </div>
+            );
+        }
+
+        const uniqueColumns = firstRow.data
+            .filter(cell => cell.visible !== false) // ✅ Only show visible columns
+            .map((cell, idx) => ({
+                index: idx,
+                label: cell.fieldLabel
+            }));
+
+        return (
+            <table className="report-table">
+                <thead>
+                    <tr>
+                        {/* ✅ REMOVED: Form column */}
+                        {uniqueColumns.map((col, i) => (
+                            <th key={i}>{col.label}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {reportData.map((row, idx) => (
+                        <tr key={idx}>
+                            {/* ✅ REMOVED: Form name cell */}
+                            {row.data
+                                .filter(cell => cell.visible !== false)
+                                .map((cell, cellIdx) => (
+                                    <td key={cellIdx}>
+                                        {formatCellValue(cell.value, cell)}
+                                    </td>
+                                ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+    };
 
     const renderNewGroupedTable = () => {
         const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
-
+        if (template.layoutMode === "vertical") {
+            return renderVerticalTable();
+        }
         console.log('📊 RENDER GROUPED TABLE BY SUBMISSION ID');
         console.log('Total submissions:', submissions.length);
         console.log('📊 summaryRows:', summaryRows);

@@ -11,6 +11,7 @@ public class ReportTemplateDto
     public bool IncludeApprovals { get; set; }
     public bool IncludeRemarks { get; set; }
     public string? SharedWithRole { get; set; }
+    public string? LayoutMode { get; set; }
     public List<ReportFieldDto> Fields { get; set; }
     public List<ReportFilterDto> Filters { get; set; }
     public List<CalculatedField> CalculatedFields { get; set; }     // ✅ NEW

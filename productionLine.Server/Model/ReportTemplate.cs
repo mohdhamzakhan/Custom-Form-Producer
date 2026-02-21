@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace productionLine.Server.Model
@@ -59,6 +60,10 @@ namespace productionLine.Server.Model
         [Column("FORMRELATIONSHIPS")]
         public string? FormRelationships { get; set; }
         [ForeignKey("FORMID")]
+
+        [MaxLength(20)]
+        [Column("LAYOUTMODE")]
+        public string? LayoutMode { get; set; } = "horizontal";
         public virtual Form? Form { get; set; }
 
     }

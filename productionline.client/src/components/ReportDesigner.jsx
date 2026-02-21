@@ -201,6 +201,7 @@ export default function EnhancedReportDesigner() {
         relationships: true
     });
 
+    const [layoutMode, setLayoutMode] = useState("horizontal");
     const toggleExpand = (rowIdx) => {
         setExpandedSubmissions((prev) =>
             prev.includes(rowIdx)
@@ -878,6 +879,7 @@ export default function EnhancedReportDesigner() {
                     visible: fieldVisibility[fieldId] !== false
                 };
             }),
+            LayoutMode: layoutMode,
             Filters: filtersToSave,
             CalculatedFields: calculatedFields.map(c => ({
                 calculationType: c.calculationType || "aggregate",
@@ -945,6 +947,7 @@ export default function EnhancedReportDesigner() {
                             cycleTimeSeconds: config.cycleTimeSeconds || 30,
                             modelNumber: config.modelNumber || "",
                             message: config.message || "",
+                            groupByField: config.groupByField || "",
                             breaks: config.breaks || []
                         }));
                     } else {
@@ -2429,7 +2432,48 @@ export default function EnhancedReportDesigner() {
                                     />
                                 </div>
                             </div>
+                            <div className="mb-6 bg-white p-6 rounded-lg shadow">
+                                <h3 className="text-lg font-semibold mb-4">Layout Settings</h3>
 
+                                <div className="grid grid-cols-2 gap-4">
+                                    <label className="flex items-center cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            value="horizontal"
+                                            checked={layoutMode === "horizontal"}
+                                            onChange={(e) => setLayoutMode(e.target.value)}
+                                            className="mr-2"
+                                        />
+                                        <span>Horizontal Layout</span>
+                                        <span className="text-sm text-gray-500 ml-2">
+                                            Shows all columns side-by-side
+                                        </span>
+                                    </label>
+
+                                    <label className="flex items-center cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            value="vertical"
+                                            checked={layoutMode === "vertical"}
+                                            onChange={(e) => setLayoutMode(e.target.value)}
+                                            className="mr-2"
+                                        />
+                                        <span>Vertical Layout</span>
+                                        <span className="text-sm text-gray-500 ml-2">
+                                            Stacks data from all forms into same columns
+                                        </span>
+                                    </label>
+                                </div>
+
+                                {multiFormMode && layoutMode === "vertical" && (
+                                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                                        <p className="text-sm text-blue-800">
+                                            💡 <strong>Vertical Mode:</strong> Column 1 from each form will merge into a single "Column 1" in the report.
+                                            Make sure to align similar data types across forms for best results.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
                             {multiFormMode && selectedForms.length > 0 && (
                                 <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
                                     <h4 className="font-medium text-sm mb-2">Selected Forms:</h4>
