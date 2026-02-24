@@ -161,6 +161,22 @@ namespace productionLine.Server.Model
             modelBuilder.Entity<ReportTemplate>()
                 .Property(e => e.IsMultiForm)
                 .HasDefaultValue(0);
+
+            modelBuilder.Entity<FormSubmissionData>()
+        .HasIndex(d => new { d.FieldLabel, d.FormSubmissionId })
+        .HasDatabaseName("IX_SUBMDATA_FIELDLABEL_SUBID");
+
+            // ✅ Index on FormSubmissions: FormId + SubmittedAt
+            // Speeds up the date-scoped shift queries
+            modelBuilder.Entity<FormSubmission>()
+                .HasIndex(s => new { s.FormId, s.SubmittedAt })
+                .HasDatabaseName("IX_FORMSUBMISSIONS_FORMID_DATE");
+
+            // ✅ Index on FormSubmissions: FormId + SubmittedAt + Id (covering index)
+            // Slightly more storage but even faster for the join
+            modelBuilder.Entity<FormSubmission>()
+                .HasIndex(s => new { s.FormId, s.SubmittedAt, s.Id })
+                .HasDatabaseName("IX_FORMSUBMISSIONS_FORMID_DATE_ID");
         }
 
         // Add this temporarily to see what SQL is being generated

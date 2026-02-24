@@ -935,7 +935,8 @@ export default function EnhancedReportDesigner() {
                             breaks: chart.shiftConfigs[0].breaks || [],
                             modelNumber: chart.shiftConfigs[0].modelNumber || "",
                             message: chart.shiftConfigs[0].message || "",
-                            showChart: chart.shiftConfigs[0].showChart || true
+                            showChart: chart.shiftConfigs[0].showChart || true,
+                            groupByField: chart.shiftConfigs[0].groupByField || true,
                         };
 
                         baseConfig.shiftConfigs = chart.shiftConfigs.map(config => ({
@@ -960,7 +961,8 @@ export default function EnhancedReportDesigner() {
                             name: 'Shift A',
                             breaks: [],
                             modelNumber: "",
-                            message: ""
+                            message: "",
+                            groupByField: ""
                         };
                         baseConfig.shiftConfigs = null;
                     }

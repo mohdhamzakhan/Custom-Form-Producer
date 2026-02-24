@@ -172,6 +172,8 @@ public class ShiftConfigDto
     public string ModelNumber { get; set; }
     [JsonPropertyName("message")]
     public string Message { get; set; }
+    [JsonPropertyName("groupByField")]
+    public string GroupByField { get; set; }
 }
 
 public class ShiftBreak

@@ -68,7 +68,8 @@ const MultiChartBuilder = ({
             breaks: SHIFT_CONFIG[shiftKey].defaultBreaks.map(breakItem => ({
                 ...breakItem,
                 id: Date.now() + Math.random()
-            }))
+            })),
+            groupByField: "", 
         }));
     };
 
@@ -342,6 +343,7 @@ const MultiChartBuilder = ({
                         endTime: SHIFT_CONFIG[newShiftKey].endTime,
                         modelNumber: "",  // Add this - reset when changing shifts
                         message: "",      // Add this - reset when changing shifts
+                        groupByField: "",
                         breaks: SHIFT_CONFIG[newShiftKey].defaultBreaks.map(breakItem => ({
                             ...breakItem,
                             id: Date.now() + Math.random()
@@ -548,6 +550,35 @@ const MultiChartBuilder = ({
                                         </div>
                                     </div>
 
+                                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <label className="block text-sm font-semibold text-green-800 mb-2">
+                                            🏭 Production Line Grouping
+                                        </label>
+                                        <p className="text-xs text-green-600 mb-2">
+                                            Select a form field to split the chart into multiple lines (one per production line / machine).
+                                            Leave empty to show a single combined line.
+                                        </p>
+                                        <select
+                                            value={shiftConfig.groupByField || ""}
+                                            onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                groupByField: e.target.value
+                                            })}
+                                            className="w-full p-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-white"
+                                        >
+                                            <option value="">-- Single line (no grouping) --</option>
+                                            {fields.map(field => (
+                                                <option key={field.id} value={field.label}>
+                                                    {field.label} ({field.type})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {shiftConfig.groupByField && (
+                                            <div className="mt-2 p-2 bg-green-100 rounded text-xs text-green-700">
+                                                ✅ Chart will show separate lines for each value of <strong>"{shiftConfig.groupByField}"</strong>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Message - Add this section after the grid */}
                                     <div className="mt-4">
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -563,6 +594,30 @@ const MultiChartBuilder = ({
                                             rows="3"
                                             className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
                                         />
+                                    </div>
+
+                                    {/* Group By Field - Production Line */}
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Group By (Production Line Field)
+                                        </label>
+                                        <select
+                                            value={shiftConfig.groupByField || ""}
+                                            onChange={(e) => updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                groupByField: e.target.value
+                                            })}
+                                            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="">-- No grouping (single line) --</option>
+                                            {fields.map(field => (
+                                                <option key={field.id} value={field.label}>
+                                                    {field.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Select the field that identifies the production line (e.g. "Line Name", "Machine")
+                                        </p>
                                     </div>
                                 </div>
 

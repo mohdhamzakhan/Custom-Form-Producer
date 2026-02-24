@@ -21,16 +21,22 @@ namespace productionLine.Server.Controllers
             _cache = cache;
         }
 
+        // ============================================================
+        // FILE: ShiftProductionController.cs
+        // REPLACE the entire GetShiftChartData method with this
+        // ============================================================
+
         [HttpGet("chart-data")]
         public async Task<IActionResult> GetShiftChartData(
-    [FromQuery] DateTime selectedDate,
-    [FromQuery] string shift,
-    [FromQuery] int targetParts,
-    [FromQuery] double cycleTimeSeconds,
-    [FromQuery] string startTime,
-    [FromQuery] string endTime,
-    [FromQuery] string breaks,
-    [FromQuery] int formId)
+            [FromQuery] DateTime selectedDate,
+            [FromQuery] string shift,
+            [FromQuery] int targetParts,
+            [FromQuery] double cycleTimeSeconds,
+            [FromQuery] string startTime,
+            [FromQuery] string endTime,
+            [FromQuery] string breaks,
+            [FromQuery] int formId,
+            [FromQuery] string groupByField = null)   // <-- ADD THIS NEW PARAM
         {
             try
             {
@@ -38,35 +44,25 @@ namespace productionLine.Server.Controllers
                 Console.WriteLine($"  Date: {selectedDate:yyyy-MM-dd} (parsed from query)");
                 Console.WriteLine($"  Date kind: {selectedDate.Kind}");
                 Console.WriteLine($"  Shift: {shift}");
+                Console.WriteLine($"  GroupByField: {groupByField ?? "none"}");
 
                 int form = _context.ReportTemplates.Where(x => x.Id == formId).Select(y => y.FormId).FirstOrDefault();
 
-                // ✅ Ensure we're using the date portion only
                 var queryDate = selectedDate.Date;
                 Console.WriteLine($"  Query Date (normalized): {queryDate:yyyy-MM-dd}");
 
-                // Validate required parameters
                 if (string.IsNullOrWhiteSpace(startTime))
-                {
                     return BadRequest(new { error = "startTime parameter is required" });
-                }
 
                 if (string.IsNullOrWhiteSpace(endTime))
-                {
                     return BadRequest(new { error = "endTime parameter is required" });
-                }
 
                 if (targetParts <= 0)
-                {
                     return BadRequest(new { error = "targetParts must be greater than 0" });
-                }
 
                 if (cycleTimeSeconds <= 0)
-                {
                     return BadRequest(new { error = "cycleTimeSeconds must be greater than 0" });
-                }
 
-                // Log incoming parameters for debugging
                 Console.WriteLine($"[ShiftProduction] Received request:");
                 Console.WriteLine($"  Date: {selectedDate:yyyy-MM-dd}");
                 Console.WriteLine($"  Shift: {shift}");
@@ -75,65 +71,48 @@ namespace productionLine.Server.Controllers
                 Console.WriteLine($"  Start: {startTime}, End: {endTime}");
                 Console.WriteLine($"  Breaks: {breaks ?? "null"}");
 
-                // Build cache key
-                var cacheKey = $"shift_chart_{formId}_{selectedDate:yyyyMMdd}_{shift}_{targetParts}_{cycleTimeSeconds}";
+                // Build cache key - include groupByField
+                var cacheKey = $"shift_chart_{formId}_{selectedDate:yyyyMMdd}_{shift}_{targetParts}_{cycleTimeSeconds}_{groupByField ?? "none"}";
 
-                // Try to get from cache (30 seconds)
                 if (_cache.TryGetValue(cacheKey, out ShiftChartResponse cachedData))
                 {
                     Console.WriteLine($"[ShiftProduction] Returning cached data");
                     return Ok(cachedData);
                 }
 
-                // ✅ Parse and validate breaks configuration
+                // Parse breaks
                 var breaksList = new List<BreakConfig>();
                 if (!string.IsNullOrEmpty(breaks))
                 {
                     try
                     {
                         var parsedBreaks = JsonSerializer.Deserialize<List<BreakConfig>>(breaks) ?? new List<BreakConfig>();
-
-                        // Filter out invalid breaks
                         breaksList = parsedBreaks
                             .Where(b => !string.IsNullOrWhiteSpace(b.StartTime) && !string.IsNullOrWhiteSpace(b.EndTime))
                             .ToList();
-
                         Console.WriteLine($"[ShiftProduction] Parsed {parsedBreaks.Count} breaks, {breaksList.Count} valid");
-
-                        if (parsedBreaks.Count != breaksList.Count)
-                        {
-                            Console.WriteLine($"[ShiftProduction] WARNING: {parsedBreaks.Count - breaksList.Count} breaks skipped due to missing times");
-                        }
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[ShiftProduction] Error parsing breaks: {ex.Message}");
-                        // Continue with empty breaks list
                     }
                 }
 
-                // Fetch and filter submissions by date and shift time
                 Console.WriteLine($"[ShiftProduction] Fetching submissions from database...");
                 var submissions = await GetFilteredSubmissions(selectedDate, startTime, endTime, form);
-
-                // After: var submissions = await GetFilteredSubmissions(...);
 
                 var startMinutes = ParseTimeToMinutes(startTime);
                 var isOvernight = ParseTimeToMinutes(endTime) <= startMinutes;
 
                 int initialCount = 0;
-
                 if (isOvernight)
                 {
-                    // overnight: count everything before start on day N, plus all of day N-1
-                    var prevDate = queryDate.AddDays(-1);
-
                     initialCount = await _context.FormSubmissions
                         .AsNoTracking()
                         .Where(s =>
                             s.FormId == form &&
                             (
-                                s.SubmittedAt.Date < queryDate ||                             // any previous day
+                                s.SubmittedAt.Date < queryDate ||
                                 (s.SubmittedAt.Date == queryDate &&
                                  s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute < startMinutes)
                             ))
@@ -141,7 +120,6 @@ namespace productionLine.Server.Controllers
                 }
                 else
                 {
-                    // normal shift: same day, before start
                     initialCount = await _context.FormSubmissions
                         .AsNoTracking()
                         .Where(s =>
@@ -151,41 +129,140 @@ namespace productionLine.Server.Controllers
                         .CountAsync();
                 }
 
-
                 Console.WriteLine($"[ShiftProduction] Found {submissions.Count} submissions");
 
-                // Calculate target line data
+                // Calculate target line
                 Console.WriteLine($"[ShiftProduction] Calculating target line...");
-                var targetLineData = CalculateTargetLine(
-                    targetParts,
-                    cycleTimeSeconds,
-                    startTime,
-                    endTime,
-                    breaksList
-                );
+                var targetLineData = CalculateTargetLine(targetParts, cycleTimeSeconds, startTime, endTime, breaksList);
                 Console.WriteLine($"[ShiftProduction] Generated {targetLineData.Count} target points");
 
-                // Build combined chart data with cumulative totals
-                Console.WriteLine($"[ShiftProduction] Building combined chart data...");
+                // ============================================================
+                // NEW: If groupByField is specified, build multi-line response
+                // ============================================================
+                if (!string.IsNullOrWhiteSpace(groupByField))
+                {
+                    Console.WriteLine($"[ShiftProduction] Building MULTI-LINE chart data, grouping by: {groupByField}");
+
+                    var groupField = await _context.FormFields
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(f => f.Label == groupByField && f.FormId == form);
+
+                    if (groupField != null)
+                    {
+                        Console.WriteLine($"[ShiftProduction] Found group field ID: {groupField.Id}");
+
+                        // ✅ OPTIMIZATION 1: Single DB query for all submission field values at once
+                        var submissionIds = submissions.Select(s => s.Id).ToList();
+                        var fieldIdStr = groupField.Id.ToString();
+                        var startMinutesForQuery = ParseTimeToMinutes(startTime);
+                        var endMinutesForQuery = ParseTimeToMinutes(endTime);
+                        var isOvernightForQuery = endMinutesForQuery <= startMinutesForQuery;
+                        var nextDateForQuery = queryDate.AddDays(1);
+                        var submissionDataList = await (
+                             from s in _context.FormSubmissions.AsNoTracking()
+                             join d in _context.FormSubmissionData.AsNoTracking() on s.Id equals d.FormSubmissionId
+                             where
+                                 s.FormId == form &&
+                                 d.FieldLabel == fieldIdStr &&
+                                 (
+                                     isOvernightForQuery
+                                     ? (
+                                         // Overnight: same day >= start OR next day <= end
+                                         (s.SubmittedAt.Date == queryDate && (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) >= startMinutesForQuery)
+                                         ||
+                                         (s.SubmittedAt.Date == nextDateForQuery && (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) <= endMinutesForQuery)
+                                       )
+                                     : (
+                                         // Regular: same day between start and end
+                                         s.SubmittedAt.Date == queryDate &&
+                                         (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) >= startMinutesForQuery &&
+                                         (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) <= endMinutesForQuery
+                                       )
+                                 )
+                            select new
+    {
+        d.FormSubmissionId,
+        d.FieldValue   // ✅ Fetch raw - handle null in memory below
+    }
+                         ).ToListAsync();
+
+                        Console.WriteLine($"[ShiftProduction] Fetched {submissionDataList.Count} field values for grouping");
+
+                        // ✅ STEP 3: Build lookup map
+                        var submissionLineMap = submissionDataList
+                            .GroupBy(d => d.FormSubmissionId)
+                            .ToDictionary(
+                                g => g.Key,
+                                g => g.First().FieldValue?.Trim() ?? "Unknown"
+                            );
+
+                        // ✅ OPTIMIZATION 3: Group submissions once
+                        var groupedSubmissions = submissions
+                            .GroupBy(s => submissionLineMap.TryGetValue(s.Id, out var ln) ? ln : "Unknown")
+                            .ToDictionary(g => g.Key, g => g.ToList());
+
+                        Console.WriteLine($"[ShiftProduction] Found {groupedSubmissions.Count} lines: {string.Join(", ", groupedSubmissions.Keys)}");
+
+                        // ✅ OPTIMIZATION 4: Pre-bucket target line into a dictionary ONCE (shared across all lines)
+                        // Instead of calling BuildCombinedChartData (which re-buckets target line each time),
+                        // we pre-compute the target bucket map and reuse it
+                        var linesChartData = BuildMultiLineChartData(groupedSubmissions, targetLineData);
+                        var lineCount = groupedSubmissions.Count;
+                        var totalTargetParts = targetParts * lineCount;
+                        var currentProduction = submissions.Count;
+                        var efficiency = targetParts > 0 ? (int)Math.Round((double)currentProduction / targetParts / lineCount * 100) : 0;
+                        var remainingParts = Math.Max(0, totalTargetParts - currentProduction);
+
+                        var multiLineResponse = new
+                        {
+                            IsMultiLine = true,
+                            Lines = linesChartData,
+                            TargetLineData = targetLineData.Select(point => new
+                            {
+                                time = point.Time,
+                                target = point.TargetParts
+                            }).ToList(),
+                            CurrentProduction = currentProduction,
+                            TargetParts = totalTargetParts,
+                            Efficiency = efficiency,
+                            RemainingParts = remainingParts,
+                            LastUpdate = DateTime.Now,
+                            InitialCount = initialCount,
+                            LineNames = groupedSubmissions.Keys.ToList()
+                        };
+
+                        _cache.Set(cacheKey, multiLineResponse, TimeSpan.FromSeconds(30));
+
+                        Console.WriteLine($"[ShiftProduction] Multi-line success! {groupedSubmissions.Count} lines");
+                        return Ok(multiLineResponse);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[ShiftProduction] WARNING: groupByField '{groupByField}' not found, falling back to single line");
+                    }
+                }
+
+                // ============================================================
+                // ORIGINAL: Single line response (unchanged)
+                // ============================================================
+                Console.WriteLine($"[ShiftProduction] Building SINGLE-LINE combined chart data...");
                 var combinedData = BuildCombinedChartData(submissions, targetLineData);
 
-                // Calculate metrics
-                var currentProduction = submissions.Count;
-                var efficiency = targetParts > 0 ? (int)Math.Round((double)currentProduction / targetParts * 100) : 0;
-                var remainingParts = Math.Max(0, targetParts - currentProduction);
+                var currentProductionSingle = submissions.Count;
+                var efficiencySingle = targetParts > 0 ? (int)Math.Round((double)currentProductionSingle / targetParts * 100) : 0;
+                var remainingPartsSingle = Math.Max(0, targetParts - currentProductionSingle);
 
                 var response = new ShiftChartResponse
                 {
                     ChartData = combinedData,
-                    CurrentProduction = currentProduction,
+                    CurrentProduction = currentProductionSingle,
                     TargetParts = targetParts,
-                    Efficiency = efficiency,
-                    RemainingParts = remainingParts,
+                    Efficiency = efficiencySingle,
+                    RemainingParts = remainingPartsSingle,
                     LastUpdate = DateTime.Now,
                     InitialCount = initialCount
                 };
 
-                // Cache for 30 seconds
                 _cache.Set(cacheKey, response, TimeSpan.FromSeconds(30));
 
                 Console.WriteLine($"[ShiftProduction] Success! Returning {combinedData.Count} data points");
@@ -198,16 +275,12 @@ namespace productionLine.Server.Controllers
             }
             catch (Exception ex)
             {
-                // Detailed error logging
                 Console.WriteLine($"[ShiftProduction] ERROR: {ex.Message}");
                 Console.WriteLine($"[ShiftProduction] Stack Trace: {ex.StackTrace}");
 
                 if (ex.InnerException != null)
-                {
                     Console.WriteLine($"[ShiftProduction] Inner Exception: {ex.InnerException.Message}");
-                }
 
-                // Return detailed error in development
                 return StatusCode(500, new
                 {
                     error = ex.Message,
@@ -218,7 +291,145 @@ namespace productionLine.Server.Controllers
             }
         }
 
+        // ============================================================
+        // REPLACE the entire BuildMultiLineChartData method with this:
+        // ============================================================
 
+        private Dictionary<string, List<object>> BuildMultiLineChartData(
+            Dictionary<string, List<FormSubmission>> groupedSubmissions,
+            List<ChartDataPoint> targetLineData)
+        {
+            int ToBucket(int totalMinutes) => (totalMinutes / 5) * 5;
+
+            // STEP 1: Pre-bucket ALL lines' submissions into time maps
+            var lineTimeMaps = new Dictionary<string, Dictionary<string, int>>();
+            foreach (var (lineName, lineSubmissions) in groupedSubmissions)
+            {
+                var timeMap = new Dictionary<string, int>();
+                foreach (var submission in lineSubmissions)
+                {
+                    var totalMinutes = submission.SubmittedAt.Hour * 60 + submission.SubmittedAt.Minute;
+                    var bucketMinutes = ToBucket(totalMinutes);
+                    if (bucketMinutes >= 24 * 60) bucketMinutes = 0;
+                    var timeKey = FormatTime(bucketMinutes);
+                    timeMap[timeKey] = timeMap.GetValueOrDefault(timeKey) + 1;
+                }
+                lineTimeMaps[lineName] = timeMap;
+            }
+
+            // STEP 2: Pre-compute first/last submission bucket per line
+            var lineWindows = new Dictionary<string, (int first, int last, bool hasData)>();
+            foreach (var (lineName, lineSubmissions) in groupedSubmissions)
+            {
+                if (!lineSubmissions.Any())
+                {
+                    lineWindows[lineName] = (0, 0, false);
+                    continue;
+                }
+                var buckets = lineSubmissions
+                    .Select(s => ToBucket(s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute))
+                    .ToList();
+                lineWindows[lineName] = (buckets.Min(), buckets.Max(), true);
+            }
+
+            // STEP 3: Single pass over target timeline
+            var cumulativeTotals = groupedSubmissions.Keys.ToDictionary(k => k, k => 0);
+            var pendingFromBreak = groupedSubmissions.Keys.ToDictionary(k => k, k => 0);
+            var heldAtBreakStart = groupedSubmissions.Keys.ToDictionary(k => k, k => 0);
+
+            // ✅ NEW: track last non-null cumulative per line so we can carry it forward
+            var lastKnownValue = groupedSubmissions.Keys.ToDictionary(k => k, k => (int?)null);
+
+            var lineResults = groupedSubmissions.Keys.ToDictionary(
+                k => k,
+                k => new List<object>(targetLineData.Count)
+            );
+
+            for (int idx = 0; idx < targetLineData.Count; idx++)
+            {
+                var targetPoint = targetLineData[idx];
+                bool isBreak = targetPoint.IsBreak;
+                bool wasBreak = idx > 0 && targetLineData[idx - 1].IsBreak;
+
+                // ============================================================
+                // REPLACE only the inner foreach loop inside BuildMultiLineChartData
+                // (from "foreach (var lineName in groupedSubmissions.Keys)" to its closing brace)
+                // ============================================================
+
+                foreach (var lineName in groupedSubmissions.Keys)
+                {
+                    var timeMap = lineTimeMaps[lineName];
+                    var window = lineWindows[lineName];
+
+                    var submissionsInBucket = timeMap.GetValueOrDefault(targetPoint.Time, 0);
+                    int? actualParts = null;
+
+                    if (!window.hasData)
+                    {
+                        // No submissions at all for this line — always null
+                        actualParts = null;
+                    }
+                    else
+                    {
+                        // Parse chart time bucket
+                        var timeParts = targetPoint.Time.Split(new[] { ':', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        int h = int.Parse(timeParts[0]);
+                        if (timeParts[2] == "PM" && h != 12) h += 12;
+                        if (timeParts[2] == "AM" && h == 12) h = 0;
+                        int chartBucket = ToBucket(h * 60 + int.Parse(timeParts[1]));
+
+                        if (chartBucket < window.first)
+                        {
+                            // ✅ Before this line's first submission — show 0 (line hasn't started)
+                            actualParts = 0;
+                        }
+                        else if (chartBucket >= window.first && chartBucket <= window.last)
+                        {
+                            // ✅ Inside this line's active window — normal calculation
+                            if (isBreak)
+                            {
+                                if (!wasBreak) heldAtBreakStart[lineName] = cumulativeTotals[lineName];
+                                pendingFromBreak[lineName] += submissionsInBucket;
+                                actualParts = heldAtBreakStart[lineName] + pendingFromBreak[lineName];
+                            }
+                            else
+                            {
+                                if (wasBreak)
+                                {
+                                    cumulativeTotals[lineName] += pendingFromBreak[lineName];
+                                    pendingFromBreak[lineName] = 0;
+                                }
+                                cumulativeTotals[lineName] += submissionsInBucket;
+                                actualParts = cumulativeTotals[lineName];
+                            }
+
+                            // ✅ Always update last known value while inside window
+                            lastKnownValue[lineName] = actualParts;
+                        }
+                        else
+                        {
+                            // ✅ Past this line's last submission — ALWAYS carry forward last known value
+                            // This is what prevents the drop to 0
+                            actualParts = lastKnownValue[lineName] ?? cumulativeTotals[lineName];
+                        }
+                    }
+
+                    lineResults[lineName].Add(new
+                    {
+                        time = targetPoint.Time,
+                        actual = submissionsInBucket,
+                        target = targetPoint.TargetParts,
+                        cumulative = actualParts
+                    });
+                }
+            }
+
+            // STEP 4: Convert to expected return type
+            return lineResults.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.Cast<object>().ToList()
+            );
+        }
 
 
         private async Task<List<FormSubmission>> GetFilteredSubmissions(

@@ -365,6 +365,29 @@ const ReportCharts = React.memo(({
     const [configVisible, setConfigVisible] = useState(showConfiguration !== false);
     const [configTimer, setConfigTimer] = useState(null);
 
+    const [isMultiLine, setIsMultiLine] = useState(false);
+    const [multiLineData, setMultiLineData] = useState({});
+    const [lineNames, setLineNames] = useState([]);
+    const [mergedChartData, setMergedChartData] = useState([]);
+    const [currentProduction, setCurrentProduction] = useState(0);
+    const [efficiency, setEfficiency] = useState(0);
+    const [remainingParts, setRemainingParts] = useState(0);
+
+
+
+    const LINE_COLORS = [
+        '#3b82f6',  // blue
+        '#10b981',  // green
+        '#f59e0b',  // amber
+        '#ef4444',  // red
+        '#8b5cf6',  // purple
+        '#ec4899',  // pink
+        '#06b6d4',  // cyan
+        '#f97316',  // orange
+        '#84cc16',  // lime
+        '#14b8a6',  // teal
+    ];
+
     if (passedShiftConfig && Array.isArray(passedShiftConfig)) {
         console.log('Shift configs details:');
         passedShiftConfig.forEach((config, index) => {
@@ -761,7 +784,7 @@ const ReportCharts = React.memo(({
 
         return item[metric];
     };
-
+    const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
     const calculateRowwiseExpression = (formula, rowData) => {
         try {
             let processedFormula = formula;
@@ -1448,94 +1471,146 @@ const ReportCharts = React.memo(({
                 let interval = null;
                 let isCancelled = false;
 
+                const mergeMultiLineChartData = (linesData, targetLineData) => {
+                    // Build a map: time -> { time, target, LineName1: count, LineName2: count }
+                    const timeMap = {};
 
-                const fetchShiftData = async () => {
-                    // ✅ Don't fetch if this effect was cancelled
-                    if (isCancelled) return;
+                    // First add all target points
+                    if (targetLineData && targetLineData.length > 0) {
+                        targetLineData.forEach(point => {
+                            const timeKey = point.time || point.Time;
+                            if (!timeMap[timeKey]) {
+                                timeMap[timeKey] = { time: timeKey };
+                            }
+                            timeMap[timeKey]['target'] = point.target || point.Target || 0;
+                        });
+                    }
 
-                    setShiftLoading(true);
-                    setShiftError(null);
+                    // Then add each line's data points
+                    Object.entries(linesData).forEach(([lineName, lineData]) => {
+                        if (!Array.isArray(lineData)) return;
+                        lineData.forEach(point => {
+                            const timeKey = point.time || point.Time;
+                            if (!timeMap[timeKey]) {
+                                timeMap[timeKey] = { time: timeKey };
+                            }
+                            // Use cumulative count for the line
+                            timeMap[timeKey][lineName] = point.cumulative || point.actual || point.Cumulative || 0;
+                        });
+                    });
+
+                    // Sort by time and return as array
+                    const result = Object.values(timeMap).sort((a, b) => {
+                        const timeA = new Date('1970-01-01T' + a.time + ':00');
+                        const timeB = new Date('1970-01-01T' + b.time + ':00');
+                        return timeA - timeB;
+                    });
+
+                    console.log('[ReportCharts] Merged multi-line data:', result.length, 'time points');
+                    return result;
+                };
+
+                const fetchShiftData = async (shiftConfig) => {
+                    if (!shiftConfig || !templateId) {
+                        console.warn('[fetchShiftData] Missing shiftConfig or templateId', { shiftConfig, templateId });
+                        setShiftError('Missing shift configuration');
+                        setShiftLoading(false);
+                        return;
+                    }
 
                     try {
-                        console.log('🔄 Fetching shift data for date:', selectedDate);
-                        console.log('Active shift config:', activeShiftConfig);
-
-                        if (!activeShiftConfig?.startTime || !activeShiftConfig?.endTime) {
-                            throw new Error('Shift configuration is missing start/end times');
-                        }
+                        const breaksJson = JSON.stringify(shiftConfig.breaks || []);
 
                         const params = new URLSearchParams({
-                            selectedDate: selectedDate,
-                            shift: activeShiftConfig.shift || 'A',
-                            targetParts: activeShiftConfig.targetParts || 0,
-                            cycleTimeSeconds: activeShiftConfig.cycleTimeSeconds || 1,
-                            startTime: activeShiftConfig.startTime,
-                            endTime: activeShiftConfig.endTime,
-                            breaks: JSON.stringify(
-                                (activeShiftConfig.breaks || []).filter(b => b.startTime && b.endTime)
-                            ),
-                            formId: templateId
+                            selectedDate: selectedDate || new Date().toISOString().split('T')[0],
+                            shift: shiftConfig.shift || 'A',
+                            targetParts: shiftConfig.targetParts || 100,
+                            cycleTimeSeconds: shiftConfig.cycleTimeSeconds || 30,
+                            startTime: shiftConfig.startTime || '06:00',
+                            endTime: shiftConfig.endTime || '14:30',
+                            breaks: breaksJson,
+                            formId: templateId,
+                            groupByField: shiftConfig.groupByField || ''
                         });
 
-                        console.log('📤 Request URL:', `/api/ShiftProduction/chart-data?${params.toString()}`);
+                        console.log('[fetchShiftData] Calling API with params:', params.toString());
 
                         const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/ShiftProduction/chart-data?${params}`);
 
+                        console.log('[fetchShiftData] Response status:', response.status);
+
                         if (!response.ok) {
                             const errorText = await response.text();
-                            console.error('❌ Server response:', errorText);
-                            throw new Error(`Server error: ${response.status}`);
+                            console.error('[fetchShiftData] API error:', response.status, errorText);
+                            setShiftError(`API error: ${response.status}`);
+                            setShiftLoading(false);
+                            return;
                         }
 
-                        const data = await response.json();
+                        const responseData = await response.json();
+                        console.log('[fetchShiftData] Got response, isMultiLine:', responseData.isMultiLine);
 
-                        const processedChartData = data.chartData.map((point, index) => {
-                            if (point.isBreak && index > 0) {
-                                // During breaks, maintain the previous cumulative value
-                                const previousPoint = data.chartData[index - 1];
-                                return {
-                                    ...point,
-                                    actualParts: previousPoint.actualParts || point.actualParts
-                                };
-                            }
-                            return point;
-                        });
+                        if (responseData.isMultiLine && responseData.lines) {
+                            // ===== MULTI-LINE RESPONSE =====
+                            console.log('[fetchShiftData] Processing multi-line, lines:', Object.keys(responseData.lines));
 
-                        // ✅ Only update state if not cancelled
-                        if (!isCancelled) {
-                            console.log('✅ Backend response received:', data);
+                            setIsMultiLine(true);
+                            setMultiLineData(responseData.lines);
+                            setLineNames(responseData.lineNames || Object.keys(responseData.lines));
 
-                            setShiftChartData(data.chartData);
+                            const merged = mergeMultiLineChartData(responseData.lines, responseData.targetLineData || []);
+                            setMergedChartData(merged);
+
+                            // ✅ CRITICAL: set shiftChartData so loading screen goes away
+                            setShiftChartData(merged.length > 0 ? merged : [{ time: '00:00 AM' }]);
+
                             setShiftMetrics({
-                                currentProduction: data.currentProduction,
-                                targetParts: data.targetParts,
-                                efficiency: data.efficiency,
-                                remainingParts: data.remainingParts,
-                                initialCount: data.initialCount ?? 0,
+                                currentProduction: responseData.currentProduction || 0,
+                                targetParts: responseData.targetParts || 0,
+                                efficiency: responseData.efficiency || 0,
+                                remainingParts: responseData.remainingParts || 0,
+                            });
+
+                        } else {
+                            // ===== SINGLE LINE RESPONSE =====
+                            console.log('[fetchShiftData] Processing single-line, chartData points:', responseData.chartData?.length);
+
+                            setIsMultiLine(false);
+                            setMultiLineData({});
+                            setLineNames([]);
+                            setMergedChartData([]);
+
+                            // ✅ CRITICAL: set shiftChartData so loading screen goes away
+                            setShiftChartData(responseData.chartData || []);
+
+                            setShiftMetrics({
+                                currentProduction: responseData.currentProduction || 0,
+                                targetParts: responseData.targetParts || 0,
+                                efficiency: responseData.efficiency || 0,
+                                remainingParts: responseData.remainingParts || 0,
                             });
                         }
 
-                    } catch (err) {
-                        if (!isCancelled) {
-                            console.error('❌ Error fetching shift data:', err);
-                            setShiftError(err.message);
-                        }
-                    } finally {
-                        if (!isCancelled) {
-                            setShiftLoading(false);
-                        }
+                        // ✅ CRITICAL: always clear loading and error
+                        setShiftLoading(false);
+                        setShiftError(null);
+
+                    } catch (error) {
+                        console.error('[fetchShiftData] Exception:', error);
+                        setShiftError(`Failed to load data: ${error.message}`);
+                        setShiftLoading(false);
                     }
                 };
 
                 if (activeShiftConfig && activeShiftConfig.startTime && activeShiftConfig.endTime) {
                     // ✅ Fetch immediately
-                    fetchShiftData();
+                    fetchShiftData(activeShiftConfig);
 
                     // ✅ Set up auto-refresh every 30 seconds
                     interval = setInterval(() => {
                         console.log('🔄 Auto-refresh triggered');
-                        fetchShiftData();
-                    }, 30000);
+                        fetchShiftData(activeShiftConfig);
+                    }, 90000);
                 } else {
                     setShiftError('Invalid shift configuration - missing start/end times');
                     setShiftLoading(false);
@@ -1562,7 +1637,48 @@ const ReportCharts = React.memo(({
             ]);
 
 
+            const clippedChartData = useMemo(() => {
+                const chartData = isMultiLine ? mergedChartData : shiftChartData;
+                if (!chartData || chartData.length === 0) return chartData || [];
+                if (type !== 'shift') return chartData;
 
+                const currentTimeIndex = isViewingToday(selectedDate)
+                    ? getCurrentChartBucketIndex(chartData)
+                    : chartData.length - 1;
+
+                return chartData.map((point, index) => {
+                    // ✅ Past and present: show real data unchanged
+                    if (index <= currentTimeIndex) {
+                        return point;
+                    }
+
+                    // ✅ The point RIGHT AFTER current time: carry last known value
+                    // This prevents Recharts drawing a closing segment down to zero
+                    if (index === currentTimeIndex + 1) {
+                        if (isMultiLine) {
+                            const bridgePoint = { time: point.time, target: point.target };
+                            const prevPoint = chartData[currentTimeIndex];
+                            lineNames.forEach(name => {
+                                // Carry the last real value forward one step, then null after
+                                bridgePoint[name] = prevPoint[name] ?? null;
+                            });
+                            return bridgePoint;
+                        } else {
+                            const prevActual = chartData[currentTimeIndex]?.actualParts ?? null;
+                            return { ...point, actualParts: prevActual };
+                        }
+                    }
+
+                    // ✅ All future points beyond the bridge: fully null (line is gone)
+                    if (isMultiLine) {
+                        const nulledPoint = { time: point.time, target: point.target };
+                        lineNames.forEach(name => { nulledPoint[name] = null; });
+                        return nulledPoint;
+                    } else {
+                        return { ...point, actualParts: null };
+                    }
+                });
+            }, [isMultiLine, mergedChartData, shiftChartData, selectedDate, type, lineNames]);
             // Inject marquee styles
             React.useEffect(() => {
                 const styleId = 'marquee-style';
@@ -1774,238 +1890,369 @@ const ReportCharts = React.memo(({
                                 return null;
                             })()}
 
-                            <ResponsiveContainer
-                                width="100%"
-                                height={isMaximized ? "100%" : 500}
-                            >
-                                <LineChart
-                                    data={shiftChartData}
-                                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                                >
-                                    <CartesianGrid
-                                        strokeDasharray="3 3"
-                                        stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"}
-                                    />
+                            {/* ============================================================ */}
+                            {/* FIND the block starting with: {type === 'shift' && (        */}
+                            {/* REPLACE the entire block with this:                         */}
+                            {/* ============================================================ */}
 
-                                    {/* ✅ Add highlighted area for elapsed time */}
-                                    {shiftChartData && (() => {
-                                        const areas = [];
+                            {type === 'shift' && (
+                                <div style={{ width: '100%', height: isMaximized ? '80vh' : 500 }}>
+                                    <ResponsiveContainer width="100%" height={isMaximized ? "100%" : 500}>
+                                        <LineChart
+                                            data={clippedChartData}
+                                            margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                                        >
+                                            <CartesianGrid
+                                                strokeDasharray="3 3"
+                                                stroke={isFullscreenMode ? "rgba(255,255,255,0.3)" : "#ccc"}
+                                            />
 
-                                        const currentTimeIndex = isViewingToday(selectedDate)
-                                            ? getCurrentChartBucketIndex(shiftChartData)
-                                            : shiftChartData.length - 1;
+                                            {/* ===== Reference Areas: Elapsed Time + Breaks ===== */}
+                                            {(() => {
+                                                const chartData = clippedChartData;
+                                                if (!chartData || chartData.length === 0) return null;
 
+                                                const areas = [];
 
+                                                const currentTimeIndex = isViewingToday(selectedDate)
+                                                    ? getCurrentChartBucketIndex(chartData)
+                                                    : chartData.length - 1;
 
+                                                // Elapsed time highlight
+                                                if (currentTimeIndex > 0) {
+                                                    areas.push(
+                                                        <ReferenceArea
+                                                            key="elapsed-time"
+                                                            x1={chartData[0].time}
+                                                            x2={chartData[currentTimeIndex].time}
+                                                            fill={isDarkMode ? "#10b981" : "#4ade80"}
+                                                            fillOpacity={isDarkMode ? 0.4 : 0.2}
+                                                            ifOverflow="visible"
+                                                        />
+                                                    );
+                                                }
 
-                                        // Add elapsed time highlight (from start to current time)
-                                        if (currentTimeIndex > 0) {
-                                            areas.push(
-                                                <ReferenceArea
-                                                    key="elapsed-time"
-                                                    x1={shiftChartData[0].time}
-                                                    x2={shiftChartData[currentTimeIndex].time}
-                                                    fill={isDarkMode ? "#10b981" : "#4ade80"}
-                                                    fillOpacity={isDarkMode ? 0.4 : 0.2}
-                                                    ifOverflow="visible"
-                                                    label={{
-                                                        position: "insideTopLeft",
-                                                        fill: isFullscreenMode ? "#ffffff" : "#16a34a",
-                                                        fontSize: isFullscreenMode ? 18 : 12,
-                                                        fontWeight: "bold"
-                                                    }}
-                                                />
+                                                // Break highlights — only available in single-line mode (mergedChartData doesn't have isBreak)
+                                                if (!isMultiLine) {
+                                                    let breakStart = null;
+                                                    chartData.forEach((point, index) => {
+                                                        if (point.isBreak && breakStart === null) {
+                                                            breakStart = index;
+                                                        } else if (!point.isBreak && breakStart !== null) {
+                                                            areas.push(
+                                                                <ReferenceArea
+                                                                    key={`break-${breakStart}`}
+                                                                    x1={chartData[breakStart].time}
+                                                                    x2={chartData[index].time}
+                                                                    fill="#ffcccc"
+                                                                    fillOpacity={isFullscreenMode ? 0.6 : 0.5}
+                                                                    label={{
+                                                                        value: "BREAK",
+                                                                        position: "insideTop",
+                                                                        fill: isDarkMode ? "#ffffff" : "#ff0000",
+                                                                        fontSize: isFullscreenMode ? 16 : 11,
+                                                                        fontWeight: "bold"
+                                                                    }}
+                                                                />
+                                                            );
+                                                            breakStart = null;
+                                                        }
+                                                    });
+                                                    if (breakStart !== null) {
+                                                        areas.push(
+                                                            <ReferenceArea
+                                                                key={`break-${breakStart}`}
+                                                                x1={chartData[breakStart].time}
+                                                                x2={chartData[chartData.length - 1].time}
+                                                                fill="#ffcccc"
+                                                                fillOpacity={isFullscreenMode ? 0.6 : 0.5}
+                                                                label={{
+                                                                    value: "BREAK",
+                                                                    position: "insideTop",
+                                                                    fill: isDarkMode ? "#ffffff" : "#ff0000",
+                                                                    fontSize: isFullscreenMode ? 16 : 11,
+                                                                    fontWeight: "bold"
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+                                                }
 
-                                            );
-                                        }
+                                                return areas;
+                                            })()}
 
-                                        // Add break time highlights
-                                        let breakStart = null;
+                                            <XAxis
+                                                dataKey="time"
+                                                tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
+                                                angle={-45}
+                                                textAnchor="end"
+                                                height={80}
+                                            />
+                                            <YAxis
+                                                tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
+                                                label={{
+                                                    value: 'Cumulative Parts Produced',
+                                                    angle: -90,
+                                                    position: 'insideLeft',
+                                                    style: {
+                                                        fill: isFullscreenMode ? 'white' : '#666',
+                                                        fontSize: 14
+                                                    }
+                                                }}
+                                            />
 
+                                            {/* ===== Tooltip ===== */}
+                                            <Tooltip
+                                                content={({ active, payload }) => {
+                                                    if (active && payload && payload.length) {
+                                                        const data = payload[0].payload;
 
-                                        shiftChartData.forEach((point, index) => {
-                                            if (point.isBreak && breakStart === null) {
-                                                breakStart = index;
-                                            } else if (!point.isBreak && breakStart !== null) {
-                                                areas.push(
-                                                    <ReferenceArea
-                                                        key={`break-${breakStart}`}
-                                                        x1={shiftChartData[breakStart].time}
-                                                        x2={shiftChartData[index].time}
-                                                        fill="#ffcccc"
-                                                        fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
-                                                        label={{
-                                                            value: "BREAK",
-                                                            position: "insideTop",
-                                                            fill: isDarkMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
-                                                            fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
-                                                            fontWeight: "bold"
-                                                        }}
+                                                        if (isMultiLine) {
+                                                            // Multi-line tooltip: show each line's value
+                                                            const target = Number(data?.target ?? 0);
+                                                            return (
+                                                                <div style={{
+                                                                    backgroundColor: isDarkMode ? '#1f2937' : 'white',
+                                                                    color: isDarkMode ? '#f3f4f6' : '#111827',
+                                                                    padding: '10px',
+                                                                    border: `2px solid ${isDarkMode ? '#374151' : '#ccc'}`,
+                                                                    borderRadius: '8px',
+                                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                                                                }}>
+                                                                    <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#1d4ed8' }}>
+                                                                        {data.time}
+                                                                    </p>
+                                                                    <p style={{ margin: '5px 0', color: '#9ca3af', fontSize: '13px' }}>
+                                                                        🎯 Target: {target}
+                                                                    </p>
+                                                                    {lineNames.map((lineName, idx) => (
+                                                                        <p key={lineName} style={{ margin: '3px 0', color: LINE_COLORS[idx % LINE_COLORS.length], fontSize: '13px' }}>
+                                                                            {lineName}: {data[lineName] ?? 0}
+                                                                        </p>
+                                                                    ))}
+                                                                </div>
+                                                            );
+                                                        } else {
+                                                            // Single-line tooltip: same as your existing
+                                                            const actual = Number(data?.actualParts ?? 0);
+                                                            const target = Number(data?.targetParts ?? 0);
+                                                            const currentPct = target > 0 ? ((actual / target) * 100).toFixed(1) : 0;
+
+                                                            return (
+                                                                <div style={{
+                                                                    backgroundColor: isDarkMode ? '#1f2937' : 'white',
+                                                                    color: isDarkMode ? '#f3f4f6' : '#111827',
+                                                                    padding: '10px',
+                                                                    border: `2px solid ${isDarkMode ? '#374151' : '#ccc'}`,
+                                                                    borderRadius: '8px',
+                                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                                                                }}>
+                                                                    <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#1d4ed8' }}>
+                                                                        {data.time}
+                                                                    </p>
+                                                                    <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
+                                                                        Actual: {data.actualParts}
+                                                                    </p>
+                                                                    <p style={{ margin: '5px 0', color: '#f97316', fontSize: '13px' }}>
+                                                                        Target: {data.targetParts}
+                                                                    </p>
+                                                                    <p style={{ margin: '5px 0', color: '#0ea5e9', fontSize: '13px' }}>
+                                                                        Current Percentage: {currentPct}%
+                                                                    </p>
+                                                                    {data.newPartsInBucket > 0 && (
+                                                                        <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
+                                                                            New parts: +{data.newPartsInBucket}
+                                                                        </p>
+                                                                    )}
+                                                                    {data.isBreak && (
+                                                                        <p style={{
+                                                                            margin: '5px 0',
+                                                                            color: '#ff0000',
+                                                                            fontWeight: 'bold',
+                                                                            backgroundColor: '#ffeeee',
+                                                                            padding: '3px 6px',
+                                                                            borderRadius: '4px'
+                                                                        }}>
+                                                                            ⏸️ {data.breakName || 'BREAK TIME'}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
+                                                    }
+                                                    return null;
+                                                }}
+                                            />
+
+                                            <Legend
+                                                wrapperStyle={{
+                                                    color: isFullscreenMode ? 'white' : (isDarkMode ? '#d1d5db' : '#374151')
+                                                }}
+                                                formatter={(value) => {
+                                                    if (isMultiLine) {
+                                                        if (value === 'target') return '🎯 Target';
+                                                        return `🏭 ${value}`;
+                                                    }
+                                                    return value;
+                                                }}
+                                            />
+
+                                            {/* ===== MULTI-LINE MODE: target + one line per production line ===== */}
+                                            {isMultiLine ? (
+                                                <>
+                                                    {/* Dashed target line */}
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="target"
+                                                        stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
+                                                        strokeWidth={isFullscreenMode ? 5 : 3}
+                                                        strokeDasharray="8 8"
+                                                        name="target"
+                                                        dot={false}
+                                                        connectNulls={true}
                                                     />
-                                                );
-                                                breakStart = null;
-                                            }
-                                        });
 
-                                        // Handle break at the end
-                                        if (breakStart !== null) {
-                                            areas.push(
-                                                <ReferenceArea
-                                                    key={`break-${breakStart}`}
-                                                    x1={shiftChartData[breakStart].time}
-                                                    x2={shiftChartData[shiftChartData.length - 1].time}
-                                                    fill="#ffcccc"
-                                                    fillOpacity={isFullscreenMode ? 0.6 : 0.5}  // ✅ Increase opacity in fullscreen
-                                                    label={{
-                                                        value: "BREAK",
-                                                        position: "insideTop",
-                                                        fill: isDarkMode ? "#ffffff" : "#ff0000",  // ✅ White text in fullscreen
-                                                        fontSize: isFullscreenMode ? 16 : 11,  // ✅ Bigger font in fullscreen
-                                                        fontWeight: "bold"
-                                                    }}
-                                                />
+                                                    {/* One colored line per production line */}
+                                                    {lineNames.map((lineName, idx) => (
+                                                        <Line
+                                                            key={lineName}
+                                                            type="monotone"
+                                                            dataKey={lineName}
+                                                            stroke={LINE_COLORS[idx % LINE_COLORS.length]}
+                                                            strokeWidth={isFullscreenMode ? 4 : 3}
+                                                            name={lineName}
+                                                            connectNulls={false}
+                                                            dot={(props) => {
+                                                                const { cx, cy, payload } = props;
+                                                                const val = payload[lineName];
+                                                                if (val && val > 0) {
+                                                                    return (
+                                                                        <circle
+                                                                            cx={cx}
+                                                                            cy={cy}
+                                                                            r={isFullscreenMode ? 6 : 4}
+                                                                            fill={LINE_COLORS[idx % LINE_COLORS.length]}
+                                                                            stroke="#fff"
+                                                                            strokeWidth={2}
+                                                                        />
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            }}
+                                                            activeDot={{ r: isFullscreenMode ? 8 : 6 }}
+                                                        />
+                                                    ))}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {/* ===== SINGLE-LINE MODE: your existing two lines ===== */}
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="targetParts"
+                                                        stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
+                                                        strokeWidth={isFullscreenMode ? 5 : 3}
+                                                        strokeDasharray="8 8"
+                                                        name="Target Production"
+                                                        dot={false}
+                                                    />
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="actualParts"
+                                                        stroke="#10b981"
+                                                        strokeWidth={isFullscreenMode ? 4 : 3}
+                                                        name="Actual Production"
+                                                        connectNulls={false}
+                                                        dot={(props) => {
+                                                            const { cx, cy, payload } = props;
+                                                            if (payload.actualParts && payload.actualParts > 0) {
+                                                                return (
+                                                                    <circle
+                                                                        cx={cx}
+                                                                        cy={cy}
+                                                                        r={isFullscreenMode ? 6 : 4}
+                                                                        fill="#10b981"
+                                                                        stroke="#fff"
+                                                                        strokeWidth={2}
+                                                                    />
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                        activeDot={{ r: isFullscreenMode ? 8 : 6 }}
+                                                    />
+                                                </>
+                                            )}
+                                        </LineChart>
+                                    </ResponsiveContainer>
+
+                                    {/* ===== "Time Elapsed" floating label ===== */}
+                                    {(() => {
+                                        const chartData = clippedChartData;
+                                        if (!chartData) return null;
+                                        const currentTimeIndex = isViewingToday(selectedDate)
+                                            ? getCurrentChartBucketIndex(chartData)
+                                            : chartData.length - 1;
+                                        if (currentTimeIndex > 0) {
+                                            return (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: isMaximized ? '80px' : '30px',
+                                                    left: isMaximized ? '60px' : '40px',
+                                                    zIndex: 10,
+                                                    backgroundColor: 'rgba(74, 222, 128, 0.9)',
+                                                    color: '#ffffff',
+                                                    padding: isMaximized ? '8px 16px' : '6px 12px',
+                                                    borderRadius: '6px',
+                                                    fontWeight: 'bold',
+                                                    fontSize: isMaximized ? '16px' : '14px',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                                    pointerEvents: 'none'
+                                                }}>
+                                                    ⏱️ Time Elapsed
+                                                </div>
                                             );
                                         }
-
-                                        return areas;
+                                        return null;
                                     })()}
 
-
-                                    <XAxis
-                                        dataKey="time"
-                                        tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
-                                        angle={-45}
-                                        textAnchor="end"
-                                        height={80}
-                                    />
-                                    <YAxis
-                                        tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
-                                        label={{
-                                            value: 'Cumulative Parts Produced',
-                                            angle: -90,
-                                            position: 'insideLeft',
-                                            style: {
-                                                fill: isFullscreenMode ? 'white' : '#666',
-                                                fontSize: 14
-                                            }
-                                        }}
-                                    />
-                                    <Tooltip
-                                        content={({ active, payload }) => {
-                                            if (active && payload && payload.length) {
-                                                const data = payload[0].payload;
-                                                const actual = Number(data?.actualParts ?? data?.actual ?? 0);
-                                                const target = Number(data?.targetParts ?? 0);
-
-                                                const currentPct =
-                                                    target > 0 ? ((actual / target) * 100).toFixed(1) : 0;
-                                                return (
-                                                    <div style={{
-                                                        backgroundColor: isDarkMode ? '#1f2937' : 'white',
-                                                        color: isDarkMode ? '#f3f4f6' : '#111827',
-                                                        padding: '10px',
-                                                        border: `2px solid ${isDarkMode ? '#374151' : '#ccc'}`,
-                                                        borderRadius: '8px',
-                                                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-                                                    }}>
-                                                        <p style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#1d4ed8' }}>
-                                                            {data.time} {/* Indigo-700 */}
-                                                        </p>
-
-                                                        <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
-                                                            Actual: {data.actualParts} {/* Green-500 */}
-                                                        </p>
-
-                                                        <p style={{ margin: '5px 0', color: '#f97316', fontSize: '13px' }}>
-                                                            Target: {data.targetParts} {/* Orange-500 */}
-                                                        </p>
-
-                                                        <p style={{ margin: '5px 0', color: '#0ea5e9', fontSize: '13px' }}>
-                                                            Current Percentage: {currentPct}% {/* Sky-500 */}
-                                                        </p>
-
-                                                        {data.newPartsInBucket > 0 && (
-                                                            <p style={{ margin: '5px 0', color: '#22c55e', fontSize: '13px' }}>
-                                                                New parts: +{data.newPartsInBucket} {/* Same green as Actual */}
-                                                            </p>
-                                                        )}
-
-                                                        {console.log("Break Data", data)}
-                                                        {data.isBreak && (
-                                                            <p style={{
-                                                                margin: '5px 0',
-                                                                color: '#ff0000',
-                                                                fontWeight: 'bold',
-                                                                backgroundColor: '#ffeeee',
-                                                                padding: '3px 6px',
-                                                                borderRadius: '4px'
-                                                            }}>
-                                                                ⏸️ {data.breakName || 'BREAK TIME'}  {/* ✅ Show break name */}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                );
-                                            }
-                                            return null;
-                                        }}
-                                    />
-                                    <Legend />
-
-                                    {/* Target Line */}
-                                    <Line
-                                        type="monotone"
-                                        dataKey="targetParts"
-                                        stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
-                                        strokeWidth={isFullscreenMode ? 5 : 3}
-                                        strokeDasharray="8 8"
-                                        name="Target Production"
-                                        dot={false}
-                                    />
-
-                                    {/* Actual Production Line */}
-                                    {/*<Line*/}
-                                    {/*    type="monotone"*/}
-                                    {/*    dataKey="actualParts"*/}
-                                    {/*    stroke={isFullscreenMode ? "#4ade80" : "#82ca9d"}*/}
-                                    {/*    strokeWidth={isFullscreenMode ? 5 : 3}*/}
-                                    {/*    name="Actual Production (Cumulative)"*/}
-                                    {/*    connectNulls={false}*/}
-                                    {/*    dot={{*/}
-                                    {/*        fill: isFullscreenMode ? '#4ade80' : '#82ca9d',*/}
-                                    {/*        strokeWidth: 3,*/}
-                                    {/*        r: isFullscreenMode ? 6 : 3*/}
-                                    {/*    }}*/}
-                                    {/*/>*/}
-                                    <Line
-                                        type="monotone"
-                                        dataKey="actualParts"
-                                        stroke="#10b981"
-                                        strokeWidth={isFullscreenMode ? 4 : 3}
-                                        name="Actual Production"
-                                        connectNulls={false}
-                                        dot={(props) => {
-                                            const { cx, cy, payload } = props;
-                                            // Only show dot if there's real production (not zero, not null)
-                                            if (payload.actualParts && payload.actualParts > 0) {
-                                                return (
-                                                    <circle
-                                                        cx={cx}
-                                                        cy={cy}
-                                                        r={isFullscreenMode ? 6 : 4}
-                                                        fill="#10b981"
-                                                        stroke="#fff"
-                                                        strokeWidth={2}
-                                                    />
-                                                );
-                                            }
-                                            return null;
-                                        }}
-                                        activeDot={{ r: isFullscreenMode ? 8 : 6 }}
-                                    />
-
-                                </LineChart>
-
-                            </ResponsiveContainer>
+                                    {/* ===== Production by Line breakdown (multi-line only) ===== */}
+                                    {isMultiLine && lineNames.length > 0 && (
+                                        <div className={`mt-4 p-3 rounded-lg border ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                                            <div className={`text-sm font-semibold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                📊 Production by Line
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                                {lineNames.map((lineName, idx) => {
+                                                    const lineData = multiLineData[lineName] || [];
+                                                    const latestPoint = lineData[lineData.length - 1];
+                                                    const lineCount = latestPoint?.cumulative || latestPoint?.actual || 0;
+                                                    //return (
+                                                    //    <div
+                                                    //        key={lineName}
+                                                    //        className={`p-2 rounded border-l-4 ${isDarkMode ? 'bg-gray-700' : 'bg-white'}`}
+                                                    //        style={{ borderLeftColor: LINE_COLORS[idx % LINE_COLORS.length] }}
+                                                    //    >
+                                                    //        <div
+                                                    //            className="text-xs font-medium truncate"
+                                                    //            style={{ color: LINE_COLORS[idx % LINE_COLORS.length] }}
+                                                    //            title={lineName}
+                                                    //        >
+                                                    //            {lineName}
+                                                    //        </div>
+                                                    //        <div className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                                                    //            {lineCount}
+                                                    //        </div>
+                                                    //        <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                    //            parts
+                                                    //        </div>
+                                                    //    </div>
+                                                    //);
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
