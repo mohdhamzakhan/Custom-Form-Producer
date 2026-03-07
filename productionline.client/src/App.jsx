@@ -10,6 +10,7 @@ import ReportPage from "./components/ReportPage"; // Assuming you have this comp
 import ReportsList from "./components/ReportList";
 import ReportViewer from "./components/ReportViewer";
 import ReportDesigner from "./components/ReportDesigner";
+import EmailScheduler from "./components/EmailScheduler";
 import MyForms from "./components/MyForms";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -103,6 +104,7 @@ function App() {
                     <Route path="/reports/view/:templateId" element={<ReportViewer />} />
                     <Route path="/reports/new" element={<ReportDesigner />} />
                     <Route path="/MyForm" element={<MyForms />} />
+                    <Route path="/EmailSchedular" element={<EmailScheduler />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Router>

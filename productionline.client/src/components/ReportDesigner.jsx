@@ -379,6 +379,7 @@ export default function EnhancedReportDesigner() {
                 const data = reportRes.data;
                 console.log('📋 Report loaded:', data);
                 setTemplateName(data.name || '');
+                setLayoutMode(data.layoutMode || 'horizontal')
 
                 // Determine form IDs
                 const formIds = data.formIds || (data.formId ? [data.formId] : []);

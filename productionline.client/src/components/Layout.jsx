@@ -47,6 +47,7 @@ export default function Layout({ children }) {
         { name: "Dashboard", path: "/Mainpage" },
         { name: "Approval", path: "/reports" },
         { name: "Report", path: "/report" }
+        
     ];
 
     // Add IT-specific links if user is in Sanand-IT group
@@ -61,7 +62,8 @@ export default function Layout({ children }) {
     navLinks = (user?.groups?.includes("Custom-Form_Creators") || user?.groups?.includes("SANAND-IT"))
         ? [
             ...defaultLinks,
-            { name: "Create Form", path: "/MyForm" }
+            { name: "Create Form", path: "/MyForm" },
+            { name: "Email", path: "/EmailSchedular" }
         ]
         : defaultLinks;
     // Don't render anything until user is loaded

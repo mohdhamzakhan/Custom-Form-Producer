@@ -1,9 +1,14 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Hangfire;
+using Hangfire.Oracle;
+using Hangfire.Oracle.Core;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using productionLine.Server.Model;
+using productionLine.Server.Service;
+using System.Data;
 using System.Text;
 using System.Text.Json;
 
@@ -77,6 +82,44 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 104857600; // 100 MB
 });
 
+
+
+//New Setting for Email Scheduler
+
+builder.Services.Configure<SmtpSettings>(
+    builder.Configuration.GetSection("SmtpSettings"));
+
+builder.Services.AddScoped<IEmailSchedulerService, EmailSchedulerService>();
+builder.Services.AddScoped<IAdDirectoryService, AdDirectoryService>();
+
+
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseStorage(new OracleStorage(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        new OracleStorageOptions
+        {
+            TransactionIsolationLevel = IsolationLevel.ReadCommitted,
+            QueuePollInterval = TimeSpan.FromSeconds(15),
+            JobExpirationCheckInterval = TimeSpan.FromHours(1),
+            CountersAggregateInterval = TimeSpan.FromMinutes(5),
+            PrepareSchemaIfNecessary = false,   // auto-creates Hangfire tables
+            DashboardJobListLimit = 50000,
+            TransactionTimeout = TimeSpan.FromMinutes(1),
+            SchemaName = "Testeqpqp"
+        })));
+
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = 5;
+    options.Queues = new[] { "default", "critical" };
+});
+
+
+
+
 var app = builder.Build();
 
 app.UseDefaultFiles();
@@ -98,5 +141,11 @@ app.MapControllers();
 
 // Fallback for SPA routing
 app.MapFallbackToFile("/index.html");
+
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    // Allow only authenticated users in production:
+    // Authorization = new[] { new HangfireAuthorizationFilter() }
+});
 
 app.Run();

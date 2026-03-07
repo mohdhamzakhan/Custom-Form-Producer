@@ -24,6 +24,11 @@ namespace productionLine.Server.Model
         public DbSet<ReportTemplate> ReportTemplates { get; set; } // Add this line to include ReportTemplate in the context
         public DbSet<ReportField> ReportFields { get; set; } // Add this line to include ReportField in the context
         public DbSet<ReportFilter> ReportFilters { get; set; } // Add this line to include ReportFilter in the context
+        public DbSet<EmailSchedule> EmailSchedules { get; set; }
+        public DbSet<EmailScheduleRecipient> EmailScheduleRecipients { get; set; }
+        public DbSet<EmailScheduleAttachment> EmailScheduleAttachments { get; set; }
+        public DbSet<EmailScheduleLog> EmailScheduleLogs { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -177,6 +182,39 @@ namespace productionLine.Server.Model
             modelBuilder.Entity<FormSubmission>()
                 .HasIndex(s => new { s.FormId, s.SubmittedAt, s.Id })
                 .HasDatabaseName("IX_FORMSUBMISSIONS_FORMID_DATE_ID");
+
+            modelBuilder.Entity<EmailSchedule>(entity =>
+            {
+                entity.HasIndex(e => e.Status);
+                entity.HasIndex(e => e.NextSendAt);
+                entity.HasIndex(e => e.CreatedBy);
+
+                entity.HasMany(e => e.Recipients)
+                      .WithOne(r => r.EmailSchedule)
+                      .HasForeignKey(r => r.EmailScheduleId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(e => e.Attachments)
+                      .WithOne(a => a.EmailSchedule)
+                      .HasForeignKey(a => a.EmailScheduleId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(e => e.Logs)
+                      .WithOne(l => l.EmailSchedule)
+                      .HasForeignKey(l => l.EmailScheduleId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Indexes for common queries
+            modelBuilder.Entity<EmailScheduleLog>(entity =>
+            {
+                entity.HasIndex(l => new { l.EmailScheduleId, l.SentAt });
+            });
+
+            modelBuilder.Entity<EmailScheduleRecipient>(entity =>
+            {
+                entity.HasIndex(r => r.EmailScheduleId);
+            });
         }
 
         // Add this temporarily to see what SQL is being generated
