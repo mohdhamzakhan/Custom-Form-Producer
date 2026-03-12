@@ -91,6 +91,7 @@ builder.Services.Configure<SmtpSettings>(
 
 builder.Services.AddScoped<IEmailSchedulerService, EmailSchedulerService>();
 builder.Services.AddScoped<IAdDirectoryService, AdDirectoryService>();
+builder.Services.AddScoped<IAuditPlanService, AuditPlanService>();
 
 
 builder.Services.AddHangfire(config => config

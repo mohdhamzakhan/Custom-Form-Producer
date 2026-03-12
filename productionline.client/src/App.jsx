@@ -14,6 +14,8 @@ import EmailScheduler from "./components/EmailScheduler";
 import MyForms from "./components/MyForms";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import AuditPlanner from "./components/Auditplanner";
+import Auditapproval from "./components/Auditapproval";
 
 
 // Protected route component
@@ -105,6 +107,8 @@ function App() {
                     <Route path="/reports/new" element={<ReportDesigner />} />
                     <Route path="/MyForm" element={<MyForms />} />
                     <Route path="/EmailSchedular" element={<EmailScheduler />} />
+                    <Route path="/Audit" element={<AuditPlanner />} />
+                    <Route path="/AuditApproval" element={<Auditapproval />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Router>

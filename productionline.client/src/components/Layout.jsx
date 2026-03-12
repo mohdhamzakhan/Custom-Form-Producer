@@ -63,7 +63,9 @@ export default function Layout({ children }) {
         ? [
             ...defaultLinks,
             { name: "Create Form", path: "/MyForm" },
-            { name: "Email", path: "/EmailSchedular" }
+            { name: "Email", path: "/EmailSchedular" },
+            { name: "Audit", path:"/Audit"},
+            { name: "Audit Approval", path:"/AuditApproval"},
         ]
         : defaultLinks;
     // Don't render anything until user is loaded

@@ -1170,7 +1170,27 @@ export default function EnhancedReportViewer() {
     };
 
     const renderNewGroupedTable = () => {
-        const submissions = [...new Set(filteredReportData.map(r => r.submissionId).filter(Boolean))];
+        // ── Apply relationship-based row merging ──────────────────────────
+        const displayRows = mergeRowsByRelationships(
+            filteredReportData,
+            template?.formRelationships || [],
+            fields
+        );
+
+        console.log('🔍 FULL DATA OF ALL ROWS:');
+        filteredReportData.forEach((row, i) => {
+            console.log(`--- Row ${i} (submissionId: ${row.submissionId}) ---`);
+            row.data?.forEach(cell =>
+                console.log(`  "${cell.fieldLabel}" = "${cell.value}"`)
+            );
+        });
+
+        const submissions = [...new Set(
+            displayRows
+                .filter(r => !r.type || r.type === 'data-row')
+                .map(r => r.submissionId)
+                .filter(Boolean)
+        )];
         if (template.layoutMode === "vertical") {
             return renderVerticalTable();
         }
@@ -1256,7 +1276,10 @@ export default function EnhancedReportViewer() {
                                                 calculatedFields.some(cf => cf.label === field?.label);
 
                                             if (isCalculatedField) {
-                                                const rows = filteredReportData.filter(r => r.submissionId === subId);
+                                                const rows = displayRows.filter(r =>
+                                                    r.submissionId === subId ||
+                                                    (r._mergedFrom && r._mergedFrom.includes(subId))
+                                                );
                                                 const firstRowCalcValue = rows[0]?.data?.find(d => d.fieldLabel === field?.label)?.value;
 
                                                 return (
@@ -1274,7 +1297,10 @@ export default function EnhancedReportViewer() {
                                             }
 
                                             // Regular fields: aggregate by submission ID
-                                            const rows = filteredReportData.filter(r => r.submissionId === subId);
+                                            const rows = displayRows.filter(r =>
+                                                r.submissionId === subId ||
+                                                (r._mergedFrom && r._mergedFrom.includes(subId))
+                                            );
                                             let displayValue = '—';
                                             let isTextField = false;
 
@@ -1327,6 +1353,7 @@ export default function EnhancedReportViewer() {
                                                     displayValue = unique.length === 1 ? unique[0] : unique.join(' | ');
                                                 } else {
                                                     const numericValues = allValues
+                                                        .map(v => parseFloat(v))
                                                         .map(v => parseFloat(v))
                                                         .filter(v => !isNaN(v) && isFinite(v));
 
@@ -4178,6 +4205,145 @@ html.dark-mode,
         }
     };
 
+    const mergeRowsByRelationships = (rows, relationships, fields) => {
+        if (!relationships || relationships.length === 0) return rows;
+
+        const isEmpty = (v) =>
+            v === null || v === undefined || v === '' || v === '-' || v === '—' || v === 'null';
+
+        // ── 1. Find all field labels that appear in MULTIPLE forms ────────
+        // These are the candidates for cross-form merging
+        // Strategy: find labels that exist in both "has data" rows and "missing data" rows
+        const labelValueMap = {}; // label → Set of non-empty values seen
+
+        rows.forEach(row => {
+            if (row.type) return;
+            (row.data || []).forEach(cell => {
+                if (!isEmpty(cell.value)) {
+                    if (!labelValueMap[cell.fieldLabel]) {
+                        labelValueMap[cell.fieldLabel] = new Set();
+                    }
+                    labelValueMap[cell.fieldLabel].add(String(cell.value).trim());
+                }
+            });
+        });
+
+        // ── 2. Find labels whose values OVERLAP across rows from different 
+        //       submissions — i.e. two rows share the same value for this label
+        const sharedValueLabels = Object.entries(labelValueMap)
+            .filter(([label, values]) => {
+                // Count how many rows have each value
+                const valueCounts = {};
+                rows.forEach(row => {
+                    if (row.type) return;
+                    const cell = row.data?.find(d => d.fieldLabel === label);
+                    const val = cell?.value;
+                    if (!isEmpty(val)) {
+                        const key = String(val).trim();
+                        valueCounts[key] = (valueCounts[key] || 0) + 1;
+                    }
+                });
+                // If any value appears in more than one row, this label can be a merge key
+                return Object.values(valueCounts).some(count => count > 1);
+            })
+            .map(([label]) => label);
+
+        console.log('🔗 Labels with shared values across rows:', sharedValueLabels);
+
+        // ── 3. Also include target field labels from relationships ─────────
+        const targetLabels = new Set();
+        relationships.forEach(rel => {
+            const targetFieldId = rel.TargetFieldId || rel.targetFieldId;
+            const tgtField = fields.find(f => f.id === targetFieldId);
+            if (tgtField) targetLabels.add(tgtField.label);
+        });
+
+        // Priority: use target field labels if they produce matches,
+        // otherwise fall back to auto-detected shared labels
+        const targetMatches = [...targetLabels].filter(l => sharedValueLabels.includes(l));
+        const mergeLabels = targetMatches.length > 0 ? targetMatches : sharedValueLabels;
+
+        console.log('✅ Using merge labels:', mergeLabels);
+
+        if (mergeLabels.length === 0) {
+            console.warn('⚠️ No merge labels found — rows have no shared values');
+            return rows;
+        }
+
+        // ── 4. Build row key from first matching merge label ──────────────
+        const getRowKey = (row) => {
+            for (const label of mergeLabels) {
+                const cell = row.data?.find(d => d.fieldLabel === label);
+                const val = cell?.value;
+                if (!isEmpty(val)) return `${label}::${String(val).trim()}`;
+            }
+            return null;
+        };
+
+        // ── 5. Group rows by key ──────────────────────────────────────────
+        const groupMap = {};
+        const keyOrder = [];
+
+        rows.forEach(row => {
+            if (row.type === 'group-header' || row.type === 'group-footer') {
+                const k = `__struct__${keyOrder.length}`;
+                groupMap[k] = [row];
+                keyOrder.push(k);
+                return;
+            }
+
+            const key = getRowKey(row);
+            if (!key) {
+                const k = `__solo__${row.submissionId}_${keyOrder.length}`;
+                groupMap[k] = [row];
+                keyOrder.push(k);
+                return;
+            }
+
+            if (!groupMap[key]) {
+                groupMap[key] = [];
+                keyOrder.push(key);
+            }
+            groupMap[key].push(row);
+        });
+
+        // ── 6. Merge each group into one row ──────────────────────────────
+        const mergedRows = [];
+
+        keyOrder.forEach(key => {
+            const group = groupMap[key];
+            if (!group?.length) return;
+
+            if (key.startsWith('__') || group.length === 1) {
+                mergedRows.push(...group);
+                return;
+            }
+
+            const mergedDataMap = {};
+            group.forEach(row => {
+                (row.data || []).forEach(cell => {
+                    const lbl = cell.fieldLabel;
+                    if (!mergedDataMap[lbl]) {
+                        mergedDataMap[lbl] = { ...cell };
+                    } else if (isEmpty(mergedDataMap[lbl].value) && !isEmpty(cell.value)) {
+                        mergedDataMap[lbl] = { ...cell };
+                    }
+                });
+            });
+
+            mergedRows.push({
+                ...group[0],
+                data: Object.values(mergedDataMap),
+                _mergedFrom: group.map(r => r.submissionId),
+            });
+
+            console.log(`🔀 Merged ${group.length} rows → key="${key}"`,
+                group.map(r => r.submissionId));
+        });
+
+        console.log(`✅ Merge: ${rows.length} → ${mergedRows.length} rows`);
+        return mergedRows;
+    };
 
     return (
         <>

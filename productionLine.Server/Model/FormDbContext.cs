@@ -28,7 +28,8 @@ namespace productionLine.Server.Model
         public DbSet<EmailScheduleRecipient> EmailScheduleRecipients { get; set; }
         public DbSet<EmailScheduleAttachment> EmailScheduleAttachments { get; set; }
         public DbSet<EmailScheduleLog> EmailScheduleLogs { get; set; }
-
+        public DbSet<AuditPlan> AuditPlans { get; set; }
+        public DbSet<AuditPlanEntry> AuditPlanEntries { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -215,6 +216,23 @@ namespace productionLine.Server.Model
             {
                 entity.HasIndex(r => r.EmailScheduleId);
             });
+
+            modelBuilder.Entity<AuditPlan>(e => {
+                e.HasKey(p => p.Id);
+                e.Property(p => p.PlanName).IsRequired().HasMaxLength(200);
+                e.Property(p => p.Status).HasMaxLength(20);
+                e.HasMany(p => p.Entries)
+                 .WithOne(en => en.AuditPlan)
+                 .HasForeignKey(en => en.AuditPlanId)
+                 .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<AuditPlanEntry>(e => {
+                e.HasKey(en => en.Id);
+                e.Property(en => en.Title).IsRequired().HasMaxLength(300);
+                e.Property(en => en.Status).HasMaxLength(20);
+            });
+
         }
 
         // Add this temporarily to see what SQL is being generated
