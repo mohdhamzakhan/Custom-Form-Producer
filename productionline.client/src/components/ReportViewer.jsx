@@ -31,7 +31,8 @@ export default function EnhancedReportViewer() {
     const [isRefreshing, setIsRefreshing] = useState(false); // Add this state
     //const [groupingConfig, setGroupingConfig] = useState([]);  // ADD THIS
     //const [isGrouped, setIsGrouped] = useState(true);         // ADD THIS
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    //const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState("");
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => {
         // Initialize from localStorage
@@ -69,6 +70,26 @@ export default function EnhancedReportViewer() {
             setIsDarkMode(true);
             document.documentElement.classList.add('dark');
         }
+    }, []);
+
+    // Fetch server date first thing
+    useEffect(() => {
+        const fetchServerDate = async () => {
+            try {
+                const res = await axios.get(
+                    `${APP_CONSTANTS.API_BASE_URL}/api/reports/server-date`
+                );
+                setSelectedDate(res.data.date); // e.g. "2026-03-16"
+                console.log('✅ Server date received:', res.data.date);
+            } catch (err) {
+                console.warn('⚠️ Could not get server date, falling back to client date');
+                // Fallback to client date only if server call fails
+                const today = new Date();
+                setSelectedDate(today.toISOString().split('T')[0]);
+            }
+        };
+
+        fetchServerDate();
     }, []);
 
     useEffect(() => {

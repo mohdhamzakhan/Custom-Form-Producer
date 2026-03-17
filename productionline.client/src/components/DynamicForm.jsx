@@ -6,7 +6,7 @@ import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
 import { useNavigate } from "react-router-dom";
 import SignatureCanvas from 'react-signature-canvas';
-
+import useAdSearch from './hooks/useAdSearch';
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -34,7 +34,99 @@ export default function DynamicForm() {
     const navigate = useNavigate();
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [activeSignature, setActiveSignature] = useState(null);
-    const signaturePadRef = useRef(null);
+    const signaturePadRef = useRef(null);// ── Replace the entire partial submission section ──────────────────────────
+
+    
+
+    // State
+    const { searchResults, isSearching, searchAdDirectory } = useAdSearch();
+    const [showPartialModal, setShowPartialModal] = useState(false);
+    const [adSearchTerm, setAdSearchTerm] = useState("");
+    const [showAdDropdown, setShowAdDropdown] = useState(false);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [sendingPartial, setSendingPartial] = useState(false);
+
+    const handleAdSearch = async (term) => {
+        setAdSearchTerm(term);
+        setSelectedUser(null);
+        if (term.length < 2) { setShowAdDropdown(false); return; }
+        await searchAdDirectory(term);
+        setShowAdDropdown(true);
+    };
+
+    const handleSelectAdUser = (user) => {
+        setSelectedUser(user);
+        setAdSearchTerm(user.name);
+        setShowAdDropdown(false);
+    };
+
+    const handleSendPartial = async () => {
+        if (!selectedUser?.email) {
+            alert("Please select a recipient.");
+            return;
+        }
+
+        // Validate creator fields are filled
+        const unfilledCreatorFields = creatorFieldIds.filter(fieldId => {
+            const field = formData.fields.find(f => f.id === fieldId);
+            if (!field?.required) return false; // skip optional
+            const val = formValues[fieldId];
+            return (
+                val === "" || val === null || val === undefined ||
+                (Array.isArray(val) && val.length === 0)
+            );
+        });
+
+        if (unfilledCreatorFields.length > 0) {
+            const labels = unfilledCreatorFields
+                .map(id => formData.fields.find(f => f.id === id)?.label ?? id)
+                .join(", ");
+            alert(`Please fill your required fields first:\n${labels}`);
+            return;
+        }
+
+        setSendingPartial(true);
+        try {
+            // Only send creator-assigned field values
+            const filledData = {};
+            creatorFieldIds.forEach(fieldId => {
+                const val = formValues[fieldId];
+                if (val !== "" && val !== null && val !== undefined) {
+                    filledData[fieldId] = Array.isArray(val)
+                        ? JSON.stringify(val)
+                        : String(val);
+                }
+            });
+
+            const res = await fetch(
+                `${APP_CONSTANTS.API_BASE_URL}/api/partial-submissions`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        formId: formData.id,
+                        assignedToEmail: selectedUser.email,
+                        assignedToName: selectedUser.name,
+                        filledBy: userNames?.[0] ?? "A colleague",
+                        filledData,
+                        // These are derived from form definition, not user choice
+                        filledFieldIds: creatorFieldIds
+                    })
+                }
+            );
+
+            if (!res.ok) throw new Error("Failed to send.");
+            alert(`Sent to ${selectedUser.name} (${selectedUser.email})!`);
+            setShowPartialModal(false);
+            setAdSearchTerm("");
+            setSelectedUser(null);
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            setSendingPartial(false);
+        }
+    };
+
 
 
     const keyFieldValues = useMemo(() => {
@@ -89,6 +181,7 @@ export default function DynamicForm() {
         }
 
     }, [formData, userNames, navigate]);
+
     useEffect(() => {
         if (showSignatureModal && activeSignature && signaturePadRef.current) {
             // Wait for modal to render
@@ -455,6 +548,30 @@ export default function DynamicForm() {
         loadData();
     }, [isModalOpen]);
 
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (autoLoadTimeoutRef.current) {
+                clearTimeout(autoLoadTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    // 1. Check if this form supports partial filling (from formData)
+    const allowsPartialFill = formData?.allowPartialFill === true;
+
+    // 2. Derive locked/recipient fields from form definition (not user selection)
+    const creatorFieldIds = useMemo(() =>
+        formData?.fields
+            ?.filter(f => !f.filledBy || f.filledBy === "creator")
+            ?.map(f => f.id) ?? []
+        , [formData]);
+
+    const recipientFieldIds = useMemo(() =>
+        formData?.fields
+            ?.filter(f => f.filledBy === "recipient")
+            ?.map(f => f.id) ?? []
+        , [formData]);
 
     const loadDrafts = async () => {
         const res = await fetch(
@@ -514,6 +631,7 @@ export default function DynamicForm() {
             }
         });
     };
+
     const isBridgeField = (fieldId) => {
         return formData?.keyFieldMappings?.some(
             mapping => mapping.currentFormField === fieldId
@@ -730,16 +848,6 @@ export default function DynamicForm() {
     // Add this to your component
     const autoLoadTimeoutRef = useRef(null);
 
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (autoLoadTimeoutRef.current) {
-                clearTimeout(autoLoadTimeoutRef.current);
-            }
-        };
-    }, []);
-
-
     // Update handleGridChange to clear dependent values
     //const handleGridChange = (fieldId, rowIndex, columnName, value, entireRow = null) => {
     //    setFormValues(prev => {
@@ -799,8 +907,6 @@ export default function DynamicForm() {
             return { ...prev, [fieldId]: updatedRows };
         });
     };
-
-
 
     // Check if a remark is required for the current field value
     const needsRemark = (field, value) => {
@@ -1347,6 +1453,7 @@ export default function DynamicForm() {
         const date = new Date(dateString);
         return !isNaN(date.getTime());
     };
+
     //const cleanGridData = (gridData) => {
     //    if (!Array.isArray(gridData)) return gridData;
 
@@ -1361,6 +1468,7 @@ export default function DynamicForm() {
     //        return cleanedRow;
     //    });
     //};
+
     const handleSubmit = async (e, status = "Submitted") => {
         if (e) {
             e.preventDefault();
@@ -1473,8 +1581,6 @@ export default function DynamicForm() {
         }
     };
 
-
-
     const cleanGridData = (gridData) => {
         if (!Array.isArray(gridData)) return gridData;
 
@@ -1550,7 +1656,6 @@ export default function DynamicForm() {
         return dateObj.toLocaleDateString(undefined, { weekday: "long" });
     };
 
-
     const fetchLinkedData = async (keyMappings) => {
         console.log("=== FETCH LINKED DATA DEBUG ===");
         console.log("LinkedFormId:", formData.linkedFormId);
@@ -1619,7 +1724,6 @@ export default function DynamicForm() {
             });
         }
     };
-
 
     const findMatchingSubmission = (submissions, keyValues, keyMappings, config = {}) => {
         const {
@@ -1690,7 +1794,6 @@ export default function DynamicForm() {
         });
     };
 
-
     const extractLinkedFieldValue = (submission, linkedFieldReference, config = {}) => {
         const {
             gridColumnMappings = null,
@@ -1742,7 +1845,6 @@ export default function DynamicForm() {
         }
     };
 
-
     const getColumnNameById = (columnId, gridFieldId, gridColumnMappings = null, fallbackMappings = {}) => {
         if (gridColumnMappings && gridFieldId && gridColumnMappings[gridFieldId]) {
             const columnName = gridColumnMappings[gridFieldId][columnId];
@@ -1759,7 +1861,6 @@ export default function DynamicForm() {
         // Return columnId as final fallback
         return columnId;
     };
-
 
     const findFieldInSubmission = (submission, fieldId, searchFormats = []) => {
         // Default search formats
@@ -3329,9 +3430,6 @@ export default function DynamicForm() {
         }
     };
 
-
-
-
     const addGridRow = (fieldId, columns) => {
         const field = formData.fields.find(f => f.id === fieldId);
         const currentRows = formValues[fieldId] || [];
@@ -3486,6 +3584,17 @@ export default function DynamicForm() {
                         >
                             Save Draft
                         </button>
+
+                        {allowsPartialFill && (
+                            <button
+                                type="button"
+                                onClick={() => setShowPartialModal(true)}
+                                className="bg-purple-600 hover:bg-purple-700 text-white font-medium py-2.5 px-6 rounded-md shadow-sm"
+                            >
+                                Send for Completion
+                            </button>
+                        )}
+
 
                         {/* Utility Action */}
                         <button
@@ -3771,6 +3880,193 @@ export default function DynamicForm() {
                         </div>
                     </div>
 
+                </div>
+            )}
+
+            {allowsPartialFill && showPartialModal && (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-semibold text-gray-800">
+                                Send for Completion
+                            </h2>
+                            <button
+                                onClick={() => {
+                                    setShowPartialModal(false);
+                                    setAdSearchTerm("");
+                                    setSelectedUser(null);
+                                    setShowAdDropdown(false);
+                                }}
+                                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                            >
+                                &times;
+                            </button>
+                        </div>
+
+                        {/* Field split preview */}
+                        <div className="mb-4 grid grid-cols-2 gap-3">
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                <p className="text-xs font-bold text-green-700 mb-2 uppercase tracking-wide">
+                                    You Fill ({creatorFieldIds.length})
+                                </p>
+                                <ul className="space-y-1 max-h-28 overflow-y-auto">
+                                    {formData.fields
+                                        .filter(f => creatorFieldIds.includes(f.id))
+                                        .map(f => (
+                                            <li key={f.id} className="text-xs text-green-800 flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 bg-green-400 rounded-full flex-shrink-0" />
+                                                {f.label}
+                                                {f.required && (
+                                                    <span className="text-red-400">*</span>
+                                                )}
+                                            </li>
+                                        ))
+                                    }
+                                </ul>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <p className="text-xs font-bold text-blue-700 mb-2 uppercase tracking-wide">
+                                    Recipient Fills ({recipientFieldIds.length})
+                                </p>
+                                <ul className="space-y-1 max-h-28 overflow-y-auto">
+                                    {formData.fields
+                                        .filter(f => recipientFieldIds.includes(f.id))
+                                        .map(f => (
+                                            <li key={f.id} className="text-xs text-blue-800 flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full flex-shrink-0" />
+                                                {f.label}
+                                                {f.required && (
+                                                    <span className="text-red-400">*</span>
+                                                )}
+                                            </li>
+                                        ))
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+
+                        {/* AD Search */}
+                        <div className="mb-4 relative">
+                            <label className="block text-sm font-bold text-gray-700 mb-1">
+                                Search Recipient <span className="text-red-500">*</span>
+                            </label>
+
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={adSearchTerm}
+                                    onChange={e => handleAdSearch(e.target.value)}
+                                    placeholder="Type name to search..."
+                                    className="w-full border rounded px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                                    autoComplete="off"
+                                />
+                                {isSearching && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <div className="animate-spin h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full" />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Dropdown */}
+                            {showAdDropdown && searchResults.length > 0 && (
+                                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                    {searchResults.map(result => (
+                                        <button
+                                            key={result.id}
+                                            type="button"
+                                            onClick={() => handleSelectAdUser(result)}
+                                            className="w-full text-left px-4 py-2.5 hover:bg-purple-50 border-b border-gray-100 last:border-0"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${result.type === "group"
+                                                        ? "bg-blue-100 text-blue-700"
+                                                        : "bg-green-100 text-green-700"
+                                                    }`}>
+                                                    {result.type === "group" ? "Group" : "User"}
+                                                </span>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-800">
+                                                        {result.name}
+                                                    </p>
+                                                    {result.email && (
+                                                        <p className="text-xs text-gray-500">
+                                                            {result.email}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {showAdDropdown && !isSearching && searchResults.length === 0 && (
+                                <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow p-3 text-sm text-gray-500 text-center">
+                                    No results for "{adSearchTerm}"
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Selected user card */}
+                        {selectedUser && (
+                            <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-bold flex-shrink-0">
+                                    {(selectedUser.name || "?")[0].toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-gray-800 truncate">
+                                        {selectedUser.name}
+                                    </p>
+                                    <p className="text-xs text-gray-500 truncate">
+                                        {selectedUser.email}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedUser(null);
+                                        setAdSearchTerm("");
+                                    }}
+                                    className="text-gray-400 hover:text-red-500 text-lg font-bold"
+                                >
+                                    &times;
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex gap-3 justify-end pt-2 border-t">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowPartialModal(false);
+                                    setAdSearchTerm("");
+                                    setSelectedUser(null);
+                                    setShowAdDropdown(false);
+                                }}
+                                className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendPartial}
+                                disabled={sendingPartial || !selectedUser}
+                                className={`px-5 py-2 rounded font-medium text-white flex items-center gap-2 ${sendingPartial || !selectedUser
+                                        ? "bg-purple-300 cursor-not-allowed"
+                                        : "bg-purple-600 hover:bg-purple-700"
+                                    }`}
+                            >
+                                {sendingPartial && (
+                                    <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                )}
+                                {sendingPartial ? "Sending…" : "Send Email"}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

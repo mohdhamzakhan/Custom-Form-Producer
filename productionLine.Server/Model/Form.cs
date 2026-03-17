@@ -57,5 +57,7 @@ namespace productionLine.Server.Model
 
         [Column("ALLOWEDTOACCESS")]
         public List<FormToAdd> AllowedtoAccess { get; set; } = new List<FormToAdd>();
+        [Column("ALLOW_PARTIAL_FILL", TypeName = "NUMBER(1)")]
+        public bool AllowPartialFill { get; set; } = false;
     }
 }

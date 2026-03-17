@@ -184,6 +184,9 @@ namespace productionLine.Server.Model
             get => string.IsNullOrEmpty(DefaultRowsJson) ? null : JsonSerializer.Deserialize<List<DefaultRow>>(DefaultRowsJson);
             set => DefaultRowsJson = JsonSerializer.Serialize(value);
         }
+
+        [Column("FILLEDBY")]
+        public string? FilledBy { get; set; }
     }
     public class DefaultRow
     {

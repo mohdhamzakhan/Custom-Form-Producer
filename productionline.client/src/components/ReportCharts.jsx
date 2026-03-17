@@ -819,7 +819,7 @@ const ReportCharts = React.memo(({
         }
     };
 
-   
+
 
     // Render different chart types
     switch (type) {
@@ -1461,9 +1461,9 @@ const ReportCharts = React.memo(({
 
             console.log("Test Hamza", passedShiftConfig)
 
-            const shouldShowChart = showChart ?? true; 
+            const shouldShowChart = showChart ?? true;
 
-            console.log("shouldShowChart",shouldShowChart)
+            console.log("shouldShowChart", shouldShowChart)
 
             // Fetch data from backend API
             useEffect(() => {
@@ -1858,7 +1858,7 @@ const ReportCharts = React.memo(({
                     {/* Production Chart */}
                     {shouldShowChart && (
                         <div
-                            className={`${isMaximized ? 'flex-1 overflow-hidden' : 'mb-6'}`}
+                            className={`${isMaximized ? 'flex-1 overflow-hidden' : 'mb-7'}`}
                             style={isMaximized ? { minHeight: 0 } : {}}
                         >
                             {/* ✅ Add "Time Elapsed" label as HTML element */}
@@ -1900,7 +1900,12 @@ const ReportCharts = React.memo(({
                                     <ResponsiveContainer width="100%" height={isMaximized ? "100%" : 500}>
                                         <LineChart
                                             data={clippedChartData}
-                                            margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                                            margin={{
+                                                top: isMaximized ? 0 : 10,
+                                                right: 30,
+                                                left: 20,
+                                                bottom: isMaximized ? 100 : 0
+                                            }}
                                         >
                                             <CartesianGrid
                                                 strokeDasharray="3 3"
@@ -2085,7 +2090,10 @@ const ReportCharts = React.memo(({
                                             />
 
                                             <Legend
+                                                verticalAlign="top"
+                                                align="center"
                                                 wrapperStyle={{
+                                                    paddingBottom: '10px',
                                                     color: isFullscreenMode ? 'white' : (isDarkMode ? '#d1d5db' : '#374151')
                                                 }}
                                                 formatter={(value) => {
@@ -2146,40 +2154,40 @@ const ReportCharts = React.memo(({
                                             ) : (
                                                 <>
                                                     {/* ===== SINGLE-LINE MODE: your existing two lines ===== */}
-                                                    <Line
-                                                        type="monotone"
-                                                        dataKey="targetParts"
-                                                        stroke={isFullscreenMode ? "#ff6b35" : "#ff7300"}
-                                                        strokeWidth={isFullscreenMode ? 5 : 3}
-                                                        strokeDasharray="8 8"
-                                                        name="Target Production"
-                                                        dot={false}
-                                                    />
-                                                    <Line
-                                                        type="monotone"
-                                                        dataKey="actualParts"
-                                                        stroke="#10b981"
-                                                        strokeWidth={isFullscreenMode ? 4 : 3}
-                                                        name="Actual Production"
-                                                        connectNulls={false}
-                                                        dot={(props) => {
-                                                            const { cx, cy, payload } = props;
-                                                            if (payload.actualParts && payload.actualParts > 0) {
-                                                                return (
-                                                                    <circle
-                                                                        cx={cx}
-                                                                        cy={cy}
-                                                                        r={isFullscreenMode ? 6 : 4}
-                                                                        fill="#10b981"
-                                                                        stroke="#fff"
-                                                                        strokeWidth={2}
-                                                                    />
-                                                                );
-                                                            }
-                                                            return null;
-                                                        }}
-                                                        activeDot={{ r: isFullscreenMode ? 8 : 6 }}
-                                                    />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="targetParts"
+                                                            stroke={isDarkMode ? "#ffffff" : "#ff0000"}
+                                                            strokeWidth={isFullscreenMode ? 12 : 6}
+                                                            strokeDasharray="8 8"
+                                                            name="Target Production"
+                                                            dot={false}
+                                                        />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="actualParts"
+                                                            stroke="#2563eb"
+                                                            strokeWidth={isFullscreenMode ? 12 : 6}
+                                                            name="Actual Production"
+                                                            connectNulls={false}
+                                                            dot={(props) => {
+                                                                const { cx, cy, payload } = props;
+                                                                if (payload.actualParts && payload.actualParts > 0) {
+                                                                    return (
+                                                                        <circle
+                                                                            cx={cx}
+                                                                            cy={cy}
+                                                                            r={isFullscreenMode ? 6 : 4}
+                                                                            fill="#2563eb"
+                                                                            stroke="#fff"
+                                                                            strokeWidth={2}
+                                                                        />
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            }}
+                                                            activeDot={{ r: isFullscreenMode ? 8 : 6 }}
+                                                        />
                                                 </>
                                             )}
                                         </LineChart>
@@ -2259,66 +2267,66 @@ const ReportCharts = React.memo(({
                     {/* ✅ UPDATED: Production Summary Cards with extended height when chart is hidden */}
                     {/* Production Summary Cards - LARGER when chart is hidden */}
                     {!isFullscreenMode && shiftMetrics && (
-                        <div className={`${isMaximized ? 'mt-2' : 'mb-6'} ${!shouldShowChart ? 'flex-1 flex items-center' : ''}`}>
+                        <div className={`${isMaximized ? 'mt-1' : 'mt-2'} ${!shouldShowChart ? 'flex-1 flex items-center' : ''}`}>
                             <div className={`grid grid-cols-2 md:grid-cols-4 gap-${isMaximized ? '2' : shouldShowChart ? '4' : '6'} ${!shouldShowChart ? 'w-full' : ''}`}>
                                 {/* Current Production */}
                                 <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[750px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${!shouldShowChart ? 'min-h-[750px]' : isMaximized ? 'min-h-[160px]' : ''} 
                 ${isDarkMode
                                         ? 'bg-slate-800 border-slate-500 text-blue-200'
                                         : 'bg-blue-50 border-blue-300 text-blue-900'
                                     }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
                                         {shiftMetrics.currentProduction}
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
                                         Current Production
                                     </div>
                                 </div>
 
                                 {/* Target Parts */}
                                 <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[160px]' : ''} 
                 ${isDarkMode
                                         ? 'bg-orange-900 border-orange-700 text-orange-100'
                                         : 'bg-orange-50 border-orange-300 text-orange-900'
                                     }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
                                         {shiftMetrics.targetParts}
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
                                         Target Parts
                                     </div>
                                 </div>
 
                                 {/* Efficiency */}
                                 <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[160px]' : ''} 
                 ${shiftMetrics.efficiency >= 100
                                         ? isDarkMode ? 'bg-emerald-900 border-emerald-700 text-emerald-100' : 'bg-emerald-50 border-emerald-300 text-emerald-900'
                                         : shiftMetrics.efficiency >= 80
                                             ? isDarkMode ? 'bg-yellow-900 border-yellow-700 text-yellow-100' : 'bg-yellow-50 border-yellow-300 text-yellow-900'
                                             : isDarkMode ? 'bg-red-900 border-red-700 text-red-100' : 'bg-red-50 border-red-300 text-red-900'
                                     }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
                                         {shiftMetrics.efficiency}%
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
                                         Current %
                                     </div>
                                 </div>
 
                                 {/* Remaining Parts */}
                                 <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[80px]' : ''} 
+                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[160px]' : ''} 
                 ${isDarkMode
                                         ? 'bg-purple-900 border-purple-700 text-purple-100'
                                         : 'bg-purple-50 border-purple-300 text-purple-900'
                                     }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-xl' : 'text-2xl'} font-bold text-center`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
                                         {shiftMetrics.remainingParts}
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-2xl' : isMaximized ? 'text-xs' : 'text-sm'} text-center font-medium`}>
+                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
                                         Remaining Parts
                                     </div>
                                 </div>
@@ -2327,8 +2335,8 @@ const ReportCharts = React.memo(({
                     )}
 
                     {/* Marquee Message */}
-                    {!isMaximized && activeShiftConfig?.message && (
-                        <div className="mb-6">
+                    {activeShiftConfig?.message && (
+                        <div className="mb-0">
                             <div className={`marquee-container ${isDarkMode ? 'dark' : 'light'} rounded-lg shadow-lg`}>
                                 <div className="marquee-text">
                                     <span className="mr-8">🔔</span>
@@ -2339,24 +2347,24 @@ const ReportCharts = React.memo(({
                     )}
 
                     {/* Break Schedule */}
-                    {isMaximized && activeShiftConfig.breaks && activeShiftConfig.breaks.length > 0 && (
-                        <div className="p-2 bg-gray-50 rounded-lg mt-2">
-                            <h4 className="text-xs font-semibold text-gray-700 mb-2">Break Schedule</h4>
-                            <div className="grid grid-cols-3 gap-2">
-                                {activeShiftConfig.breaks.map((breakItem, idx) => (
-                                    <div key={breakItem.id || idx} className="flex items-center p-1 bg-white rounded border">
-                                        <div className="w-2 h-2 bg-red-400 rounded-full mr-2"></div>
-                                        <div>
-                                            <div className="text-xs font-medium">{breakItem.name}</div>
-                                            <div className="text-xs text-gray-600">
-                                                {breakItem.startTime} - {breakItem.endTime}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    {/*{isMaximized && activeShiftConfig.breaks && activeShiftConfig.breaks.length > 0 && (*/}
+                    {/*    <div className="p-2 bg-gray-50 rounded-lg mt-2">*/}
+                    {/*        <h4 className="text-xs font-semibold text-gray-700 mb-2">Break Schedule</h4>*/}
+                    {/*        <div className="grid grid-cols-3 gap-2">*/}
+                    {/*            {activeShiftConfig.breaks.map((breakItem, idx) => (*/}
+                    {/*                <div key={breakItem.id || idx} className="flex items-center p-1 bg-white rounded border">*/}
+                    {/*                    <div className="w-2 h-2 bg-red-400 rounded-full mr-2"></div>*/}
+                    {/*                    <div>*/}
+                    {/*                        <div className="text-xs font-medium">{breakItem.name}</div>*/}
+                    {/*                        <div className="text-xs text-gray-600">*/}
+                    {/*                            {breakItem.startTime} - {breakItem.endTime}*/}
+                    {/*                        </div>*/}
+                    {/*                    </div>*/}
+                    {/*                </div>*/}
+                    {/*            ))}*/}
+                    {/*        </div>*/}
+                    {/*    </div>*/}
+                    {/*)}*/}
                 </div>
             );
 

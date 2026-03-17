@@ -16,6 +16,8 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import AuditPlanner from "./components/Auditplanner";
 import Auditapproval from "./components/Auditapproval";
+import CompletePartialForm from "./components/CompletePartialForm";
+
 
 
 // Protected route component
@@ -109,6 +111,7 @@ function App() {
                     <Route path="/EmailSchedular" element={<EmailScheduler />} />
                     <Route path="/Audit" element={<AuditPlanner />} />
                     <Route path="/AuditApproval" element={<Auditapproval />} />
+                    <Route path="/form/complete/:token" element={<CompletePartialForm />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Router>

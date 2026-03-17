@@ -30,6 +30,7 @@ namespace productionLine.Server.Model
         public DbSet<EmailScheduleLog> EmailScheduleLogs { get; set; }
         public DbSet<AuditPlan> AuditPlans { get; set; }
         public DbSet<AuditPlanEntry> AuditPlanEntries { get; set; }
+        public DbSet<PartialSubmission> PartialSubmissions { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -183,6 +184,10 @@ namespace productionLine.Server.Model
             modelBuilder.Entity<FormSubmission>()
                 .HasIndex(s => new { s.FormId, s.SubmittedAt, s.Id })
                 .HasDatabaseName("IX_FORMSUBMISSIONS_FORMID_DATE_ID");
+
+            modelBuilder.Entity<Form>()
+                .Property(e => e.AllowPartialFill)
+                .HasConversion<int>();
 
             modelBuilder.Entity<EmailSchedule>(entity =>
             {

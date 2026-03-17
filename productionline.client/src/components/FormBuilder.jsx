@@ -66,6 +66,8 @@ const FormBuilder = () => {
     const [accessFormSearchResults, setAccessFormSearchResults] = useState([]);
     const [showFormAccessConfig, setShowFormAccessConfig] = useState(false);
 
+    const [allowPartialFill, setAllowPartialFill] = useState(false);
+
 
     // Add this function to fetch linked form details
     // Replace your fetchLinkedFormDetails function with this safe version
@@ -221,8 +223,6 @@ const FormBuilder = () => {
 
         return () => window.removeEventListener("scroll", onScroll);
     }, []);
-
-
 
     useEffect(() => {
         const storedUserData = localStorage.getItem("user");
@@ -818,6 +818,7 @@ const FormBuilder = () => {
             setApprovers(data.approvers || []);
             setAllowedUsers(data.allowedUsers || []);
             setAllowedtoAccess(data.allowToAccess || []);
+            setAllowPartialFill(data.allowPartialFill || false);
             setLoading(false);
 
         } catch (error) {
@@ -826,7 +827,6 @@ const FormBuilder = () => {
             setLoading(false);
         }
     };
-
 
     const saveForm = async () => {
         if (!formName.trim()) {
@@ -905,6 +905,7 @@ const FormBuilder = () => {
             const baseForm = {
                 id: formId || 0,
                 name: formName,
+                allowPartialFill: allowPartialFill,
                 formLink: originalFormLink || formName.toLowerCase().replace(/\s+/g, "-"),
                 createdBy: currentUser,
                 createdAt: currentUtc,
@@ -989,15 +990,16 @@ const FormBuilder = () => {
                         width: field.width,
                         formId: baseForm.id,
                         order: field.order,
-
+                        filledBy: field.filledBy || "creator",
                         // VISIBILITY PROPERTIES - Add these for all fields
                         visible: field.visible !== undefined ? field.visible : true,
                         disabled: field.disabled || false,
-
+                        
                         // CRITICAL: Provide form reference WITH rowVersion
                         form: {
                             id: baseForm.id,
                             name: baseForm.name,
+                            allowPartialFill: allowPartialFill,
                             formLink: baseForm.formLink,
                             rowVersion: existingRowVersion,
                             createdBy: currentUser,
@@ -1041,6 +1043,7 @@ const FormBuilder = () => {
                         // Handle calculation fields
                         formula: field.formula || "",
                         resultDecimal: field.resultDecimal ?? false,
+                        //filledBy: field.filledBy || "creator",
 
                         // Handle field references - set to null to avoid circular reference issues
                         fieldReferences: null,
@@ -1511,9 +1514,6 @@ const FormBuilder = () => {
         );
     };
 
-
-
-
     const getAllFormFieldsWithGridColumns = (fields) => {
         const allFields = [];
 
@@ -1542,7 +1542,6 @@ const FormBuilder = () => {
         });
         return allFields;
     };
-
 
     const KeyFieldsConfigurationSection = () => {
         const currentFormFields = getAllFormFieldsWithGridColumns(formFields);
@@ -1901,6 +1900,25 @@ const FormBuilder = () => {
                                 </div>
                             </div>
 
+                            {/* Partial Fill Configuration */}
+                            <div className="mt-4 pt-4 border-t">
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="checkbox"
+                                        id="allowPartialFill"
+                                        checked={allowPartialFill}
+                                        onChange={(e) => setAllowPartialFill(e.target.checked)}
+                                        className="h-4 w-4"
+                                    />
+                                    <label htmlFor="allowPartialFill" className="text-sm font-medium text-gray-700">
+                                        Allow Partial Fill (Send for Completion)
+                                    </label>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1 ml-7">
+                                    Enables the first person to fill some fields, then email a link for someone else to complete the rest.
+                                </p>
+                            </div>
+
                             {/* Key Fields Configuration */}
                             {linkedForm && (
                                 <div className="mt-4 p-3 bg-white rounded border">
@@ -2032,6 +2050,9 @@ const FormBuilder = () => {
                                     )}
                                 </div>
                             )}
+
+
+
                         </div>
 
                         {/* Action Buttons */}
@@ -2441,6 +2462,7 @@ const FormBuilder = () => {
                                     removeField={() => removeField(index)}
                                     linkedForm={linkedForm}
                                     linkedFormFields={linkedFormFields}
+                                    allowPartialFill={allowPartialFill}
                                 />
                             </div>
                         ))}
@@ -2506,7 +2528,7 @@ const ApproverItem = ({ approver, index, moveApprover, removeApprover }) => {
     );
 };
 
-const FormField = ({ field, index, allFields, moveField, updateField, removeField, linkedForm, linkedFormFields }) => {
+const FormField = ({ field, index, allFields, moveField, updateField, removeField, linkedForm, linkedFormFields, allowPartialFill }) => {
     const [previewParentValue, setPreviewParentValue] = useState("");
     const [previewChildOptions, setPreviewChildOptions] = useState([]);
 
@@ -2794,6 +2816,27 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                 />
                 <label className="text-sm text-gray-600">Required</label>
             </div>
+
+            {/* Filled By — only shown when form has allowPartialFill */}
+            {/* NOTE: pass allowPartialFill as a prop to FormField */}
+            {allowPartialFill && (
+                <div className="mt-3 border-t pt-3">
+                    <label className="block text-sm font-bold text-gray-700 mb-1">
+                        Filled By
+                    </label>
+                    <select
+                        value={field.filledBy || "creator"}
+                        onChange={e => updateField({ filledBy: e.target.value })}
+                        className="w-full border rounded px-3 py-2 text-sm"
+                    >
+                        <option value="creator">First Person (Form Opener)</option>
+                        <option value="recipient">Second Person (Email Recipient)</option>
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                        Define who fills this field
+                    </p>
+                </div>
+            )}
             {field.type === "linkedTextbox" && (
                 <div className="mb-4">
                     <div className="space-y-3">

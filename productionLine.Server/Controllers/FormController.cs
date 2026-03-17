@@ -90,6 +90,7 @@ namespace productionLine.Server.Controllers
                                         existingColumn.Formula = column.Formula;
                                         existingColumn.textColor = column.textColor;
                                         existingColumn.backgroundColor = column.backgroundColor;
+
                                     }
                                     else
                                     {
@@ -161,7 +162,7 @@ namespace productionLine.Server.Controllers
             existingForm.Name = form.Name;
             existingForm.LinkedFormId = form.LinkedFormId; // Add this line
             existingForm.KeyFieldMappings = form.KeyFieldMappings; // Add this line
-
+            existingForm.AllowPartialFill = form.AllowPartialFill;
             existingForm.Fields.Select((FormField f) => f.Id).ToHashSet();
             HashSet<Guid> incomingFieldIds = form.Fields.Select((FormField f) => f.Id).ToHashSet();
             List<FormField> fieldsToRemove = existingForm.Fields.Where((FormField f) => !incomingFieldIds.Contains(f.Id)).ToList();
@@ -222,6 +223,7 @@ namespace productionLine.Server.Controllers
                     existingField.DefaultRowsJson = field.DefaultRowsJson;
                     existingField.AllowAddRows = field.AllowAddRows;
                     existingField.AllowEditQuestions = field.AllowEditQuestions;
+                    existingField.FilledBy = field.FilledBy;
 
 
 
@@ -386,6 +388,7 @@ namespace productionLine.Server.Controllers
                 Name = form.Name,
                 LinkedFormId = form.LinkedFormId, // Move this to Form level
                 KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
+                AllowPartialFill = form.AllowPartialFill,
                 Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
                 {
                     Id = a.Id,
@@ -449,6 +452,7 @@ namespace productionLine.Server.Controllers
                     AllowEditQuestions = f.AllowEditQuestions,
                     DefaultRowsJson = f.DefaultRowsJson,
                     DefaultRows = f.DefaultRows,
+                    FilledBy=f.FilledBy,
 
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
@@ -509,6 +513,7 @@ namespace productionLine.Server.Controllers
                     ResultDecimal = f.ResultDecimal,
                     FieldReferencesJson = f.FieldReferencesJson
                 }).ToList()
+                
             };
             return Ok(formDto);
         }

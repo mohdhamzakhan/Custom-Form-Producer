@@ -2677,6 +2677,16 @@ namespace productionLine.Server.Controllers
             };
         }
 
+        [HttpGet("server-date")]
+        public IActionResult GetServerDate()
+        {
+            return Ok(new
+            {
+                date = DateTime.Now.ToString("yyyy-MM-dd"),
+                dateTime = DateTime.Now
+            });
+        }
+
         private string GetCurrentShift()
         {
             var now = DateTime.Now;

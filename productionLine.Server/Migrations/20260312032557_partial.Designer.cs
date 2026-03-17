@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260312032557_partial")]
+    partial class partial
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -435,10 +438,6 @@ namespace productionLine.Server.Migrations
 
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<bool>("AllowPartialFill")
-                        .HasColumnType("NUMBER(1)")
-                        .HasColumnName("ALLOW_PARTIAL_FILL");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("CREATEDAT");
@@ -663,10 +662,6 @@ namespace productionLine.Server.Migrations
                     b.Property<string>("FieldReferencesJson")
                         .HasColumnType("CLOB")
                         .HasColumnName("FIELD_REFERENCES");
-
-                    b.Property<string>("FilledBy")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("FILLEDBY");
 
                     b.Property<int>("FormId")
                         .HasColumnType("NUMBER(10)")

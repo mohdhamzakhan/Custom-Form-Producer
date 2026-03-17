@@ -8,6 +8,7 @@ namespace productionLine.Server.DTO
         public string FormLink { get; set; }
         public string Name { get; set; }
         public int? LinkedFormId { get; set; }
+        public bool AllowPartialFill { get; set; } = false;
         public List<KeyFieldMapping>? KeyFieldMappings { get; set; }
         public List<FieldDto> Fields { get; set; } = new();
         public List<ApproverDto> Approvers { get; set; }
