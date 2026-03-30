@@ -39,6 +39,9 @@ export default function EnhancedReportViewer() {
         const saved = localStorage.getItem('darkMode');
         return saved === 'true';
     });
+    const [dataMode, setDataMode] = useState('approved'); // 'approved' | 'submitted'
+    const [currentUsername, setCurrentUsername] = useState('');
+    const [canSeeSubmitted, setCanSeeSubmitted] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [showBlankRows, setShowBlankRows] = useState(false);
     const [showChart, setShowChart] = useState(true);
@@ -63,6 +66,15 @@ export default function EnhancedReportViewer() {
 
     console.log('🚀 REPORT VIEWER LOADED - calculatedFields:', calculatedFields);
 
+    useEffect(() => {
+        const storedUserData = localStorage.getItem("user");
+        if (storedUserData && storedUserData !== "undefined") {
+            try {
+                const storedUser = JSON.parse(storedUserData);
+                setCurrentUsername(storedUser.username || '');
+            } catch { }
+        }
+    }, []);
 
     useEffect(() => {
         const savedMode = localStorage.getItem('darkMode');
@@ -115,13 +127,30 @@ export default function EnhancedReportViewer() {
         });
     };
 
-
+    const getAuthHeaders = () => {
+        try {
+            const u = JSON.parse(localStorage.getItem("user") || '{}');
+            return { 'X-Username': u.username || '' };
+        } catch { return {}; }
+    };
     useEffect(() => {
         const fetchTemplate = async () => {
             try {
                 setLoading(true);
                 const res = await axios.get(`${APP_CONSTANTS.API_BASE_URL}/api/reports/template/${templateId}`);
                 setTemplate(res.data);
+
+                // Check if this user is in submittedViewers
+                const viewers = res.data.submittedViewers || [];
+                const uname = (() => {
+                    try {
+                        return JSON.parse(localStorage.getItem("user") || '{}').username?.toLowerCase() || '';
+                    } catch { return ''; }
+                })();
+                const allowed = viewers.some(v =>
+                    v.name?.toLowerCase() === uname || v.id?.toLowerCase() === uname
+                );
+                setCanSeeSubmitted(allowed);
 
                 // ✅ ADD THIS: Fetch forms if multi-form report
                 if (res.data.isMultiForm && res.data.formIds?.length > 0) {
@@ -234,7 +263,8 @@ export default function EnhancedReportViewer() {
 
                         const reportRes = await axios.post(
                             `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
-                            payload  // ✅ Changed from empty object {} to payload
+                            payload,  // ✅ Changed from empty object {} to payload
+                            { headers: getAuthHeaders() }
                         );
 
                         console.log('=== PROCESSING WITH FRESH DATA ===');
@@ -360,8 +390,10 @@ export default function EnhancedReportViewer() {
                     `${APP_CONSTANTS.API_BASE_URL}/api/reports/run-shift/${templateId}`,
                     {
                         shiftPeriod: selectedShiftPeriod,
-                        date: selectedDate
-                    }
+                        date: selectedDate,
+                        DataMode: dataMode
+                    },
+                    { headers: getAuthHeaders() }
                 );
                 console.log('📊 RAW REPORT DATA:', res.data.length, 'rows');
 
@@ -384,13 +416,26 @@ export default function EnhancedReportViewer() {
 
             else {
                 // Use regular endpoint
+                const hasFilters = (() => {
+                    if (!runtimeFilters) return false;
+
+                    return Object.entries(runtimeFilters).some(([_, value]) => {
+                        if (value === null || value === undefined) return false;
+                        if (typeof value === "string") return value.trim() !== "";
+                        if (Array.isArray(value)) return value.length > 0;
+                        return true;
+                    });
+                })();
+                console.log("Debug   ", hasFilters)
                 const payload = {
                     RuntimeFilters: runtimeFilters,
-                    VerticalLayout: template.layoutMode === "vertical" // ✅ NEW
+                    VerticalLayout: template.layoutMode === "vertical",
+                    DataMode: dataMode
                 };
                 res = await axios.post(
                     `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
-                    payload
+                    payload,
+                    { headers: getAuthHeaders() }
                 );
 
                 const { processedData, summaryRows } = processCalculatedFields(
@@ -426,14 +471,16 @@ export default function EnhancedReportViewer() {
             // ✅ FIX: Wrap runtimeFilters in proper request object
             const payload = {
                 RuntimeFilters: runtimeFilters || {},
-                VerticalLayout: template?.layoutMode === "vertical" || false
+                VerticalLayout: template?.layoutMode === "vertical" || false,
+                DataMode: dataMode
             };
 
             console.log('📤 Sending payload:', payload);
 
             const res = await axios.post(
                 `${APP_CONSTANTS.API_BASE_URL}/api/reports/run/${templateId}`,
-                payload  // ✅ Changed from runtimeFilters to payload
+                payload,  // ✅ Changed from runtimeFilters to payload
+                { headers: getAuthHeaders() }
             );
 
             console.log('=== PROCESSING FILTERED REPORT ===');
@@ -1118,6 +1165,46 @@ export default function EnhancedReportViewer() {
                             📑 Expanded
                         </button>
                     </>
+                )}
+
+                {canSeeSubmitted && (
+                    <div className="flex items-center gap-3 rounded-full px-3 py-2">
+
+                        {/* Approved */}
+                        <span className={`text-sm ${dataMode === "approved"
+                                ? "text-emerald-600 font-semibold"
+                                : "text-gray-400"
+                            }`}>
+                            Approved
+                        </span>
+
+
+                        {/* Toggle */}
+                        <button
+                            onClick={() => {
+                                const newMode = dataMode === 'approved' ? 'submitted' : 'approved';
+                                setDataMode(newMode);
+
+                                if (!hasActiveFilters()) fetchFilteredReport();
+                            }}
+                            className="relative w-14 h-7 bg-gray-300 rounded-full transition"
+                        >
+                            <span
+                                className={`absolute top-1 w-5 h-5 rounded-full shadow transition-all duration-300 ${dataMode === "submitted"
+                                        ? "left-8 bg-blue-500"
+                                        : "left-1 bg-green-500"
+                                    }`}
+                            />
+                        </button>
+
+                        {/* Submitted */}
+                        <span className={`text-sm ${dataMode === "submitted"
+                                ? "text-blue-600 font-semibold"
+                                : "text-gray-400"
+                            }`}>
+                            Submitted
+                        </span>
+                    </div>
                 )}
             </div>
         );

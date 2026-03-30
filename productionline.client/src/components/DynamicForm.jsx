@@ -45,6 +45,7 @@ export default function DynamicForm() {
     const [showAdDropdown, setShowAdDropdown] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
     const [sendingPartial, setSendingPartial] = useState(false);
+    const [submissionLimit, setSubmissionLimit] = useState(20);
 
     const handleAdSearch = async (term) => {
         setAdSearchTerm(term);
@@ -990,12 +991,12 @@ export default function DynamicForm() {
     };
 
     // Fetch recent submissions
-    const fetchRecentSubmissions = async () => {
-        const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/lastsubmissions`);
+    const fetchRecentSubmissions = async (limit = submissionLimit) => {
+        const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/lastsubmissions?count=${limit}`);
         if (!response.ok) throw new Error("Failed to fetch submissions");
         const submissions = await response.json();
         console.log(submissions)
-        setRecentSubmissions(submissions.slice(0, 20)); // Take only last 10
+        setRecentSubmissions(submissions); // Take only last 10
     };
 
     // Check if a remark should be triggered based on numeric value
@@ -1474,7 +1475,6 @@ export default function DynamicForm() {
             e.preventDefault();
         }
 
-
         const validationErrors = status === "Submitted" ? validateForm() : {};
         setFormErrors(validationErrors);
         setSubmitted(true);
@@ -1484,8 +1484,8 @@ export default function DynamicForm() {
         const submissionData = {
             formId: formData.id,
             submissionId: editingSubmissionId,
-            submissionData: [],
-            status
+            status,
+            submissionData: []
         };
 
         const fieldTypes = {};
@@ -1544,7 +1544,9 @@ export default function DynamicForm() {
             console.log("URL:", url);
             console.log("Payload:", payload);
             console.log("==================");
-
+            console.log("Submitting with status:", status);
+            console.log("Editing submission ID:", editingSubmissionId);
+            console.log("Full payload:", JSON.stringify(submissionData));
             const response = await fetch(url, {
                 method: "POST",
                 headers: {
@@ -3608,7 +3610,7 @@ export default function DynamicForm() {
             focus:outline-none focus:ring-2 focus:ring-green-400
         "
                         >
-                            View Last 20 Submissions
+                            {`View Last ${submissionLimit} submissions`}
                         </button>
                     </div>
                 </div>
@@ -3621,8 +3623,29 @@ export default function DynamicForm() {
                     <div className="bg-white rounded-lg shadow-lg w-11/12 max-w-4xl relative">
 
                         {/* Header */}
+                        {/* Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b">
-                            <h2 className="text-xl font-semibold">Submissions</h2>
+                            <div className="flex items-center gap-4">
+                                <h2 className="text-xl font-semibold">Submissions</h2>
+                                {/* ✅ NEW: limit picker */}
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm text-gray-500 whitespace-nowrap">Show last</label>
+                                    <select
+                                        value={submissionLimit}
+                                        onChange={(e) => {
+                                            const newLimit = Number(e.target.value);
+                                            setSubmissionLimit(newLimit);
+                                            fetchRecentSubmissions(newLimit); // ✅ pass directly, bypasses stale state
+                                        }}
+                                        className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    >
+                                        {[20, 30, 40, 50, 60, 70, 80, 90, 100].map(n => (
+                                            <option key={n} value={n}>{n}</option>
+                                        ))}
+                                    </select>
+                                    <span className="text-sm text-gray-500">entries</span>
+                                </div>
+                            </div>
                             <button
                                 onClick={() => setIsModalOpen(false)}
                                 className="text-gray-500 hover:text-gray-800 text-2xl font-bold"

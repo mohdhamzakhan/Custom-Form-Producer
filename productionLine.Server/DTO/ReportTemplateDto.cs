@@ -1,4 +1,5 @@
 ﻿using System.Text.Json.Serialization;
+using static productionLine.Server.Controllers.ReportsController;
 
 public class ReportTemplateDto
 {
@@ -18,6 +19,7 @@ public class ReportTemplateDto
     public List<ChartConfig>? ChartConfigs { get; set; } // ✅ strongly typed                        // ✅ NEW
     public List<GroupingConfig> GroupingConfig { get; set; }
     public List<FormRelationship>? FormRelationships { get; set; }
+    public List<SharedUser>? SubmittedViewers { get; set; } = new();
 }
 
 

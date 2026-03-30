@@ -65,6 +65,8 @@ namespace productionLine.Server.Model
         [Column("LAYOUTMODE")]
         public string? LayoutMode { get; set; } = "horizontal";
         public virtual Form? Form { get; set; }
+        [Column("SUBMITTEDVIEWERS")]
+        public string? SubmittedViewers { get; set; }
 
     }
 

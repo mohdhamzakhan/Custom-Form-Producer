@@ -314,12 +314,28 @@ namespace productionLine.Server.Controllers
             // Update Allowed Users (Access)
             // -----------------------------
 
-            var existingAllowedUsers = existingForm.AllowedtoAccess.ToList();
-            _context.FormToAdd.RemoveRange(existingAllowedUsers);
+            var existingAllowedUsers = existingForm.AllowedUsers.ToList();
+            _context.FormAccess.RemoveRange(existingAllowedUsers);
+
+            foreach (var user in form.AllowedUsers)
+            {
+                var formAccess = new FormAccess
+                {
+                    AdObjectId = user.AdObjectId,
+                    Email = user.Email,
+                    FormId = id,
+                    Name = user.Name,
+                    Type = user.Type
+                };
+                _context.FormAccess.Add(formAccess);
+            }
+
+            var existingEntryUsers = existingForm.AllowedtoAccess.ToList();
+            _context.FormToAdd.RemoveRange(existingEntryUsers);
 
             foreach (var user in form.AllowedtoAccess)
             {
-                var formAccess = new FormToAdd
+                var formToAdd = new FormToAdd
                 {
                     AdObjectId = user.AdObjectId,
                     Email = user.Email,
@@ -328,8 +344,7 @@ namespace productionLine.Server.Controllers
                     Name = user.Name,
                     Type = user.Type
                 };
-
-                _context.FormToAdd.Add(formAccess);
+                _context.FormToAdd.Add(formToAdd);
             }
 
             try
@@ -630,6 +645,7 @@ namespace productionLine.Server.Controllers
                     //_context.FormApprovals.RemoveRange(formSubmission.Approvals);
 
                     formSubmission.SubmittedAt = submittedAt;
+                    formSubmission.Status = submissionDTO.Status ?? "Submitted";
                     formSubmission.SubmissionData = new List<FormSubmissionData>();
                     var survivors = formSubmission.Approvals
                         .Where(a => a.Status == "Approved" || a.Status == "Rejected")
@@ -868,9 +884,61 @@ namespace productionLine.Server.Controllers
         }
 
         // Assuming you have a controller like [Route("api/forms")]
+        //[HttpGet("{form}/lastsubmissions")]
+        //public async Task<IActionResult> GetLastSubmissions(string form)
+        //{
+        //    form = WebUtility.UrlDecode(form);
+        //    form = form.Replace(" ", "-");
+        //    int formId = await (from y in _context.Forms
+        //                        where y.FormLink == form.ToLower()
+        //                        select y.Id).FirstOrDefaultAsync();
+        //    try
+        //    {
+        //        var result = (await (from s in (from s in _context.FormSubmissions
+        //                                        where s.FormId == formId
+        //                                        && s.Status == "Submitted"
+        //                                        orderby s.SubmittedAt descending
+        //                                        select s).Take(50)
+        //                             select new
+        //                             {
+        //                                 Id = s.Id,
+        //                                 SubmittedAt = s.SubmittedAt,
+        //                                 Approvals = s.Approvals.Select((FormApproval a) => a.Status).ToList(),
+        //                                 ApproversRequired = _context.FormApprovers.Where((FormApprover a) => a.FormId == s.FormId).Count()
+        //                             }).ToListAsync()).Select(s =>
+        //                             {
+        //                                 var source = s.Approvals ?? new List<string>();
+        //                                 var approvedCount = source.Count(a => a == "Approved");
+        //                                 var rejectedCount = source.Count(a => a == "Rejected");
+        //                                 var pendingCount = source.Count(a => a == "Pending");
+
+        //                                 if (rejectedCount > 0)
+        //                                     return new { s.Id, s.SubmittedAt, Status = "Rejected" };
+
+        //                                 if (approvedCount >= s.ApproversRequired)
+        //                                     return new { s.Id, s.SubmittedAt, Status = "Approved" };
+
+        //                                 if (source.Count == 0 || approvedCount == 0)
+        //                                     return new { s.Id, s.SubmittedAt, Status = "Pending" };
+
+        //                                 if (approvedCount > 0 && approvedCount < s.ApproversRequired)
+        //                                     return new { s.Id, s.SubmittedAt, Status = "Initial Approval Done" };
+
+        //                                 return new { s.Id, s.SubmittedAt, Status = "Pending" };
+        //                             });
+
+        //        return Ok(result);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, "Internal server error: " + ex.Message);
+        //    }
+        //}
+
         [HttpGet("{form}/lastsubmissions")]
-        public async Task<IActionResult> GetLastSubmissions(string form)
+        public async Task<IActionResult> GetLastSubmissions(string form, [FromQuery] int count = 20)
         {
+            count = Math.Clamp(count, 1, 100); // safety guard
             form = WebUtility.UrlDecode(form);
             form = form.Replace(" ", "-");
             int formId = await (from y in _context.Forms
@@ -882,7 +950,7 @@ namespace productionLine.Server.Controllers
                                                 where s.FormId == formId
                                                 && s.Status == "Submitted"
                                                 orderby s.SubmittedAt descending
-                                                select s).Take(50)
+                                                select s).Take(count)   // ✅ was hardcoded 50
                                      select new
                                      {
                                          Id = s.Id,
@@ -894,23 +962,16 @@ namespace productionLine.Server.Controllers
                                          var source = s.Approvals ?? new List<string>();
                                          var approvedCount = source.Count(a => a == "Approved");
                                          var rejectedCount = source.Count(a => a == "Rejected");
-                                         var pendingCount = source.Count(a => a == "Pending");
-
                                          if (rejectedCount > 0)
                                              return new { s.Id, s.SubmittedAt, Status = "Rejected" };
-
                                          if (approvedCount >= s.ApproversRequired)
                                              return new { s.Id, s.SubmittedAt, Status = "Approved" };
-
                                          if (source.Count == 0 || approvedCount == 0)
                                              return new { s.Id, s.SubmittedAt, Status = "Pending" };
-
                                          if (approvedCount > 0 && approvedCount < s.ApproversRequired)
                                              return new { s.Id, s.SubmittedAt, Status = "Initial Approval Done" };
-
                                          return new { s.Id, s.SubmittedAt, Status = "Pending" };
                                      });
-
                 return Ok(result);
             }
             catch (Exception ex)

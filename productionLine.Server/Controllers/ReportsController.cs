@@ -1404,6 +1404,11 @@ namespace productionLine.Server.Controllers
                     template.SharedWithRole = dto.SharedWithRole;
                     template.LayoutMode = dto.LayoutMode;
 
+                    // ✅ NEW: Save submitted viewers
+                    template.SubmittedViewers = dto.SubmittedViewers?.Any() == true
+                        ? JsonSerializer.Serialize(dto.SubmittedViewers, jsonOptions)
+                        : null;
+
                     _context.ReportFields.RemoveRange(template.Fields);
                     _context.ReportFilters.RemoveRange(template.Filters);
 
@@ -1456,6 +1461,12 @@ namespace productionLine.Server.Controllers
                         IncludeRemarks = dto.IncludeRemarks,
                         SharedWithRole = dto.SharedWithRole,
                         LayoutMode = dto.LayoutMode,
+
+                        // ✅ NEW: Save submitted viewers
+                        SubmittedViewers = dto.SubmittedViewers?.Any() == true
+                            ? JsonSerializer.Serialize(dto.SubmittedViewers, jsonOptions)
+                            : null,
+
                         Fields = dto.Fields.Select((f, index) => new ReportField
                         {
                             FieldId = f.FieldId,
@@ -1507,6 +1518,8 @@ namespace productionLine.Server.Controllers
         {
             public Dictionary<string, string> RuntimeFilters { get; set; }
             public bool? VerticalLayout { get; set; }
+            /// <summary>"approved" (default) or "submitted" — submitted requires the caller to be in SubmittedViewers</summary>
+            public string DataMode { get; set; } = "approved";
         }
 
         // ✅ FormRelationship model
@@ -1518,6 +1531,36 @@ namespace productionLine.Server.Controllers
             public int TargetFormId { get; set; }
             public string TargetFieldId { get; set; }
             public string Type { get; set; }
+        }
+
+        // ✅ Helper: resolve caller username from X-Username header
+        private string GetCallerUsername()
+        {
+            return Request.Headers.TryGetValue("X-Username", out var u)
+                ? u.ToString().Trim().ToLower()
+                : string.Empty;
+        }
+
+        // ✅ Helper: check whether a caller can see all submitted entries
+        private bool CallerCanSeeSubmitted(string callerUsername, string submittedViewersJson)
+        {
+            if (string.IsNullOrEmpty(callerUsername) || string.IsNullOrEmpty(submittedViewersJson))
+                return false;
+
+            try
+            {
+                var viewers = JsonSerializer.Deserialize<List<SharedUser>>(
+                    submittedViewersJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                return viewers?.Any(sv =>
+                    sv.Name?.ToLower() == callerUsername ||
+                    sv.Id?.ToLower() == callerUsername) ?? false;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         [HttpPost("run/{templateId}")]
@@ -1532,6 +1575,15 @@ namespace productionLine.Server.Controllers
                 return NotFound("Template not found.");
 
             bool isVerticalLayout = request.VerticalLayout ?? false;
+            bool hasRuntimeFilters = request.RuntimeFilters != null &&
+                    request.RuntimeFilters.Any(kv => !string.IsNullOrWhiteSpace(kv.Value));
+            // ✅ NEW: Resolve whether caller can see submitted (non-approved) entries
+            string callerUsername = GetCallerUsername();
+            bool canSeeSubmitted = CallerCanSeeSubmitted(callerUsername, template.SubmittedViewers);
+            bool showAll = canSeeSubmitted
+                            && (request.DataMode?.ToLower() == "submitted");
+
+            Console.WriteLine($"👤 Caller: '{callerUsername}' | canSeeSubmitted: {canSeeSubmitted} | dataMode: {request.DataMode} | showAll: {showAll}");
 
             List<int> formIds = new List<int>();
             if (template.IsMultiForm && !string.IsNullOrEmpty(template.FormIds))
@@ -1557,10 +1609,12 @@ namespace productionLine.Server.Controllers
 
                 formFieldMappings[formId] = form.Fields.ToList();
 
+                // ✅ MODIFIED: respect showAll flag
                 var formSubmissions = await _context.FormSubmissions
                     .Include(s => s.Approvals)
                     .Include(s => s.SubmissionData)
-                    .Where(s => s.FormId == formId && s.Approvals.Any(a => a.Status == "Approved"))
+                    .Where(s => s.FormId == formId &&
+                        (showAll || s.Approvals.Any(a => a.Status == "Approved")))
                     .ToListAsync();
 
                 allSubmissions.AddRange(formSubmissions);
@@ -1590,26 +1644,23 @@ namespace productionLine.Server.Controllers
             }
 
             // ── Route to correct layout processor ─────────────────────────
-            // Priority 1: Multi-form WITH relationships → merged layout
             if (template.IsMultiForm && relationships.Any())
             {
                 Console.WriteLine($"🔀 Using MERGED layout ({relationships.Count} relationships)");
                 return Ok(ProcessMergedLayout(filtered, template, formFieldMappings, relationships));
             }
 
-            // Priority 2: Vertical layout (single or multi-form, no relationships)
             if (isVerticalLayout)
             {
                 Console.WriteLine("📊 Using VERTICAL layout");
                 return Ok(ProcessVerticalLayout(filtered, template, formFieldMappings));
             }
 
-            // Priority 3: Default horizontal
             Console.WriteLine("📋 Using HORIZONTAL layout");
             return Ok(ProcessHorizontalLayout(filtered, template, formFieldMappings));
         }
 
-        // ✅ MERGED LAYOUT: Joins rows from multiple forms using relationship fields
+        // ✅ MERGED LAYOUT
         private List<object> ProcessMergedLayout(
             List<FormSubmission> submissions,
             ReportTemplate template,
@@ -1620,28 +1671,23 @@ namespace productionLine.Server.Controllers
 
             Console.WriteLine($"🔀 ProcessMergedLayout: {submissions.Count} submissions, {relationships.Count} relationships");
 
-            // ── 1. Get all unique column labels in order ───────────────────
             var allFieldLabels = template.Fields
                 .OrderBy(f => f.Order)
                 .Select(f => f.FieldLabel)
                 .Distinct()
                 .ToList();
 
-            // ── 2. Resolve relationship link pairs from DB ─────────────────
             var linkPairs = new List<(string SourceLabel, string TargetLabel)>();
 
             foreach (var rel in relationships)
             {
-                // Resolve TARGET field label (plain field ID)
                 string targetLabel = null;
                 if (Guid.TryParse(rel.TargetFieldId, out Guid targetGuid))
                 {
                     var targetField = _context.FormFields.FirstOrDefault(f => f.Id == targetGuid);
                     targetLabel = targetField?.Label;
-                    Console.WriteLine($"  Target: {rel.TargetFieldId} → '{targetLabel}'");
                 }
 
-                // Resolve SOURCE field label (may be "gridId:colId")
                 string sourceLabel = null;
                 if (!string.IsNullOrEmpty(rel.SourceFieldId) && rel.SourceFieldId.Contains(':'))
                 {
@@ -1656,10 +1702,7 @@ namespace productionLine.Server.Controllers
                             var col = gridField.Columns.FirstOrDefault(c =>
                                 Guid.TryParse(c.Id, out Guid cGuid) && cGuid == colId);
                             if (col != null)
-                            {
                                 sourceLabel = $"{gridField.Label} → {col.Name}";
-                                Console.WriteLine($"  Source: {rel.SourceFieldId} → '{sourceLabel}'");
-                            }
                         }
                     }
                 }
@@ -1667,17 +1710,12 @@ namespace productionLine.Server.Controllers
                 {
                     var srcField = _context.FormFields.FirstOrDefault(f => f.Id == srcGuid);
                     sourceLabel = srcField?.Label;
-                    Console.WriteLine($"  Source: {rel.SourceFieldId} → '{sourceLabel}'");
                 }
 
                 if (targetLabel != null || sourceLabel != null)
-                {
                     linkPairs.Add((sourceLabel, targetLabel));
-                    Console.WriteLine($"🔗 Link pair added: '{sourceLabel}' ↔ '{targetLabel}'");
-                }
             }
 
-            // ── 3. Extract flat row data for every submission ──────────────
             var rawRows = new List<Dictionary<string, string>>();
             var submissionMeta = new List<(long SubId, int FormId, DateTime SubmittedAt)>();
 
@@ -1688,12 +1726,9 @@ namespace productionLine.Server.Controllers
                     : new List<FormField>();
 
                 var rowDict = new Dictionary<string, string>();
-
-                // Initialize all columns to "-"
                 foreach (var label in allFieldLabels)
                     rowDict[label] = "-";
 
-                // Fill in values for fields belonging to this submission's form
                 var relevantFields = template.Fields.Where(f =>
                     f.FormId == null || f.FormId == 0 || f.FormId == sub.FormId
                 ).ToList();
@@ -1704,7 +1739,6 @@ namespace productionLine.Server.Controllers
 
                     if (templateField.FieldLabel.Contains("→"))
                     {
-                        // Grid column field
                         var parts = templateField.FieldLabel.Split("→", 2);
                         var gridLabel = parts[0].Trim();
                         var colName = parts[1].Trim();
@@ -1724,16 +1758,13 @@ namespace productionLine.Server.Controllers
                                         List<Dictionary<string, object>>>(
                                         match.FieldValue, jsonOptions);
 
-                                    // Collect all non-empty values from this column across all grid rows
                                     var vals = gridRows?
                                         .Select(r =>
                                         {
                                             if (!r.ContainsKey(colName)) return null;
                                             var cell = r[colName];
                                             if (cell is JsonElement je)
-                                            {
                                                 return je.ValueKind == JsonValueKind.Null ? null : je.ToString();
-                                            }
                                             return cell?.ToString();
                                         })
                                         .Where(v => !string.IsNullOrWhiteSpace(v) && v != "-")
@@ -1742,16 +1773,12 @@ namespace productionLine.Server.Controllers
                                     if (vals?.Any() == true)
                                         value = string.Join(", ", vals);
                                 }
-                                catch
-                                {
-                                    value = match.FieldValue;
-                                }
+                                catch { value = match.FieldValue; }
                             }
                         }
                     }
                     else
                     {
-                        // Regular field
                         var formField = formFields.FirstOrDefault(f =>
                             f.Label == templateField.FieldLabel);
 
@@ -1769,14 +1796,8 @@ namespace productionLine.Server.Controllers
 
                 rawRows.Add(rowDict);
                 submissionMeta.Add((sub.Id, sub.FormId, sub.SubmittedAt));
-
-                Console.WriteLine($"  Row sub:{sub.Id} form:{sub.FormId} → " +
-                    string.Join(", ", rowDict
-                        .Where(kv => kv.Value != "-")
-                        .Select(kv => $"{kv.Key}='{kv.Value}'")));
             }
 
-            // ── 4. Build merge key per row ─────────────────────────────────
             bool IsEmpty(string v) =>
                 string.IsNullOrEmpty(v) || v == "-" || v == "—" || v == "null";
 
@@ -1784,20 +1805,17 @@ namespace productionLine.Server.Controllers
             {
                 foreach (var pair in linkPairs)
                 {
-                    // Check target label first (e.g. "NCR No." on NCR form)
                     if (pair.TargetLabel != null &&
                         row.TryGetValue(pair.TargetLabel, out var tVal) && !IsEmpty(tVal))
                         return $"target::{tVal.Trim()}";
 
-                    // Check source label (e.g. "Checkpoints → ncr_no." on audit form)
                     if (pair.SourceLabel != null &&
                         row.TryGetValue(pair.SourceLabel, out var sVal) && !IsEmpty(sVal))
-                        return $"target::{sVal.Trim()}"; // same prefix so they match
+                        return $"target::{sVal.Trim()}";
                 }
                 return null;
             }
 
-            // ── 5. Group rows by merge key ─────────────────────────────────
             var groupMap = new Dictionary<string, List<int>>();
             var keyOrder = new List<string>();
             var soloIndices = new List<int>();
@@ -1805,32 +1823,20 @@ namespace productionLine.Server.Controllers
             for (int i = 0; i < rawRows.Count; i++)
             {
                 var key = GetMergeKey(rawRows[i]);
-                if (key == null)
-                {
-                    soloIndices.Add(i);
-                    continue;
-                }
+                if (key == null) { soloIndices.Add(i); continue; }
 
-                if (!groupMap.ContainsKey(key))
-                {
-                    groupMap[key] = new List<int>();
-                    keyOrder.Add(key);
-                }
+                if (!groupMap.ContainsKey(key)) { groupMap[key] = new List<int>(); keyOrder.Add(key); }
                 groupMap[key].Add(i);
             }
 
-            // ── 6. Build final merged result ───────────────────────────────
             var result = new List<object>();
 
-            // Solo rows (no link value) — add as-is
             foreach (var idx in soloIndices)
             {
                 var meta = submissionMeta[idx];
-                result.Add(BuildResultRow(
-                    meta.SubId, meta.SubmittedAt, rawRows[idx], template.Fields, allFieldLabels));
+                result.Add(BuildResultRow(meta.SubId, meta.SubmittedAt, rawRows[idx], template.Fields, allFieldLabels));
             }
 
-            // Merged groups
             foreach (var key in keyOrder)
             {
                 var indices = groupMap[key];
@@ -1838,13 +1844,10 @@ namespace productionLine.Server.Controllers
                 if (indices.Count == 1)
                 {
                     var meta = submissionMeta[indices[0]];
-                    result.Add(BuildResultRow(
-                        meta.SubId, meta.SubmittedAt, rawRows[indices[0]],
-                        template.Fields, allFieldLabels));
+                    result.Add(BuildResultRow(meta.SubId, meta.SubmittedAt, rawRows[indices[0]], template.Fields, allFieldLabels));
                     continue;
                 }
 
-                // Merge: first non-empty value wins per field
                 var mergedRow = new Dictionary<string, string>();
                 foreach (var label in allFieldLabels)
                     mergedRow[label] = "-";
@@ -1855,26 +1858,17 @@ namespace productionLine.Server.Controllers
                     {
                         if (IsEmpty(mergedRow[label]) &&
                             rawRows[idx].TryGetValue(label, out var val) && !IsEmpty(val))
-                        {
                             mergedRow[label] = val;
-                        }
                     }
                 }
 
                 var primaryMeta = submissionMeta[indices[0]];
-                Console.WriteLine($"🔀 Merged {indices.Count} submissions for key='{key}': " +
-                    string.Join(", ", indices.Select(i => submissionMeta[i].SubId)));
-
-                result.Add(BuildResultRow(
-                    primaryMeta.SubId, primaryMeta.SubmittedAt,
-                    mergedRow, template.Fields, allFieldLabels));
+                result.Add(BuildResultRow(primaryMeta.SubId, primaryMeta.SubmittedAt, mergedRow, template.Fields, allFieldLabels));
             }
 
-            Console.WriteLine($"✅ Merged layout: {submissions.Count} submissions → {result.Count} rows");
             return result;
         }
 
-        // ✅ Helper: build a result row object
         private object BuildResultRow(
             long submissionId,
             DateTime submittedAt,
@@ -1899,7 +1893,6 @@ namespace productionLine.Server.Controllers
             };
         }
 
-        // ✅ VERTICAL LAYOUT: Stacks data from all forms into same columns
         private List<object> ProcessVerticalLayout(
             List<FormSubmission> submissions,
             ReportTemplate template,
@@ -1915,14 +1908,11 @@ namespace productionLine.Server.Controllers
                 template.Fields.First(f => f.FieldLabel == k).Order
             ).ToList();
 
-            Console.WriteLine($"📊 Vertical Layout: {columnLabels.Count} unique columns");
-
             var formNames = new Dictionary<int, string>();
             foreach (var formId in formFieldMappings.Keys)
             {
                 var form = _context.Forms.FirstOrDefault(f => f.Id == formId);
-                if (form != null)
-                    formNames[formId] = form.Name;
+                if (form != null) formNames[formId] = form.Name;
             }
 
             foreach (var sub in submissions)
@@ -1936,18 +1926,11 @@ namespace productionLine.Server.Controllers
                 foreach (var columnLabel in columnLabels)
                 {
                     var reportField = fieldsByLabel[columnLabel].FirstOrDefault(f =>
-                        f.FormId == null || f.FormId == 0 || f.FormId == sub.FormId
-                    );
+                        f.FormId == null || f.FormId == 0 || f.FormId == sub.FormId);
 
                     if (reportField == null)
                     {
-                        rowData.Add(new
-                        {
-                            fieldLabel = columnLabel,
-                            value = "-",
-                            fieldType = "text",
-                            visible = true
-                        });
+                        rowData.Add(new { fieldLabel = columnLabel, value = "-", fieldType = "text", visible = true });
                         continue;
                     }
 
@@ -1970,18 +1953,14 @@ namespace productionLine.Server.Controllers
                     submissionId = sub.Id,
                     submittedAt = sub.SubmittedAt,
                     formId = sub.FormId,
-                    formName = formNames.ContainsKey(sub.FormId)
-                        ? formNames[sub.FormId]
-                        : $"Form {sub.FormId}",
+                    formName = formNames.ContainsKey(sub.FormId) ? formNames[sub.FormId] : $"Form {sub.FormId}",
                     data = rowData
                 });
             }
 
-            Console.WriteLine($"✅ Vertical layout: {result.Count} rows, {columnLabels.Count} columns");
             return result;
         }
 
-        // ✅ HORIZONTAL LAYOUT: Original behavior
         private List<object> ProcessHorizontalLayout(
             List<FormSubmission> submissions,
             ReportTemplate template,
@@ -2036,10 +2015,8 @@ namespace productionLine.Server.Controllers
                 var formField = formFields.FirstOrDefault(f => f.Label == field.FieldLabel);
                 if (formField != null)
                 {
-                    var match = sub.SubmissionData
-                        .FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
-                    if (match != null)
-                        normalValues[field.FieldLabel] = match.FieldValue ?? "-";
+                    var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
+                    if (match != null) normalValues[field.FieldLabel] = match.FieldValue ?? "-";
                 }
             }
 
@@ -2052,15 +2029,12 @@ namespace productionLine.Server.Controllers
                 var formField = formFields.FirstOrDefault(f => f.Label == sectionName);
                 if (formField == null) continue;
 
-                var submissionData = sub.SubmissionData
-                    .FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
-                if (submissionData == null || string.IsNullOrWhiteSpace(submissionData.FieldValue))
-                    continue;
+                var submissionData = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
+                if (submissionData == null || string.IsNullOrWhiteSpace(submissionData.FieldValue)) continue;
 
                 try
                 {
-                    var rows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(
-                        submissionData.FieldValue);
+                    var rows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(submissionData.FieldValue);
                     gridRowsPerGroup[sectionName] = rows;
                     maxRowCount = Math.Max(maxRowCount, rows.Count);
                 }
@@ -2076,8 +2050,7 @@ namespace productionLine.Server.Controllers
                     rowData.Add(new
                     {
                         fieldLabel = field.FieldLabel,
-                        value = normalValues.ContainsKey(field.FieldLabel)
-                            ? normalValues[field.FieldLabel] : "-",
+                        value = normalValues.ContainsKey(field.FieldLabel) ? normalValues[field.FieldLabel] : "-",
                         visible = field.Visible
                     });
                 }
@@ -2093,16 +2066,9 @@ namespace productionLine.Server.Controllers
                     foreach (var field in group)
                     {
                         var columnName = field.FieldLabel.Split("→")[1].Trim();
-                        var value = row != null && row.TryGetValue(columnName, out var val)
-                            ? val?.ToString() ?? "-"
-                            : "-";
+                        var value = row != null && row.TryGetValue(columnName, out var val) ? val?.ToString() ?? "-" : "-";
 
-                        rowData.Add(new
-                        {
-                            fieldLabel = field.FieldLabel,
-                            value = value,
-                            visible = field.Visible
-                        });
+                        rowData.Add(new { fieldLabel = field.FieldLabel, value = value, visible = field.Visible });
                     }
                 }
 
@@ -2134,7 +2100,6 @@ namespace productionLine.Server.Controllers
                 template.DeletedBy = "current-username";
 
                 await _context.SaveChangesAsync();
-
                 return Ok(new { message = "Report template deleted successfully." });
             }
             catch (Exception ex)
@@ -2158,17 +2123,10 @@ namespace productionLine.Server.Controllers
                     var formField = formFields.FirstOrDefault(f => f.Label == reportField.FieldLabel);
                     if (formField != null)
                     {
-                        var match = sub.SubmissionData
-                            .FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
+                        var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString());
                         if (match != null) value = match.FieldValue ?? "-";
                     }
-
-                    return new
-                    {
-                        fieldLabel = reportField.FieldLabel,
-                        value = value,
-                        visible = reportField.Visible
-                    };
+                    return new { fieldLabel = reportField.FieldLabel, value = value, visible = reportField.Visible };
                 }).ToList()
             };
         }
@@ -2197,8 +2155,7 @@ namespace productionLine.Server.Controllers
             {
                 var field = filter.FieldLabel;
 
-                if (!runtimeValues.TryGetValue(field, out var rawValue)
-                    || string.IsNullOrWhiteSpace(rawValue))
+                if (!runtimeValues.TryGetValue(field, out var rawValue) || string.IsNullOrWhiteSpace(rawValue))
                     continue;
 
                 var op = filter.Operator;
@@ -2220,11 +2177,9 @@ namespace productionLine.Server.Controllers
                             Guid.TryParse(parts[1], out Guid columnId))
                         {
                             var gridFieldData = sub.SubmissionData.FirstOrDefault(d =>
-                                Guid.TryParse(d.FieldLabel, out Guid fieldGuid)
-                                && fieldGuid == gridFieldId);
+                                Guid.TryParse(d.FieldLabel, out Guid fieldGuid) && fieldGuid == gridFieldId);
 
-                            if (gridFieldData == null
-                                || string.IsNullOrWhiteSpace(gridFieldData.FieldValue))
+                            if (gridFieldData == null || string.IsNullOrWhiteSpace(gridFieldData.FieldValue))
                                 return false;
 
                             try
@@ -2232,8 +2187,7 @@ namespace productionLine.Server.Controllers
                                 var columnName = GetColumnNameById(gridFieldId, columnId);
                                 if (string.IsNullOrEmpty(columnName)) return false;
 
-                                var gridRows = JsonSerializer.Deserialize<
-                                    List<Dictionary<string, object>>>(gridFieldData.FieldValue);
+                                var gridRows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(gridFieldData.FieldValue);
                                 if (gridRows == null || !gridRows.Any()) return false;
 
                                 return gridRows.Any(row =>
@@ -2250,8 +2204,7 @@ namespace productionLine.Server.Controllers
                     else
                     {
                         var match = sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == field);
-                        if (match == null || string.IsNullOrWhiteSpace(match.FieldValue))
-                            return false;
+                        if (match == null || string.IsNullOrWhiteSpace(match.FieldValue)) return false;
                         return ApplyOperatorCondition(match.FieldValue, op, multipleValues);
                     }
 
@@ -2277,50 +2230,34 @@ namespace productionLine.Server.Controllers
             return null;
         }
 
-        private bool ApplyOperatorCondition(
-            string fieldValue, string op, List<string> multipleValues)
+        private bool ApplyOperatorCondition(string fieldValue, string op, List<string> multipleValues)
         {
             switch (op)
             {
                 case "equals":
                 case "in":
-                    return multipleValues.Any(val =>
-                        fieldValue.Equals(val, StringComparison.OrdinalIgnoreCase));
-
+                    return multipleValues.Any(val => fieldValue.Equals(val, StringComparison.OrdinalIgnoreCase));
                 case "notIn":
-                    return !multipleValues.Any(val =>
-                        fieldValue.Equals(val, StringComparison.OrdinalIgnoreCase));
-
+                    return !multipleValues.Any(val => fieldValue.Equals(val, StringComparison.OrdinalIgnoreCase));
                 case "contains":
-                    return multipleValues.Any(val =>
-                        fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
-
+                    return multipleValues.Any(val => fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
                 case "greaterThan":
                     return double.TryParse(fieldValue, out var n1) &&
                            double.TryParse(multipleValues.FirstOrDefault(), out var n2) && n1 > n2;
-
                 case "lessThan":
                     return double.TryParse(fieldValue, out var m1) &&
                            double.TryParse(multipleValues.FirstOrDefault(), out var m2) && m1 < m2;
-
                 case "between":
                     if (multipleValues.Count == 2 &&
                         DateTime.TryParse(multipleValues[0], out var start) &&
                         DateTime.TryParse(multipleValues[1], out var end) &&
                         DateTime.TryParse(fieldValue, out var actual))
-                    {
                         return actual >= start && actual <= end;
-                    }
                     return false;
-
                 case "containsAny":
-                    return multipleValues.Any(val =>
-                        fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
-
+                    return multipleValues.Any(val => fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
                 case "containsAll":
-                    return multipleValues.All(val =>
-                        fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
-
+                    return multipleValues.All(val => fieldValue.IndexOf(val, StringComparison.OrdinalIgnoreCase) >= 0);
                 default:
                     return true;
             }
@@ -2368,10 +2305,7 @@ namespace productionLine.Server.Controllers
                 List<int> formIds = new List<int> { template.FormId };
                 if (template.IsMultiForm && !string.IsNullOrEmpty(template.FormIds))
                 {
-                    try
-                    {
-                        formIds = JsonSerializer.Deserialize<List<int>>(template.FormIds);
-                    }
+                    try { formIds = JsonSerializer.Deserialize<List<int>>(template.FormIds); }
                     catch { }
                 }
 
@@ -2402,8 +2336,7 @@ namespace productionLine.Server.Controllers
                         {
                             if (filter.FieldLabel.Contains(':'))
                             {
-                                var parts = filter.FieldLabel
-                                    .Split(':', StringSplitOptions.RemoveEmptyEntries);
+                                var parts = filter.FieldLabel.Split(':', StringSplitOptions.RemoveEmptyEntries);
                                 if (parts.Length >= 2 &&
                                     Guid.TryParse(parts[0], out Guid gridFieldId) &&
                                     Guid.TryParse(parts[1], out Guid columnId))
@@ -2412,18 +2345,14 @@ namespace productionLine.Server.Controllers
                                         && gridField.Columns != null)
                                     {
                                         var column = gridField.Columns.FirstOrDefault(c =>
-                                            Guid.TryParse(c.Id, out Guid colGuid)
-                                            && colGuid == columnId);
+                                            Guid.TryParse(c.Id, out Guid colGuid) && colGuid == columnId);
 
                                         if (column != null)
                                         {
                                             fieldType = column.Type?.ToLower();
-                                            if ((fieldType == "dropdown" || fieldType == "checkbox"
-                                                || fieldType == "radio") &&
+                                            if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
                                                 column.Options != null && column.Options.Any())
-                                            {
                                                 options = column.Options;
-                                            }
                                         }
                                     }
                                 }
@@ -2433,13 +2362,9 @@ namespace productionLine.Server.Controllers
                                 if (formFields.TryGetValue(fieldId, out formField))
                                 {
                                     fieldType = formField.Type?.ToLower();
-                                    if ((fieldType == "dropdown" || fieldType == "checkbox"
-                                        || fieldType == "radio") &&
+                                    if ((fieldType == "dropdown" || fieldType == "checkbox" || fieldType == "radio") &&
                                         !string.IsNullOrEmpty(formField.OptionsJson))
-                                    {
-                                        options = JsonSerializer.Deserialize<List<string>>(
-                                            formField.OptionsJson);
-                                    }
+                                        options = JsonSerializer.Deserialize<List<string>>(formField.OptionsJson);
                                 }
                             }
                         }
@@ -2468,9 +2393,13 @@ namespace productionLine.Server.Controllers
                         ? JsonSerializer.Deserialize<List<GroupingConfig>>(template.GroupingConfig)
                         : new List<GroupingConfig>(),
                     formRelationships = !string.IsNullOrEmpty(template.FormRelationships)
-                        ? JsonSerializer.Deserialize<List<FormRelationship>>(
-                            template.FormRelationships)
+                        ? JsonSerializer.Deserialize<List<FormRelationship>>(template.FormRelationships)
                         : new List<FormRelationship>(),
+
+                    // ✅ NEW: Return submitted viewers list
+                    submittedViewers = !string.IsNullOrEmpty(template.SubmittedViewers)
+                        ? JsonSerializer.Deserialize<List<SharedUser>>(template.SubmittedViewers)
+                        : new List<SharedUser>(),
                 });
             }
             catch (Exception ex)
@@ -2489,8 +2418,7 @@ namespace productionLine.Server.Controllers
                         !r.IsDeleted &&
                         (r.CreatedBy.ToLower() == username.ToLower() ||
                          (r.SharedWithRole != null &&
-                          r.SharedWithRole.ToLower()
-                              .Contains($"\"name\":\"{username.ToLower()}\""))))
+                          r.SharedWithRole.ToLower().Contains($"\"name\":\"{username.ToLower()}\""))))
                     .Select(r => new
                     {
                         r.Id,
@@ -2517,14 +2445,10 @@ namespace productionLine.Server.Controllers
         public async Task<IActionResult> DeleteReport(int id)
         {
             var report = await _context.Reports.FindAsync(id);
-
             if (report == null) return NotFound();
-
             if (report.CreatedBy != User.Identity?.Name) return Forbid();
-
             _context.Reports.Remove(report);
             await _context.SaveChangesAsync();
-
             return NoContent();
         }
 
@@ -2535,8 +2459,7 @@ namespace productionLine.Server.Controllers
                 .Include(t => t.Fields)
                 .FirstOrDefaultAsync(t => t.Id == templateId);
 
-            if (template == null)
-                return NotFound("Template not found.");
+            if (template == null) return NotFound("Template not found.");
 
             var submissions = await _context.FormSubmissions
                 .Where(s => s.FormId == template.FormId)
@@ -2555,16 +2478,21 @@ namespace productionLine.Server.Controllers
         }
 
         [HttpPost("run-shift/{templateId}")]
-        public async Task<IActionResult> RunShiftReport(
-            int templateId, [FromBody] ShiftReportRequest request)
+        public async Task<IActionResult> RunShiftReport(int templateId, [FromBody] ShiftReportRequest request)
         {
             var template = await _context.ReportTemplates
                 .Include(t => t.Fields)
                 .Include(t => t.Filters)
                 .FirstOrDefaultAsync(t => t.Id == templateId);
 
-            if (template == null)
-                return NotFound("Template not found.");
+            if (template == null) return NotFound("Template not found.");
+
+            // ✅ NEW: Resolve data mode for shift reports
+            string callerUsername = GetCallerUsername();
+            bool canSeeSubmitted = CallerCanSeeSubmitted(callerUsername, template.SubmittedViewers);
+            bool showAll = canSeeSubmitted && (request.DataMode?.ToLower() == "submitted");
+
+            Console.WriteLine($"👤 Shift report caller: '{callerUsername}' | showAll: {showAll}");
 
             DateTime targetDate = DateTime.Today;
             if (!string.IsNullOrEmpty(request.Date))
@@ -2576,8 +2504,7 @@ namespace productionLine.Server.Controllers
             DateTime startDate, endDate;
             string shiftLetter = request.ShiftPeriod;
 
-            if (request.ShiftPeriod == "current")
-                shiftLetter = GetCurrentShift();
+            if (request.ShiftPeriod == "current") shiftLetter = GetCurrentShift();
 
             if (request.ShiftPeriod == "fullday")
             {
@@ -2589,9 +2516,7 @@ namespace productionLine.Server.Controllers
                 var shiftTimes = GetShiftTimeRange(shiftLetter);
                 startDate = targetDate.Add(shiftTimes.start);
                 endDate = targetDate.Add(shiftTimes.end);
-
-                if (shiftTimes.end < shiftTimes.start)
-                    endDate = endDate.AddDays(1);
+                if (shiftTimes.end < shiftTimes.start) endDate = endDate.AddDays(1);
             }
 
             List<int> formIds = new List<int>();
@@ -2609,13 +2534,14 @@ namespace productionLine.Server.Controllers
 
             foreach (var formId in formIds)
             {
+                // ✅ MODIFIED: respect showAll flag
                 var submissions = await _context.FormSubmissions
                     .Include(s => s.SubmissionData)
                     .Include(s => s.Approvals)
                     .Where(s => s.FormId == formId &&
                                s.SubmittedAt >= startDate &&
                                s.SubmittedAt < endDate &&
-                               s.Approvals.Any(a => a.Status == "Approved"))
+                               (showAll || s.Approvals.Any(a => a.Status == "Approved")))
                     .OrderBy(s => s.SubmittedAt)
                     .ToListAsync();
 
@@ -2636,8 +2562,7 @@ namespace productionLine.Server.Controllers
                         .FirstOrDefault(f => f.Label == reportField.FieldLabel);
 
                     var match = formField != null
-                        ? sub.SubmissionData
-                            .FirstOrDefault(d => d.FieldLabel == formField.Id.ToString())
+                        ? sub.SubmissionData.FirstOrDefault(d => d.FieldLabel == formField.Id.ToString())
                         : null;
 
                     return new
@@ -2680,24 +2605,15 @@ namespace productionLine.Server.Controllers
         [HttpGet("server-date")]
         public IActionResult GetServerDate()
         {
-            return Ok(new
-            {
-                date = DateTime.Now.ToString("yyyy-MM-dd"),
-                dateTime = DateTime.Now
-            });
+            return Ok(new { date = DateTime.Now.ToString("yyyy-MM-dd"), dateTime = DateTime.Now });
         }
 
         private string GetCurrentShift()
         {
             var now = DateTime.Now;
             var currentTime = now.TimeOfDay;
-
-            if (currentTime >= new TimeSpan(6, 0, 0) && currentTime < new TimeSpan(14, 30, 0))
-                return "A";
-
-            if (currentTime >= new TimeSpan(14, 30, 0) && currentTime < new TimeSpan(23, 0, 0))
-                return "B";
-
+            if (currentTime >= new TimeSpan(6, 0, 0) && currentTime < new TimeSpan(14, 30, 0)) return "A";
+            if (currentTime >= new TimeSpan(14, 30, 0) && currentTime < new TimeSpan(23, 0, 0)) return "B";
             return "C";
         }
 
@@ -2705,6 +2621,8 @@ namespace productionLine.Server.Controllers
         {
             public string ShiftPeriod { get; set; }
             public string Date { get; set; }
+            /// <summary>"approved" (default) or "submitted"</summary>
+            public string DataMode { get; set; } = "approved";
         }
     }
 }

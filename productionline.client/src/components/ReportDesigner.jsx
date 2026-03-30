@@ -182,7 +182,7 @@ export default function EnhancedReportDesigner() {
     const [selectedShiftPeriod, setSelectedShiftPeriod] = useState("current");
     const [fieldVisibility, setFieldVisibility] = useState({});
     const [isLoading, setIsLoading] = useState(false);
-    
+
     // ✅ NEW: Multi-form support
     const [multiFormMode, setMultiFormMode] = useState(false);
     const [selectedForms, setSelectedForms] = useState([]); // Array of form IDs
@@ -198,8 +198,11 @@ export default function EnhancedReportDesigner() {
         calculatedFields: false,
         filters: false,
         sharing: false,
+        submissionVisibility: false,
         relationships: true
     });
+
+    const [submittedViewers, setSubmittedViewers] = useState([]);
 
     const [layoutMode, setLayoutMode] = useState("horizontal");
     const toggleExpand = (rowIdx) => {
@@ -212,7 +215,7 @@ export default function EnhancedReportDesigner() {
 
     const [showFloatingActions, setShowFloatingActions] = useState(false);
     const scrollContainerRef = useRef(null);
-    
+
     useEffect(() => {
         const scrollableContainer = scrollContainerRef.current;
 
@@ -534,6 +537,16 @@ export default function EnhancedReportDesigner() {
                     } catch (error) {
                         console.error('Error parsing shared users:', error);
                     }
+                }
+
+                // after the sharedWithRole parsing block:
+                if (data.submittedViewers) {
+                    try {
+                        let parsed = typeof data.submittedViewers === 'string'
+                            ? JSON.parse(data.submittedViewers)
+                            : data.submittedViewers;
+                        if (Array.isArray(parsed)) setSubmittedViewers(parsed);
+                    } catch { }
                 }
 
                 // Load filters
@@ -973,7 +986,10 @@ export default function EnhancedReportDesigner() {
             }),
             GroupingConfig: groupingConfig,
             IsMultiForm: multiFormMode, // ✅ NEW: Flag to indicate multi-form report
-            FormRelationships: relationships.length > 0 ? relationships : []
+            FormRelationships: relationships.length > 0 ? relationships : [],
+            SubmittedViewers: submittedViewers.length > 0
+                ? submittedViewers
+                : null
         };
 
         try {
@@ -1946,10 +1962,10 @@ export default function EnhancedReportDesigner() {
         <>
             <style>{dragDropStyles}</style>
 
-            
+
             <div className="flex min-h-screen bg-gray-100">
                 {/* Left Panel */}
-                <div className="w-80 bg-white border-r border-gray-200 sticky top-0 h-screen overflow-y-auto"> 
+                <div className="w-80 bg-white border-r border-gray-200 sticky top-0 h-screen overflow-y-auto">
                     <div className="p-4 border-b">
                         <h2 className="text-lg font-semibold">Report Designer</h2>
 
@@ -2348,6 +2364,35 @@ export default function EnhancedReportDesigner() {
                                 <AdSearchComponent
                                     selectedUsers={selectedUsers}
                                     setSelectedUsers={setSelectedUsers}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Submission Visibility */}
+                    <div className="border-b">
+                        <div
+                            className="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-50"
+                            onClick={() => togglePanelSection('submissionVisibility')}
+                        >
+                            <h3 className="font-medium flex items-center">
+                                <Eye className="w-4 h-4 mr-2" />
+                                Submission Visibility ({submittedViewers.length})
+                            </h3>
+                            {leftPanelExpanded.submissionVisibility
+                                ? <ChevronDown className="w-4 h-4" />
+                                : <ChevronRight className="w-4 h-4" />}
+                        </div>
+
+                        {leftPanelExpanded.submissionVisibility && (
+                            <div className="px-4 pb-4">
+                                <p className="text-xs text-gray-500 mb-3">
+                                    These users/groups can see <strong>all submitted</strong> entries
+                                    (not just approved) and will get a toggle in the viewer.
+                                </p>
+                                <AdSearchComponent
+                                    selectedUsers={submittedViewers}
+                                    setSelectedUsers={setSubmittedViewers}
                                 />
                             </div>
                         )}
