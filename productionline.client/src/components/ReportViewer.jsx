@@ -8,6 +8,8 @@ import "../report_viewer_styles.css";
 import LoadingDots from './LoadingDots';
 import * as XLSX from 'xlsx';
 
+import { useRef } from "react";
+
 
 export default function EnhancedReportViewer() {
     const { templateId } = useParams();
@@ -40,13 +42,15 @@ export default function EnhancedReportViewer() {
         return saved === 'true';
     });
     const [dataMode, setDataMode] = useState('approved'); // 'approved' | 'submitted'
+    const [retryCountdown, setRetryCountdown] = useState(null);
+    const countdownIntervalRef = useRef(null);
     const [currentUsername, setCurrentUsername] = useState('');
     const [canSeeSubmitted, setCanSeeSubmitted] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [showBlankRows, setShowBlankRows] = useState(false);
     const [showChart, setShowChart] = useState(true);
     const [forms, setForms] = useState([]);
-
+    const retryTimeoutRef = useRef(null);
     const [groupBySubmission, setGroupBySubmission] = useState(true);
 
     // Add this function to detect current shift
@@ -335,7 +339,7 @@ export default function EnhancedReportViewer() {
 
     useEffect(() => {
         const shiftCharts = chartConfigs.filter(chart => chart.type === 'shift');
-        
+
         console.log("show Chart", showChart)
         if (shiftCharts.length > 0 && !maximizedChart) {
             console.log('🔍 Auto-maximizing first shift chart');
@@ -343,6 +347,13 @@ export default function EnhancedReportViewer() {
             setMaximizedChart(shiftCharts[0].id);
         }
     }, [chartConfigs]);
+
+    useEffect(() => {
+        return () => {
+            if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+            if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        };
+    }, []);
 
     // ✅ ADD THIS: Fetch form details
     const fetchForms = async (formIds) => {
@@ -393,7 +404,10 @@ export default function EnhancedReportViewer() {
                         date: selectedDate,
                         DataMode: dataMode
                     },
-                    { headers: getAuthHeaders() }
+                    {
+                        headers: getAuthHeaders(),
+                        timeout: 120000
+                    }
                 );
                 console.log('📊 RAW REPORT DATA:', res.data.length, 'rows');
 
@@ -452,11 +466,51 @@ export default function EnhancedReportViewer() {
 
         } catch (err) {
             console.error('❌ Failed to run filtered report:', err);
-            setError("Failed to run filtered report: " + (err.message || "Unknown error"));
+
+            const status = err?.response?.status;
+            const isNetworkError = err.code === 'ERR_NETWORK' || !err.response;
+            const shouldRetry = status === 500 || status === 503 || isNetworkError;
+
+            if (shouldRetry) {
+                console.warn('⚠️ Retry scheduled in 20 seconds...');
+                setError("Server/Network issue. Retrying automatically...");
+
+                // Clear any existing timers
+                if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+                if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+
+                // Start countdown from 20
+                setRetryCountdown(20);
+                countdownIntervalRef.current = setInterval(() => {
+                    setRetryCountdown(prev => {
+                        if (prev <= 1) {
+                            clearInterval(countdownIntervalRef.current);
+                            return null;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+
+                // ✅ KEY FIX: set isRefreshing to false NOW so the retry isn't blocked
+                setIsRefreshing(false);
+
+                retryTimeoutRef.current = setTimeout(() => {
+                    setError(null);
+                    setRetryCountdown(null);
+                    fetchFilteredReport(silent);  // pass same silent flag
+                }, 20000);
+            } else {
+                setError("Failed to run filtered report: " + (err.message || "Unknown error"));
+            }
         } finally {
-            setIsRefreshing(false);
-            if (!silent) {
-                setLoading(false);
+            // Only reset refreshing state if we're NOT about to retry
+            // (retry case handles its own reset above)
+            if (!retryTimeoutRef.current) {
+                setIsRefreshing(false);
+                if (!silent) setLoading(false);
+            } else {
+                // Retry is pending — only clear the loading spinner
+                if (!silent) setLoading(false);
             }
         }
     };
@@ -1172,8 +1226,8 @@ export default function EnhancedReportViewer() {
 
                         {/* Approved */}
                         <span className={`text-sm ${dataMode === "approved"
-                                ? "text-emerald-600 font-semibold"
-                                : "text-gray-400"
+                            ? "text-emerald-600 font-semibold"
+                            : "text-gray-400"
                             }`}>
                             Approved
                         </span>
@@ -1191,16 +1245,16 @@ export default function EnhancedReportViewer() {
                         >
                             <span
                                 className={`absolute top-1 w-5 h-5 rounded-full shadow transition-all duration-300 ${dataMode === "submitted"
-                                        ? "left-8 bg-blue-500"
-                                        : "left-1 bg-green-500"
+                                    ? "left-8 bg-blue-500"
+                                    : "left-1 bg-green-500"
                                     }`}
                             />
                         </button>
 
                         {/* Submitted */}
                         <span className={`text-sm ${dataMode === "submitted"
-                                ? "text-blue-600 font-semibold"
-                                : "text-gray-400"
+                            ? "text-blue-600 font-semibold"
+                            : "text-gray-400"
                             }`}>
                             Submitted
                         </span>
@@ -1827,7 +1881,7 @@ export default function EnhancedReportViewer() {
         // Regular charts rendering (no shift charts)
         return (
             <div className="charts-grid space-y-6">
-                {chartConfigs.map((chart, index) => (                   
+                {chartConfigs.map((chart, index) => (
                     <div key={`${chart.id}-${index}`} className="chart-container">
                         <ReportCharts
                             data={chartData}
@@ -1839,7 +1893,7 @@ export default function EnhancedReportViewer() {
                             comboConfig={chart.comboConfig}
                             calculatedFields={calculatedFields}
                             shiftConfigs={chart.shiftConfigs}
-                            showChart={chart.showChart !== false} 
+                            showChart={chart.showChart !== false}
                         />
                     </div>
                 ))}
@@ -2131,7 +2185,7 @@ export default function EnhancedReportViewer() {
                                 showConfiguration={false}
                                 // ✅ CRITICAL FIX: Pass shiftConfigs here too!
                                 shiftConfigs={chart.shiftConfigs}
-                                showChart={chart.showChart !== false} 
+                                showChart={chart.showChart !== false}
                             />
                         </div>
                     ))}
@@ -2792,7 +2846,7 @@ export default function EnhancedReportViewer() {
                     overflow: 'auto'
                 }}>
                     <table className="report-table" style={{ position: 'relative' }}>
-                       <thead style={{
+                        <thead style={{
                             position: 'sticky',
                             top: 0,
                             zIndex: 100,
@@ -4597,7 +4651,54 @@ html.dark-mode,
                         </div>
                     </div>
                 )}
-
+                {retryCountdown !== null && (
+                    <div style={{
+                        background: '#fef3c7',
+                        border: '1px solid #f59e0b',
+                        borderRadius: '8px',
+                        padding: '12px 16px',
+                        marginBottom: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        color: '#92400e'
+                    }}>
+                        <span style={{ fontSize: '20px' }}>⚠️</span>
+                        <span>
+                            Connection error — retrying in{' '}
+                            <strong style={{
+                                fontSize: '18px',
+                                color: '#b45309',
+                                fontVariantNumeric: 'tabular-nums'
+                            }}>
+                                {retryCountdown}
+                            </strong>
+                            {' '}second{retryCountdown !== 1 ? 's' : ''}
+                        </span>
+                        <button
+                            onClick={() => {
+                                clearTimeout(retryTimeoutRef.current);
+                                clearInterval(countdownIntervalRef.current);
+                                retryTimeoutRef.current = null;
+                                setRetryCountdown(null);
+                                setError(null);
+                                fetchFilteredReport(false);
+                            }}
+                            style={{
+                                marginLeft: 'auto',
+                                padding: '6px 14px',
+                                background: '#f59e0b',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontWeight: '600'
+                            }}
+                        >
+                            Retry Now
+                        </button>
+                    </div>
+                )}
                 {renderActiveFilters()}
                 {renderSummaryStats()}
                 {renderViewControls()}
