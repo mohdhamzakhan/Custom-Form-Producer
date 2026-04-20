@@ -52,7 +52,7 @@ export default function EnhancedReportViewer() {
     const [forms, setForms] = useState([]);
     const retryTimeoutRef = useRef(null);
     const [groupBySubmission, setGroupBySubmission] = useState(true);
-
+    const [retryNotice, setRetryNotice] = useState(null);
     // Add this function to detect current shift
     const getCurrentShift = () => {
         const now = new Date();
@@ -326,7 +326,7 @@ export default function EnhancedReportViewer() {
             intervalId = setInterval(() => {
                 console.log('🔄 Auto-refreshing shift chart data...');
                 fetchFilteredReport(true);
-            }, 100000); // Reduced to 10 seconds for better performance
+            }, 100000); 
 
             return () => {
                 console.log('🛑 Clearing auto-refresh interval');
@@ -383,7 +383,7 @@ export default function EnhancedReportViewer() {
 
         try {
             setIsRefreshing(true);
-
+            setError(null);
             if (!silent) {
                 setLoading(true);
             }
@@ -471,22 +471,37 @@ export default function EnhancedReportViewer() {
             const isNetworkError = err.code === 'ERR_NETWORK' || !err.response;
             const shouldRetry = status === 500 || status === 503 || isNetworkError;
 
+            //if (shouldRetry) {
+            //    console.warn('⚠️ Retry scheduled in 20 seconds...');
+            //    setError("Server/Network issue. Retrying automatically...");
+
+            //    // Clear any existing timers
+            //    if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+            //    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+
+            //    // Start countdown from 20
+            //    setRetryCountdown(20);
+            //    countdownIntervalRef.current = setInterval(() => {
+            //        setRetryCountdown(prev => {
+            //            if (prev <= 1) {
+            //                clearInterval(countdownIntervalRef.current);
+            //                return null;
+            //            }
+            //            return prev - 1;
+            //        });
+            //    }, 1000);
             if (shouldRetry) {
-                console.warn('⚠️ Retry scheduled in 20 seconds...');
-                setError("Server/Network issue. Retrying automatically...");
+                setRetryNotice(`Reconnecting in ${20}s...`); // subtle, not alarming
+                setError(null); // ✅ don't show hard error
 
-                // Clear any existing timers
-                if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-                if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-
-                // Start countdown from 20
-                setRetryCountdown(20);
                 countdownIntervalRef.current = setInterval(() => {
                     setRetryCountdown(prev => {
                         if (prev <= 1) {
                             clearInterval(countdownIntervalRef.current);
+                            setRetryNotice(null); // ✅ clear notice when countdown ends
                             return null;
                         }
+                        setRetryNotice(`Reconnecting in ${prev - 1}s...`);
                         return prev - 1;
                     });
                 }, 1000);
@@ -1818,7 +1833,17 @@ export default function EnhancedReportViewer() {
                         </div >
                     )
                     }
+                    {/* Subtle reconnecting notice — small, non-alarming */}
+                    {retryNotice && (
+                        <div className="text-xs text-gray-400 flex items-center gap-1">
+                            <span className="animate-spin">⟳</span> {retryNotice}
+                        </div>
+                    )}
 
+                    {/* Hard error — only shown for real unrecoverable failures */}
+                    {error && (
+                        <div className="text-red-500 font-medium">{error}</div>
+                    )}
                     {/* Render shift charts with maximize button */}
                     {
                         shiftCharts

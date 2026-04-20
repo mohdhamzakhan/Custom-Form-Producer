@@ -16,7 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Configure database
 builder.Services.AddDbContext<FormDbContext>(options =>
-    options.UseOracle(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseOracle(builder.Configuration.GetConnectionString("SystemMonitorConnection")));
 
 // Configure CORS
 builder.Services.AddCors(options =>
@@ -99,7 +99,7 @@ builder.Services.AddHangfire(config => config
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
     .UseStorage(new OracleStorage(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
+        builder.Configuration.GetConnectionString("SystemMonitorConnection"),
         new OracleStorageOptions
         {
             TransactionIsolationLevel = IsolationLevel.ReadCommitted,
