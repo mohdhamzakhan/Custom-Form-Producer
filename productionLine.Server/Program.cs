@@ -14,9 +14,22 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure database
-builder.Services.AddDbContext<FormDbContext>(options =>
+// ============================================================
+// ✅ UPDATED DATABASE CONFIGURATION
+// ============================================================
+
+// 1. Register Primary Database
+builder.Services.AddDbContext<PrimaryDbContext>(options =>
     options.UseOracle(builder.Configuration.GetConnectionString("SystemMonitorConnection")));
+
+// 2. Register Secondary Database
+builder.Services.AddDbContext<SecondaryDbContext>(options =>
+    options.UseOracle(builder.Configuration.GetConnectionString("SecondaryConnection")));
+
+// 3. Fallback Mapping: Any controller asking for 'FormDbContext' gets the 'PrimaryDbContext'
+builder.Services.AddScoped<FormDbContext>(provider => provider.GetRequiredService<PrimaryDbContext>());
+
+// ============================================================
 
 // Configure CORS
 builder.Services.AddCors(options =>
@@ -38,8 +51,13 @@ builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
     {
         options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
+    })
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
     });
-// ✅ ADD THIS LINE - Register Memory Cache
+
+// Register Memory Cache
 builder.Services.AddMemoryCache();
 
 builder.Services.Configure<JsonOptions>(options =>
@@ -51,6 +69,11 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.SuppressModelStateInvalidFilter = false;
 });
 
+// Configure Form Options
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 104857600; // 100 MB
+});
 
 // Configure JWT Authentication
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -69,31 +92,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
         };
     });
-builder.Services.AddControllers()
-    .AddJsonOptions(opts =>
-    {
-        opts.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    });
 
-builder.Services.AddMemoryCache();
-
-builder.Services.Configure<FormOptions>(options =>
-{
-    options.MultipartBodyLengthLimit = 104857600; // 100 MB
-});
-
-
-
-//New Setting for Email Scheduler
-
-builder.Services.Configure<SmtpSettings>(
-    builder.Configuration.GetSection("SmtpSettings"));
-
+// Services configuration
+builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
 builder.Services.AddScoped<IEmailSchedulerService, EmailSchedulerService>();
 builder.Services.AddScoped<IAdDirectoryService, AdDirectoryService>();
 builder.Services.AddScoped<IAuditPlanService, AuditPlanService>();
 
-
+// Configure Hangfire (uses Primary connection)
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -109,7 +115,7 @@ builder.Services.AddHangfire(config => config
             PrepareSchemaIfNecessary = false,   // auto-creates Hangfire tables
             DashboardJobListLimit = 50000,
             TransactionTimeout = TimeSpan.FromMinutes(1),
-            SchemaName = "Testeqpqp"
+            SchemaName = "SANMEAIFORMS"
         })));
 
 builder.Services.AddHangfireServer(options =>
@@ -118,16 +124,11 @@ builder.Services.AddHangfireServer(options =>
     options.Queues = new[] { "default", "critical" };
 });
 
-
-
-
 var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors("AllowAll");
-
-
 
 // Authentication & Authorization
 app.UseAuthentication();

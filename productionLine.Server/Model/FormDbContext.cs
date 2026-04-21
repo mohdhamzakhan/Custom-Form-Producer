@@ -1,29 +1,32 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace productionLine.Server.Model
 {
+    // --- BASE CONTEXT ---
     public class FormDbContext : DbContext
     {
-        public FormDbContext(DbContextOptions<FormDbContext> options) : base(options) {
+        // ✅ Notice it is DbContextOptions (NOT DbContextOptions<FormDbContext>)
+        public FormDbContext(DbContextOptions options) : base(options)
+        {
             ChangeTracker.LazyLoadingEnabled = false;
         }
+
         public DbSet<Form> Forms { get; set; }
         public DbSet<FormField> FormFields { get; set; }
         public DbSet<FormSubmission> FormSubmissions { get; set; }
         public DbSet<FormSubmissionData> FormSubmissionData { get; set; }
         public DbSet<FormApprover> FormApprovers { get; set; }
         public DbSet<FormAccess> FormAccess { get; set; }
-
         public DbSet<FormSignature> FormSignatures { get; set; }
         public DbSet<FormToAdd> FormToAdd { get; set; }
         public DbSet<FormApproval> FormApprovals { get; set; }
         public DbSet<Report> Reports { get; set; }
         public DbSet<ReportAccess> ReportAccesses { get; set; }
-
-        public DbSet<ReportTemplate> ReportTemplates { get; set; } // Add this line to include ReportTemplate in the context
-        public DbSet<ReportField> ReportFields { get; set; } // Add this line to include ReportField in the context
-        public DbSet<ReportFilter> ReportFilters { get; set; } // Add this line to include ReportFilter in the context
+        public DbSet<ReportTemplate> ReportTemplates { get; set; }
+        public DbSet<ReportField> ReportFields { get; set; }
+        public DbSet<ReportFilter> ReportFilters { get; set; }
         public DbSet<EmailSchedule> EmailSchedules { get; set; }
         public DbSet<EmailScheduleRecipient> EmailScheduleRecipients { get; set; }
         public DbSet<EmailScheduleAttachment> EmailScheduleAttachments { get; set; }
@@ -31,33 +34,29 @@ namespace productionLine.Server.Model
         public DbSet<AuditPlan> AuditPlans { get; set; }
         public DbSet<AuditPlanEntry> AuditPlanEntries { get; set; }
         public DbSet<PartialSubmission> PartialSubmissions { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
             // 🔥 Tell EF Core: GridColumn is NOT a table
-            modelBuilder.Entity<GridColumn>().HasNoKey();  // ➡️ No Primary Key
-            modelBuilder.Entity<GridColumn>().ToTable((string)null); // ➡️ Don't map to any table
+            modelBuilder.Entity<GridColumn>().HasNoKey();
+            modelBuilder.Entity<GridColumn>().ToTable((string)null);
 
             // 🔥 Also add this for FormField.ColumnsJson
             modelBuilder.Entity<FormField>()
                 .Property(f => f.ColumnsJson)
-                .HasColumnType("CLOB");  // Oracle will store JSON inside a CLOB field
+                .HasColumnType("CLOB");
 
             modelBuilder.Entity<FormField>()
               .Property(f => f.Columns)
-              .HasColumnType("CLOB");  // Oracle will store JSON inside a CLOB field
+              .HasColumnType("CLOB");
 
             modelBuilder.Entity<ReportTemplate>(entity =>
             {
-                // JSON fields must map to CLOB
-                entity.Property(e => e.CalculatedFields)
-                      .HasColumnType("CLOB");
+                entity.Property(e => e.CalculatedFields).HasColumnType("CLOB");
+                entity.Property(e => e.ChartConfig).HasColumnType("CLOB");
 
-                entity.Property(e => e.ChartConfig)
-                      .HasColumnType("CLOB");
-
-                // Relationships
                 entity.HasMany(e => e.Fields)
                       .WithOne(f => f.ReportTemplate)
                       .HasForeignKey(f => f.ReportTemplateId)
@@ -71,41 +70,22 @@ namespace productionLine.Server.Model
 
             modelBuilder.Entity<ReportTemplate>(entity =>
             {
-                // Configure boolean to number conversion for Oracle
-                entity.Property(e => e.IncludeApprovals)
-                    .HasConversion<int>();
-
-                entity.Property(e => e.IncludeRemarks)
-                    .HasConversion<int>();
-
-                entity.Property(e => e.IsDeleted)
-                    .HasConversion<int>();
+                entity.Property(e => e.IncludeApprovals).HasConversion<int>();
+                entity.Property(e => e.IncludeRemarks).HasConversion<int>();
+                entity.Property(e => e.IsDeleted).HasConversion<int>();
+                entity.Property(e => e.IsMultiForm).HasDefaultValue(0);
             });
 
-            // ReportField
-            modelBuilder.Entity<ReportField>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-            });
+            modelBuilder.Entity<ReportField>(entity => { entity.HasKey(e => e.Id); });
+            modelBuilder.Entity<ReportFilter>(entity => { entity.HasKey(e => e.Id); });
 
-            // ReportFilter
-            modelBuilder.Entity<ReportFilter>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-            });
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = false };
 
-            // ✅ Create options outside
-            var jsonOptions = new JsonSerializerOptions
-            {
-                WriteIndented = false
-            };
-
-            // ✅ Fixed version without optional arguments
             modelBuilder.Entity<FormField>()
                 .Property(f => f.Columns)
                 .HasConversion(
-                    v => JsonSerializer.Serialize(v, jsonOptions),    // Serialize manually with options
-                    v => JsonSerializer.Deserialize<List<GridColumn>>(v, jsonOptions) // Deserialize manually with options
+                    v => JsonSerializer.Serialize(v, jsonOptions),
+                    v => JsonSerializer.Deserialize<List<GridColumn>>(v, jsonOptions)
                 );
 
             modelBuilder.Entity<Form>()
@@ -118,33 +98,30 @@ namespace productionLine.Server.Model
                 .WithOne(d => d.FormSubmission)
                 .HasForeignKey(d => d.FormSubmissionId);
 
-            // Configure the relationship between FormField and RemarkTrigger
             modelBuilder.Entity<FormField>()
                 .HasMany(f => f.RemarkTriggers)
                 .WithOne(t => t.FormField)
                 .HasForeignKey(t => t.FormFieldId);
 
             modelBuilder.Entity<FormApprover>()
-        .HasOne(fa => fa.Form)
-        .WithMany(f => f.Approvers)
-        .HasForeignKey(fa => fa.FormId);
+                .HasOne(fa => fa.Form)
+                .WithMany(f => f.Approvers)
+                .HasForeignKey(fa => fa.FormId);
 
             modelBuilder.Entity<Report>()
-           .HasOne(r => r.Form)
-           .WithMany()
-           .HasForeignKey(r => r.FormId);
+               .HasOne(r => r.Form)
+               .WithMany()
+               .HasForeignKey(r => r.FormId);
 
             modelBuilder.Entity<Form>()
-    .Property(f => f.RowVersion)
-    .IsRowVersion();
-
+                .Property(f => f.RowVersion)
+                .IsRowVersion();
 
             modelBuilder.Entity<ReportAccess>()
                 .HasOne(ra => ra.Report)
                 .WithMany(r => r.AccessList)
                 .HasForeignKey(ra => ra.ReportId);
 
-            // Configure JSON serialization for lists (if you're using JSON storage)
             modelBuilder.Entity<FormField>()
                 .Property(f => f.Options)
                 .HasConversion(
@@ -157,30 +134,14 @@ namespace productionLine.Server.Model
                     v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
                     v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null));
 
-            modelBuilder.Entity<ReportTemplate>()
-    .Property(e => e.IncludeApprovals)
-    .HasConversion<int>();
-
-            modelBuilder.Entity<ReportTemplate>()
-                .Property(e => e.IncludeRemarks)
-                .HasConversion<int>();
-
-            modelBuilder.Entity<ReportTemplate>()
-                .Property(e => e.IsMultiForm)
-                .HasDefaultValue(0);
-
             modelBuilder.Entity<FormSubmissionData>()
-        .HasIndex(d => new { d.FieldLabel, d.FormSubmissionId })
-        .HasDatabaseName("IX_SUBMDATA_FIELDLABEL_SUBID");
+                .HasIndex(d => new { d.FieldLabel, d.FormSubmissionId })
+                .HasDatabaseName("IX_SUBMDATA_FIELDLABEL_SUBID");
 
-            // ✅ Index on FormSubmissions: FormId + SubmittedAt
-            // Speeds up the date-scoped shift queries
             modelBuilder.Entity<FormSubmission>()
                 .HasIndex(s => new { s.FormId, s.SubmittedAt })
                 .HasDatabaseName("IX_FORMSUBMISSIONS_FORMID_DATE");
 
-            // ✅ Index on FormSubmissions: FormId + SubmittedAt + Id (covering index)
-            // Slightly more storage but even faster for the join
             modelBuilder.Entity<FormSubmission>()
                 .HasIndex(s => new { s.FormId, s.SubmittedAt, s.Id })
                 .HasDatabaseName("IX_FORMSUBMISSIONS_FORMID_DATE_ID");
@@ -211,7 +172,6 @@ namespace productionLine.Server.Model
                       .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Indexes for common queries
             modelBuilder.Entity<EmailScheduleLog>(entity =>
             {
                 entity.HasIndex(l => new { l.EmailScheduleId, l.SentAt });
@@ -237,15 +197,32 @@ namespace productionLine.Server.Model
                 e.Property(en => en.Title).IsRequired().HasMaxLength(300);
                 e.Property(en => en.Status).HasMaxLength(20);
             });
-
         }
 
-        // Add this temporarily to see what SQL is being generated
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             optionsBuilder.EnableSensitiveDataLogging()
                           .LogTo(Console.WriteLine, LogLevel.Information);
         }
+
+    } // <--- ✅ FormDbContext PROPERLY CLOSES HERE
+
+
+    // ====================================================================
+    // ✅ DERIVED CONTEXTS OUTSIDE FormDbContext
+    // ====================================================================
+
+    public class PrimaryDbContext : FormDbContext
+    {
+        public PrimaryDbContext(DbContextOptions<PrimaryDbContext> options) : base(options)
+        {
+        }
     }
 
+    public class SecondaryDbContext : FormDbContext
+    {
+        public SecondaryDbContext(DbContextOptions<SecondaryDbContext> options) : base(options)
+        {
+        }
+    }
 }

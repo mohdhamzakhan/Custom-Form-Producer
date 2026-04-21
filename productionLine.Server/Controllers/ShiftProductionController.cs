@@ -5,6 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 using productionLine.Server.Model;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static productionLine.Server.Model.FormDbContext;
 
 namespace productionLine.Server.Controllers
 {
@@ -12,12 +13,14 @@ namespace productionLine.Server.Controllers
     [Route("api/[controller]")]
     public class ShiftProductionController : ControllerBase
     {
-        private readonly FormDbContext _context;
+        private readonly PrimaryDbContext _primaryContext;
+        private readonly SecondaryDbContext _secondaryContext;
         private readonly IMemoryCache _cache;
 
-        public ShiftProductionController(FormDbContext context, IMemoryCache cache)
+        public ShiftProductionController(PrimaryDbContext primaryContext, SecondaryDbContext secondaryContext, IMemoryCache cache)
         {
-            _context = context;
+            _primaryContext = primaryContext;
+            _secondaryContext = secondaryContext;
             _cache = cache;
         }
 
@@ -46,8 +49,6 @@ namespace productionLine.Server.Controllers
                 Console.WriteLine($"  Shift: {shift}");
                 Console.WriteLine($"  GroupByField: {groupByField ?? "none"}");
 
-                int form = _context.ReportTemplates.Where(x => x.Id == formId).Select(y => y.FormId).FirstOrDefault();
-
                 var queryDate = selectedDate.Date;
                 Console.WriteLine($"  Query Date (normalized): {queryDate:yyyy-MM-dd}");
 
@@ -62,14 +63,6 @@ namespace productionLine.Server.Controllers
 
                 if (cycleTimeSeconds <= 0)
                     return BadRequest(new { error = "cycleTimeSeconds must be greater than 0" });
-
-                Console.WriteLine($"[ShiftProduction] Received request:");
-                Console.WriteLine($"  Date: {selectedDate:yyyy-MM-dd}");
-                Console.WriteLine($"  Shift: {shift}");
-                Console.WriteLine($"  Target: {targetParts}");
-                Console.WriteLine($"  Cycle: {cycleTimeSeconds}");
-                Console.WriteLine($"  Start: {startTime}, End: {endTime}");
-                Console.WriteLine($"  Breaks: {breaks ?? "null"}");
 
                 // Build cache key - include groupByField
                 var cacheKey = $"shift_chart_{formId}_{selectedDate:yyyyMMdd}_{shift}_{targetParts}_{cycleTimeSeconds}_{groupByField ?? "none"}";
@@ -90,7 +83,6 @@ namespace productionLine.Server.Controllers
                         breaksList = parsedBreaks
                             .Where(b => !string.IsNullOrWhiteSpace(b.StartTime) && !string.IsNullOrWhiteSpace(b.EndTime))
                             .ToList();
-                        Console.WriteLine($"[ShiftProduction] Parsed {parsedBreaks.Count} breaks, {breaksList.Count} valid");
                     }
                     catch (Exception ex)
                     {
@@ -98,8 +90,38 @@ namespace productionLine.Server.Controllers
                     }
                 }
 
-                Console.WriteLine($"[ShiftProduction] Fetching submissions from database...");
-                var submissions = await GetFilteredSubmissions(selectedDate, startTime, endTime, form);
+                // ============================================================
+                // ✅ DATABASE FALLBACK LOGIC WITH DATE THRESHOLD
+                // ============================================================
+                Console.WriteLine($"[ShiftProduction] Fetching submissions from Primary Database...");
+                FormDbContext activeContext = _primaryContext;
+
+                int form = activeContext.ReportTemplates.Where(x => x.Id == formId).Select(y => y.FormId).FirstOrDefault();
+                var submissions = form != 0
+                    ? await GetFilteredSubmissions(selectedDate, startTime, endTime, form, activeContext)
+                    : new List<FormSubmission>();
+
+                // Define the threshold date: April 19, 2026
+                DateTime fallbackThreshold = new DateTime(2026, 4, 19);
+
+                // ONLY fallback if 0 submissions AND the queried date is strictly AFTER the threshold
+                if (submissions.Count == 0 && queryDate > fallbackThreshold)
+                {
+                    Console.WriteLine($"[ShiftProduction] No results in Primary and date is after {fallbackThreshold:dd-MM-yyyy}. Falling back to Secondary Database...");
+                    activeContext = _secondaryContext; // Swap context globally for the rest of the method
+
+                    form = activeContext.ReportTemplates.Where(x => x.Id == formId).Select(y => y.FormId).FirstOrDefault();
+                    submissions = form != 0
+                        ? await GetFilteredSubmissions(selectedDate, startTime, endTime, form, activeContext)
+                        : new List<FormSubmission>();
+                }
+                else if (submissions.Count == 0)
+                {
+                    Console.WriteLine($"[ShiftProduction] No results in Primary. Skipping Secondary DB because date {queryDate:dd-MM-yyyy} is not above {fallbackThreshold:dd-MM-yyyy}.");
+                }
+
+                Console.WriteLine($"[ShiftProduction] Found {submissions.Count} submissions in active database.");
+                // ============================================================
 
                 var startMinutes = ParseTimeToMinutes(startTime);
                 var isOvernight = ParseTimeToMinutes(endTime) <= startMinutes;
@@ -107,7 +129,7 @@ namespace productionLine.Server.Controllers
                 int initialCount = 0;
                 if (isOvernight)
                 {
-                    initialCount = await _context.FormSubmissions
+                    initialCount = await activeContext.FormSubmissions
                         .AsNoTracking()
                         .Where(s =>
                             s.FormId == form &&
@@ -120,7 +142,7 @@ namespace productionLine.Server.Controllers
                 }
                 else
                 {
-                    initialCount = await _context.FormSubmissions
+                    initialCount = await activeContext.FormSubmissions
                         .AsNoTracking()
                         .Where(s =>
                             s.FormId == form &&
@@ -129,66 +151,57 @@ namespace productionLine.Server.Controllers
                         .CountAsync();
                 }
 
-                Console.WriteLine($"[ShiftProduction] Found {submissions.Count} submissions");
-
                 // Calculate target line
                 Console.WriteLine($"[ShiftProduction] Calculating target line...");
                 var targetLineData = CalculateTargetLine(targetParts, cycleTimeSeconds, startTime, endTime, breaksList);
                 Console.WriteLine($"[ShiftProduction] Generated {targetLineData.Count} target points");
 
                 // ============================================================
-                // NEW: If groupByField is specified, build multi-line response
+                // MULTI-LINE chart data (Grouping)
                 // ============================================================
                 if (!string.IsNullOrWhiteSpace(groupByField))
                 {
                     Console.WriteLine($"[ShiftProduction] Building MULTI-LINE chart data, grouping by: {groupByField}");
 
-                    var groupField = await _context.FormFields
+                    var groupField = await activeContext.FormFields
                         .AsNoTracking()
                         .FirstOrDefaultAsync(f => f.Label == groupByField && f.FormId == form);
 
                     if (groupField != null)
                     {
-                        Console.WriteLine($"[ShiftProduction] Found group field ID: {groupField.Id}");
-
-                        // ✅ OPTIMIZATION 1: Single DB query for all submission field values at once
                         var submissionIds = submissions.Select(s => s.Id).ToList();
                         var fieldIdStr = groupField.Id.ToString();
                         var startMinutesForQuery = ParseTimeToMinutes(startTime);
                         var endMinutesForQuery = ParseTimeToMinutes(endTime);
                         var isOvernightForQuery = endMinutesForQuery <= startMinutesForQuery;
                         var nextDateForQuery = queryDate.AddDays(1);
+
                         var submissionDataList = await (
-                             from s in _context.FormSubmissions.AsNoTracking()
-                             join d in _context.FormSubmissionData.AsNoTracking() on s.Id equals d.FormSubmissionId
+                             from s in activeContext.FormSubmissions.AsNoTracking()
+                             join d in activeContext.FormSubmissionData.AsNoTracking() on s.Id equals d.FormSubmissionId
                              where
                                  s.FormId == form &&
                                  d.FieldLabel == fieldIdStr &&
                                  (
                                      isOvernightForQuery
                                      ? (
-                                         // Overnight: same day >= start OR next day <= end
                                          (s.SubmittedAt.Date == queryDate && (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) >= startMinutesForQuery)
                                          ||
                                          (s.SubmittedAt.Date == nextDateForQuery && (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) <= endMinutesForQuery)
                                        )
                                      : (
-                                         // Regular: same day between start and end
                                          s.SubmittedAt.Date == queryDate &&
                                          (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) >= startMinutesForQuery &&
                                          (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) <= endMinutesForQuery
                                        )
                                  )
-                            select new
-    {
-        d.FormSubmissionId,
-        d.FieldValue   // ✅ Fetch raw - handle null in memory below
-    }
-                         ).ToListAsync();
+                             select new
+                             {
+                                 d.FormSubmissionId,
+                                 d.FieldValue
+                             }
+                        ).ToListAsync();
 
-                        Console.WriteLine($"[ShiftProduction] Fetched {submissionDataList.Count} field values for grouping");
-
-                        // ✅ STEP 3: Build lookup map
                         var submissionLineMap = submissionDataList
                             .GroupBy(d => d.FormSubmissionId)
                             .ToDictionary(
@@ -196,16 +209,10 @@ namespace productionLine.Server.Controllers
                                 g => g.First().FieldValue?.Trim() ?? "Unknown"
                             );
 
-                        // ✅ OPTIMIZATION 3: Group submissions once
                         var groupedSubmissions = submissions
                             .GroupBy(s => submissionLineMap.TryGetValue(s.Id, out var ln) ? ln : "Unknown")
                             .ToDictionary(g => g.Key, g => g.ToList());
 
-                        Console.WriteLine($"[ShiftProduction] Found {groupedSubmissions.Count} lines: {string.Join(", ", groupedSubmissions.Keys)}");
-
-                        // ✅ OPTIMIZATION 4: Pre-bucket target line into a dictionary ONCE (shared across all lines)
-                        // Instead of calling BuildCombinedChartData (which re-buckets target line each time),
-                        // we pre-compute the target bucket map and reuse it
                         var linesChartData = BuildMultiLineChartData(groupedSubmissions, targetLineData);
                         var lineCount = groupedSubmissions.Count;
                         var totalTargetParts = targetParts * lineCount;
@@ -232,18 +239,12 @@ namespace productionLine.Server.Controllers
                         };
 
                         _cache.Set(cacheKey, multiLineResponse, TimeSpan.FromSeconds(30));
-
-                        Console.WriteLine($"[ShiftProduction] Multi-line success! {groupedSubmissions.Count} lines");
                         return Ok(multiLineResponse);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[ShiftProduction] WARNING: groupByField '{groupByField}' not found, falling back to single line");
                     }
                 }
 
                 // ============================================================
-                // ORIGINAL: Single line response (unchanged)
+                // SINGLE-LINE chart data (Fallback)
                 // ============================================================
                 Console.WriteLine($"[ShiftProduction] Building SINGLE-LINE combined chart data...");
                 var combinedData = BuildCombinedChartData(submissions, targetLineData);
@@ -264,8 +265,6 @@ namespace productionLine.Server.Controllers
                 };
 
                 _cache.Set(cacheKey, response, TimeSpan.FromSeconds(30));
-
-                Console.WriteLine($"[ShiftProduction] Success! Returning {combinedData.Count} data points");
                 return Ok(response);
             }
             catch (ArgumentException argEx)
@@ -276,11 +275,6 @@ namespace productionLine.Server.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"[ShiftProduction] ERROR: {ex.Message}");
-                Console.WriteLine($"[ShiftProduction] Stack Trace: {ex.StackTrace}");
-
-                if (ex.InnerException != null)
-                    Console.WriteLine($"[ShiftProduction] Inner Exception: {ex.InnerException.Message}");
-
                 return StatusCode(500, new
                 {
                     error = ex.Message,
@@ -433,90 +427,50 @@ namespace productionLine.Server.Controllers
 
 
         private async Task<List<FormSubmission>> GetFilteredSubmissions(
-    DateTime selectedDate,
-    string startTime,
-    string endTime,
-    int formID)
+            DateTime selectedDate,
+            string startTime,
+            string endTime,
+            int formID,
+            FormDbContext context)
         {
-            try
+            var startMinutes = ParseTimeToMinutes(startTime);
+            var endMinutes = ParseTimeToMinutes(endTime);
+            var queryDate = selectedDate.Date;
+            var isOvernightShift = endMinutes <= startMinutes;
+
+            IQueryable<FormSubmission> query;
+
+            if (isOvernightShift)
             {
-                var startMinutes = ParseTimeToMinutes(startTime);
-                var endMinutes = ParseTimeToMinutes(endTime);
-
-                // ✅ Normalize to date only
-                var queryDate = selectedDate.Date;
-
-                Console.WriteLine($"[GetFilteredSubmissions] Querying for date: {queryDate:yyyy-MM-dd}");
-                Console.WriteLine($"[GetFilteredSubmissions] Start: {startMinutes} min ({startTime}), End: {endMinutes} min ({endTime})");
-
-                var isOvernightShift = endMinutes <= startMinutes;
-
-                IQueryable<FormSubmission> query;
-
-                if (isOvernightShift)
-                {
-                    Console.WriteLine($"[GetFilteredSubmissions] Overnight shift detected");
-
-                    // ✅ For overnight shifts, we need submissions from TWO dates:
-                    // 1. Current date from startTime onwards (e.g., 11:00 PM onwards on Day 1)
-                    // 2. Next date until endTime (e.g., until 6:00 AM on Day 2)
-
-                    var nextDate = queryDate.AddDays(1);
-
-                    query = _context.FormSubmissions
-                        .AsNoTracking()
-                        .Where(s =>
-                            // Part 1: Same day, time >= startTime
-                            ((s.SubmittedAt.Date == queryDate &&
-                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes)
-                            ||
-                            // Part 2: Next day, time <= endTime
-                            (s.SubmittedAt.Date == nextDate &&
-                             s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes))
-                             && s.FormId == formID
-                        );
-
-                    Console.WriteLine($"[GetFilteredSubmissions] Querying overnight: {queryDate:yyyy-MM-dd} from {startTime} + {nextDate:yyyy-MM-dd} until {endTime}");
-                }
-                else
-                {
-                    Console.WriteLine($"[GetFilteredSubmissions] Regular shift");
-
-                    // ✅ Regular shift: same day, between startTime and endTime
-                    query = _context.FormSubmissions
-                        .AsNoTracking()
-                        .Where(s =>
-                            s.SubmittedAt.Date == queryDate &&
-                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes &&
-                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes && s.FormId == formID
-                        );
-                }
-
-                var result = await query
-                    .OrderBy(s => s.SubmittedAt)
-                    .Select(s => new FormSubmission
-                    {
-                        Id = s.Id,
-                        SubmittedAt = s.SubmittedAt
-                    })
-                    .ToListAsync();
-
-                Console.WriteLine($"[GetFilteredSubmissions] Found {result.Count} submissions");
-
-                // ✅ Log sample submissions for debugging
-                if (result.Any())
-                {
-                    Console.WriteLine($"[GetFilteredSubmissions] First submission: {result.First().SubmittedAt:yyyy-MM-dd HH:mm:ss}");
-                    Console.WriteLine($"[GetFilteredSubmissions] Last submission: {result.Last().SubmittedAt:yyyy-MM-dd HH:mm:ss}");
-                }
-
-                return result;
+                var nextDate = queryDate.AddDays(1);
+                query = context.FormSubmissions
+                    .AsNoTracking()
+                    .Where(s =>
+                        ((s.SubmittedAt.Date == queryDate && s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes)
+                        ||
+                        (s.SubmittedAt.Date == nextDate && s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes))
+                         && s.FormId == formID
+                    );
             }
-            catch (Exception ex)
+            else
             {
-                Console.WriteLine($"[GetFilteredSubmissions] ERROR: {ex.Message}");
-                throw;
+                query = context.FormSubmissions
+                    .AsNoTracking()
+                    .Where(s =>
+                        s.SubmittedAt.Date == queryDate &&
+                        s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes &&
+                        s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes && s.FormId == formID
+                    );
             }
+
+            return await query
+                .OrderBy(s => s.SubmittedAt)
+                .Select(s => new FormSubmission
+                {
+                    Id = s.Id,
+                    SubmittedAt = s.SubmittedAt
+                })
+                .ToListAsync();
         }
 
 
