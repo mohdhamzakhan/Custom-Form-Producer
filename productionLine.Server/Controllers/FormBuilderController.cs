@@ -261,7 +261,8 @@ namespace productionLine.Server.Controllers
                     Name = a.Name,
                     Email = a.Email,
                     Type = a.Type,
-                    Level = a.Level
+                    Level = a.Level,
+                    AccessLevel=a.AccessLevel
                 }).ToList() ?? new List<ApproverDto>()),
                 allowToAccess = (form.AllowedtoAccess?.Select((FormToAdd a) => new ApproverDto
                 {

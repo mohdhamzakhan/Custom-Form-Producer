@@ -1,7 +1,8 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState,useEffect } from "react";
 import { Plus, X, BarChart3, Settings, Eye, Users, Clock, Target, Timer, Trash2 } from "lucide-react";
 import { CHART_TYPES } from "./ReportCharts";
 import ReportCharts from "./ReportCharts";
+import { APP_CONSTANTS } from "./store";
 
 const SHIFT_CONFIG = {
     A: {
@@ -48,12 +49,14 @@ const MultiChartBuilder = ({
     selectedFields,
     fields,
     calculatedFields,
-    data = []
+    data = [],
+    forms = []
 }) => {
     // CHANGED: Start expanded by default to make configuration visible
     const [isExpanded, setIsExpanded] = useState(true);
     const [previewMode, setPreviewMode] = useState(false);
     const [showConfig, setShowConfig] = useState(true);
+    const [downtimeFieldsCache, setDowntimeFieldsCache] = useState({});
 
     const initializeShiftConfigs = () => {
         return Object.keys(SHIFT_CONFIG).map(shiftKey => ({
@@ -91,6 +94,61 @@ const MultiChartBuilder = ({
             setChartConfigs(updatedCharts);
         }
     }, [chartConfigs.length, chartConfigs.map(c => `${c.id}-${c.type}-${!!c.shiftConfigs}`).join(',')]);
+    useEffect(() => {
+        chartConfigs.forEach(chart => {
+            if (chart.type !== 'shift' || !chart.shiftConfigs) return;
+
+            chart.shiftConfigs.forEach(shiftConfig => {
+                const formId = shiftConfig.downtimeConfig?.downtimeFormId;
+                if (!formId) return;
+
+                const cacheKey = `${chart.id}-${shiftConfig.shift}`;
+
+                // Skip if already cached
+                setDowntimeFieldsCache(prev => {
+                    if (prev[cacheKey] !== undefined) return prev;
+
+                    fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/fields`)
+                        .then(r => r.json())
+                        .then(data => {
+                            const list = Array.isArray(data) ? data
+                                : Array.isArray(data.fields) ? data.fields : [];
+
+                            const expanded = [];
+                            list.forEach(f => {
+                                if (f.columnJson) {
+                                    try {
+                                        JSON.parse(f.columnJson).forEach(col =>
+                                            expanded.push({
+                                                id: `${f.id}:${col.id}`,
+                                                label: `${f.label} → ${col.name}`
+                                            })
+                                        );
+                                    } catch { }
+                                } else {
+                                    expanded.push({ id: f.id, label: f.label });
+                                }
+                            });
+
+                            setDowntimeFieldsCache(prev2 => ({ ...prev2, [cacheKey]: expanded }));
+                        })
+                        .catch(() => {
+                            setDowntimeFieldsCache(prev2 => ({ ...prev2, [cacheKey]: [] }));
+                        });
+
+                    // Mark as in-flight so we don't fire the fetch twice
+                    return { ...prev, [cacheKey]: [] };
+                });
+            });
+        });
+    }, [
+        // Re-run only when a downtimeFormId actually changes
+        chartConfigs
+            .flatMap(c => (c.shiftConfigs || [])
+                .map(s => `${c.id}-${s.shift}-${s.downtimeConfig?.downtimeFormId || 0}`)
+            )
+            .join('|')
+    ]);
 
 
     // Ensure shift charts have shiftConfig initialized
@@ -226,7 +284,6 @@ const MultiChartBuilder = ({
 
         return [...baseFields, ...calcFields];
     };
-
 
     const validateChart = (chart) => {
         const chartType = CHART_TYPES[chart.type];
@@ -629,6 +686,173 @@ const MultiChartBuilder = ({
                                             ? Math.round(3600 / shiftConfig.cycleTimeSeconds)
                                             : 0} parts/hour
                                     </div>
+                                </div>
+
+                                {/* Downtime Form Overlay */}
+                                <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className="text-sm font-semibold text-red-800">🔴 Downtime Overlay</span>
+                                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                                            matched by shift time window
+                                        </span>
+                                    </div>
+
+                                    {/* Step 1 — pick the downtime form */}
+                                    <div className="mb-3">
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                                            Downtime form <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            value={shiftConfig.downtimeConfig?.downtimeFormId || ""}
+                                            onChange={(e) => {
+                                                const formId = parseInt(e.target.value) || null;
+                                                const cacheKey = `${chart.id}-${shiftConfig.shift}`;
+
+                                                // Single update — just save the formId and clear the fieldMap
+                                                updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                    downtimeConfig: {
+                                                        downtimeFormId: formId,
+                                                        fieldMap: {}
+                                                    }
+                                                });
+
+                                                // Clear stale cache for this slot
+                                                setDowntimeFieldsCache(prev => ({ ...prev, [cacheKey]: formId ? undefined : [] }));
+
+                                                if (!formId) return;
+
+                                                fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/${formId}/fields`)
+                                                    .then(r => r.json())
+                                                    .then(data => {
+                                                        const list = Array.isArray(data) ? data
+                                                            : Array.isArray(data.fields) ? data.fields : [];
+
+                                                        const expanded = [];
+                                                        list.forEach(f => {
+                                                            if (f.columnJson) {
+                                                                try {
+                                                                    JSON.parse(f.columnJson).forEach(col =>
+                                                                        expanded.push({
+                                                                            id: `${f.id}:${col.id}`,
+                                                                            label: `${f.label} → ${col.name}`
+                                                                        })
+                                                                    );
+                                                                } catch { }
+                                                            } else {
+                                                                expanded.push({ id: f.id, label: f.label });
+                                                            }
+                                                        });
+
+                                                        // Write to cache — no shiftConfig closure involved at all
+                                                        setDowntimeFieldsCache(prev => ({ ...prev, [cacheKey]: expanded }));
+                                                    })
+                                                    .catch(() => {
+                                                        setDowntimeFieldsCache(prev => ({ ...prev, [cacheKey]: [] }));
+                                                    });
+                                            }}
+                                            className="w-full p-2 border border-red-200 rounded text-sm bg-white"
+                                        >
+                                            <option value="">— none (no downtime overlay) —</option>
+                                            {/* 
+                Pass `forms` prop down to MultiChartBuilder from EnhancedReportDesigner,
+                then reference it here. See step 2 below.
+            */}
+                                            {(forms || []).map(f => (
+                                                <option key={f.id} value={f.id}>{f.name}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Downtime records are matched automatically if they fall within this shift's time window
+                                        </p>
+                                    </div>
+
+                                    {/* Step 2 — field mapping (only shown once a form is chosen) */}
+                                    {shiftConfig.downtimeConfig?.downtimeFormId > 0 && (
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-600 mb-2">Map fields</p>
+
+                                            {(() => {
+                                                const cacheKey = `${chart.id}-${shiftConfig.shift}`;
+                                                const dtFields = downtimeFieldsCache[cacheKey];
+
+                                                // Still fetching
+                                                if (dtFields === undefined) {
+                                                    return (
+                                                        <p className="text-xs text-gray-400 italic py-2 animate-pulse">
+                                                            Loading fields...
+                                                        </p>
+                                                    );
+                                                }
+
+                                                // Fetched but empty
+                                                if (dtFields.length === 0) {
+                                                    return (
+                                                        <p className="text-xs text-red-400 italic py-2">
+                                                            No fields found in this form
+                                                        </p>
+                                                    );
+                                                }
+
+                                                // Ready — render the slot mapping
+                                                return (
+                                                    <>
+                                                        {[
+                                                            { key: "timeFrom", label: "Time From", required: true },
+                                                            { key: "timeTo", label: "Time To", required: true },
+                                                            { key: "date", label: "Date", required: false },
+                                                            { key: "shift", label: "Shift", required: false },
+                                                            { key: "cause", label: "Cause / Reason", required: false },
+                                                        ].map(slot => {
+                                                            const isMapped = !!shiftConfig.downtimeConfig?.fieldMap?.[slot.key];
+                                                            return (
+                                                                <div key={slot.key} className="flex items-center gap-2 mb-2">
+                                                                    <span className="text-xs text-gray-500 w-28 flex-shrink-0">
+                                                                        {slot.label}
+                                                                        {slot.required && <span className="text-red-500 ml-0.5">*</span>}
+                                                                    </span>
+                                                                    <span className="text-gray-300 text-xs">→</span>
+                                                                    <select
+                                                                        value={shiftConfig.downtimeConfig?.fieldMap?.[slot.key] || ""}
+                                                                        onChange={(e) => {
+                                                                            updateShiftConfig(chart.id, shiftConfig.shift, {
+                                                                                downtimeConfig: {
+                                                                                    ...shiftConfig.downtimeConfig,
+                                                                                    fieldMap: {
+                                                                                        ...shiftConfig.downtimeConfig?.fieldMap,
+                                                                                        [slot.key]: e.target.value
+                                                                                    }
+                                                                                }
+                                                                            });
+                                                                        }}
+                                                                        className={`flex-1 border p-1.5 rounded text-xs bg-white ${slot.required && !isMapped ? "border-red-300" : "border-gray-200"
+                                                                            }`}
+                                                                    >
+                                                                        <option value="">— not mapped —</option>
+                                                                        {dtFields.map(f => (
+                                                                            <option key={f.id} value={f.id}>{f.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                    {isMapped && <span className="text-green-500 text-xs">✓</span>}
+                                                                </div>
+                                                            );
+                                                        })}
+
+                                                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                                                            <span className="text-green-500">✓</span>
+                                                            Duration auto-calculated from Time From / Time To
+                                                        </div>
+
+                                                        {(!shiftConfig.downtimeConfig?.fieldMap?.timeFrom ||
+                                                            !shiftConfig.downtimeConfig?.fieldMap?.timeTo) && (
+                                                                <p className="text-xs text-red-400 mt-2">
+                                                                    Map Time From and Time To to enable the downtime overlay
+                                                                </p>
+                                                            )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}

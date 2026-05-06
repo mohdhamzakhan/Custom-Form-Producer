@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { Plus, Edit, Copy, Trash, Calendar, User, ExternalLink } from "lucide-react";
 import Layout from "./Layout";
 import { APP_CONSTANTS } from "./store";
@@ -10,6 +10,7 @@ const MyForms = () => {
     const [loading, setLoading] = useState(true);
     const [currentUser, setCurrentUser] = useState("");
     const [currentUserGroup, setcurrentUserGroup] = useState("");
+    const [isCreator, setIsCreator] = useState(false)
     const navigate = useNavigate();
 
     // Get current user (you may need to adjust this based on your auth system)
@@ -26,7 +27,8 @@ const MyForms = () => {
                 navigate(`/login?expired=true`);
             } else {
                 setCurrentUser(storedUser.username);
-                setcurrentUserGroup(storedUser.groups)
+                setcurrentUserGroup(storedUser.groups);
+                setIsCreator(storedUser.groups.includes('Custom-Form_Creators') || storedUser.groups.includes('SANAND-IT') || storedUser.groups.includes('MEAI-IT'));
             }
         } else {
             navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
@@ -45,6 +47,7 @@ const MyForms = () => {
 
             // Check if user is admin
             const isAdmin = currentUserGroup.includes('SANAND-IT') || currentUserGroup.includes('MEAI-IT');
+            
 
             // Use different endpoint for admin vs regular users
             const endpoint = isAdmin
@@ -148,6 +151,20 @@ const MyForms = () => {
         });
     };
 
+    const getUserAccessLevel = (form) => {
+        if (!form.allowedUsers || form.allowedUsers.length === 0) {
+            return "Editor"; // default if no restriction
+        }
+
+        const userAccess = form.allowedUsers.find(
+            u =>
+                u.email?.toLowerCase() === currentUser?.toLowerCase() ||
+                (u.type === "group" && currentUserGroup.includes(u.name))
+        );
+
+        return userAccess?.accessLevel || null;
+    };
+
     if (loading) return <LoadingDots />;
 
 
@@ -162,13 +179,15 @@ const MyForms = () => {
                             Manage and edit the forms you've created
                         </p>
                     </div>
-                    <button
-                        onClick={() => navigate('/formbuilder')}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-                    >
-                        <Plus size={20} />
-                        Create New Form
-                    </button>
+                    {isCreator && (
+                        <button
+                            onClick={() => navigate('/formbuilder')}
+                            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                        >
+                            <Plus size={20} />
+                            Create New Form
+                        </button>
+                    )}
                 </div>
 
                 {/* Stats Cards */}
@@ -243,7 +262,7 @@ const MyForms = () => {
                                             </h3>
                                             <div className="flex items-center text-sm text-gray-500 space-x-4 mb-3">
                                                 <span>Form Link: {form.formLink}</span>
-                                                <span>�</span>
+                                                <span>•</span>
                                                 <span>Created: {formatDate(form.createdAt)}</span>
                                             </div>
                                             <div className="flex items-center text-sm text-gray-600">
@@ -270,13 +289,20 @@ const MyForms = () => {
                                             >
                                                 <ExternalLink size={18} />
                                             </button>
-                                            <button
-                                                onClick={() => handleEditForm(form)}
-                                                className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                                title="Edit Form"
-                                            >
-                                                <Edit size={18} />
-                                            </button>
+
+
+                                            {(form.accessLevel === "Editor" || !form.accessLevel) && (
+                                                <button
+                                                    onClick={() => handleEditForm(form)}
+                                                    className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                                    title="Edit Form"
+                                                >
+                                                    <Edit size={18} />
+                                                </button>
+                                            )}
+
+                                        </div>
+                                    </div>
                                             {/*<button*/}
                                             {/*    onClick={() => handleCopyForm(form)}*/}
                                             {/*    className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"*/}
@@ -291,8 +317,6 @@ const MyForms = () => {
                                             {/*>*/}
                                             {/*    <Trash size={18} />*/}
                                             {/*</button>*/}
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         ))}

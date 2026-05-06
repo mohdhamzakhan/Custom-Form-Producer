@@ -20,7 +20,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. Register Primary Database
 builder.Services.AddDbContext<PrimaryDbContext>(options =>
-    options.UseOracle(builder.Configuration.GetConnectionString("SystemMonitorConnection")));
+    options.UseOracle(builder.Configuration.GetConnectionString("SystemMonitorConnection"),
+    optionsBuilder =>
+    { 
+        optionsBuilder.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19);
+    }));
 
 // 2. Register Secondary Database
 builder.Services.AddDbContext<SecondaryDbContext>(options =>
@@ -98,6 +102,9 @@ builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpS
 builder.Services.AddScoped<IEmailSchedulerService, EmailSchedulerService>();
 builder.Services.AddScoped<IAdDirectoryService, AdDirectoryService>();
 builder.Services.AddScoped<IAuditPlanService, AuditPlanService>();
+
+// Register the background monitor service
+builder.Services.AddHostedService<productionLine.Server.Services.ProductionMonitorWorker>();
 
 // Configure Hangfire (uses Primary connection)
 builder.Services.AddHangfire(config => config

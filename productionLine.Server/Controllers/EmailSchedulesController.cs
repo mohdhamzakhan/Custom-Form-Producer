@@ -171,7 +171,7 @@ namespace productionLine.Server.Controllers
             existing.RecurrenceDays = dto.RecurrenceDays;
             existing.SendTime = dto.SendTime;
             existing.UpdatedBy = currentUser;
-            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedAt = DateTime.Now;
 
             // ── Replace recipients (remove ALL first, then add deduped) ──
             _db.EmailScheduleRecipients.RemoveRange(existing.Recipients);

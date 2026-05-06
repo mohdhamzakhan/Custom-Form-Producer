@@ -46,7 +46,8 @@ export default function Layout({ children }) {
     const defaultLinks = [
         { name: "Dashboard", path: "/Mainpage" },
         { name: "Approval", path: "/reports" },
-        { name: "Report", path: "/report" }
+        { name: "Report", path: "/report" },
+        { name: "Create Form", path: "/MyForm" },
         
     ];
 
@@ -54,7 +55,7 @@ export default function Layout({ children }) {
     let navLinks = user?.groups?.includes("SANAND-IT")
         ? [
             ...defaultLinks,
-            { name: "Create Form", path: "/MyForm" },
+            
             { name: "System Config", path: "/system-config" }
         ]
         : defaultLinks;
@@ -62,7 +63,6 @@ export default function Layout({ children }) {
     navLinks = (user?.groups?.includes("Custom-Form_Creators") || user?.groups?.includes("SANAND-IT"))
         ? [
             ...defaultLinks,
-            { name: "Create Form", path: "/MyForm" },
             { name: "Email", path: "/EmailSchedular" },
             { name: "Audit", path:"/Audit"},
             { name: "Audit Approval", path:"/AuditApproval"},

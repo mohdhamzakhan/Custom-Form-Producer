@@ -577,7 +577,8 @@ namespace productionLine.Server.Controllers
             // ✅ Pre-process breaks with names
             var breakRanges = breaks
                 .Where(b => !string.IsNullOrWhiteSpace(b.StartTime) && !string.IsNullOrWhiteSpace(b.EndTime))
-                .Select(b => {
+                .Select(b =>
+                {
                     try
                     {
                         return new
@@ -929,7 +930,370 @@ namespace productionLine.Server.Controllers
             return result;
         }
 
-        
+        [HttpGet("downtime-events")]
+        public async Task<IActionResult> GetDowntimeEvents(
+    [FromQuery] DateTime selectedDate,
+    [FromQuery] string startTime,
+    [FromQuery] string endTime,
+    [FromQuery] int downtimeFormId,
+    [FromQuery] string timeFromFieldId,
+    [FromQuery] string timeToFieldId,
+    [FromQuery] string currentShift,        // "A", "B", or "C"
+    [FromQuery] string dateFieldId = null,
+    [FromQuery] string causeFieldId = null,
+    [FromQuery] string shiftFieldId = null) // the shift selector field ID
+        {
+            try
+            {
+                var queryDate = selectedDate.Date;
+                var startMinutes = ParseTimeToMinutes(startTime);
+                var endMinutes = ParseTimeToMinutes(endTime);
+                var isOvernight = endMinutes <= startMinutes;
+
+                // ── Parse grid field IDs ──────────────────────────────────────
+                // Format: "parentGuid:columnGuid" or plain "guid"
+                (string parentId, string colId) SplitFieldId(string fieldId)
+                {
+                    if (string.IsNullOrEmpty(fieldId)) return (null, null);
+                    var parts = fieldId.Split(':');
+                    return parts.Length == 2
+                        ? (parts[0].Trim(), parts[1].Trim())
+                        : (fieldId.Trim(), null);
+                }
+
+                var (tfParent, tfCol) = SplitFieldId(timeFromFieldId);
+                var (ttParent, ttCol) = SplitFieldId(timeToFieldId);
+                var (causeParent, causeCol) = SplitFieldId(causeFieldId);
+                var (dateParent, dateCol) = SplitFieldId(dateFieldId);
+                var (shiftParent, shiftCol) = SplitFieldId(shiftFieldId);
+
+                // ── Determine which grid parent holds all the columns ─────────
+                // All time/cause fields point to the same grid parent
+                var gridParentId = tfParent;
+
+                // ── Fetch column names from the FormField registry ────────────
+                string GetColumnName(string colId, string parentId)
+                {
+                    if (string.IsNullOrEmpty(colId) || string.IsNullOrEmpty(parentId)) return null;
+                    if (!Guid.TryParse(parentId, out var pGuid) ||
+                        !Guid.TryParse(colId, out var cGuid)) return null;
+
+                    var gridField = _primaryContext.FormFields
+                        .FirstOrDefault(f => f.Id == pGuid && f.Type.ToLower() == "grid");
+
+                    return gridField?.Columns?
+                        .FirstOrDefault(c => Guid.TryParse(c.Id, out var g) && g == cGuid)
+                        ?.Name;
+                }
+
+                var timeFromColName = GetColumnName(tfCol, tfParent);
+                var timeToColName = GetColumnName(ttCol, ttParent);
+                var causeColName = GetColumnName(causeCol, causeParent);
+
+                Console.WriteLine($"[Downtime] Grid parent: {gridParentId}");
+                Console.WriteLine($"[Downtime] timeFrom col: '{timeFromColName}', timeTo col: '{timeToColName}', cause col: '{causeColName}'");
+
+                // ── Fetch submissions for the downtime form ───────────────────
+                var nextDate = queryDate.AddDays(1);
+
+                // Use the same filtering logic as GetShiftChartData for consistency
+                IQueryable<FormSubmission> dtQuery;
+
+                //if (isOvernight)
+                //{
+                //    dtQuery = _primaryContext.FormSubmissions
+                //        .AsNoTracking()
+                //        .Include(s => s.SubmissionData)
+                //        .Where(s => s.FormId == downtimeFormId &&
+                //            (s.SubmittedAt.Date == queryDate ||
+                //             s.SubmittedAt.Date == nextDate));
+                //}
+                //else
+                //{
+                //    dtQuery = _primaryContext.FormSubmissions
+                //        .AsNoTracking()
+                //        .Include(s => s.SubmissionData)
+                //        .Where(s => s.FormId == downtimeFormId &&
+                //            s.SubmittedAt.Date == queryDate);
+                //}
+                // ── Determine the correct date(s) to search based on shift ──────────
+                // For overnight shifts (C: 23:15→06:00), the date field stores the START date
+                // So if selectedDate=April 25 and viewing Shift C, the date field = April 24
+
+                // Fetch a 2-day window to cover all cases
+                var submissions = await _primaryContext.FormSubmissions
+                    .AsNoTracking()
+                    .Include(s => s.SubmissionData)
+                    .Where(s => s.FormId == downtimeFormId &&
+                        s.Status != "Draft" &&
+                        s.SubmittedAt.Date >= queryDate.AddDays(-2) &&
+                        s.SubmittedAt.Date <= queryDate.AddDays(1))
+                    .ToListAsync();
+
+                Console.WriteLine($"[Downtime] Broad fetch: {submissions.Count} for form {downtimeFormId}");
+                Console.WriteLine($"[Downtime] Broad fetch: {submissions.Count} submissions for form {downtimeFormId}");
+
+                // ── Filter by date field + shift time window ─────────────────────────
+                // The date field in the downtime form = the shift's START date
+                // For overnight Shift C starting on queryDate, downtime date = queryDate
+                // For overnight Shift C where we're viewing the morning of queryDate,
+                //   the shift started on queryDate-1, so downtime date = queryDate-1
+
+                var validDates = new HashSet<DateTime> { queryDate };
+                if (isOvernight)
+                {
+                    // Shift C started on queryDate-1 night if we are now in the early morning
+                    // Add both so we catch either convention operators use
+                    validDates.Add(queryDate.AddDays(-1));
+                }
+
+                submissions = submissions.Where(sub =>
+                {
+                    // ── 1. Check date field ─────────────────────────────────────────
+                    if (!string.IsNullOrEmpty(dateParent))
+                    {
+                        var dateData = sub.SubmissionData
+                            .FirstOrDefault(d => d.FieldLabel == dateParent);
+
+                        if (dateData == null || string.IsNullOrWhiteSpace(dateData.FieldValue))
+                        {
+                            Console.WriteLine($"[Downtime]   Sub {sub.Id} — no date field value, skip");
+                            return false;
+                        }
+
+                        var rawDate = dateData.FieldValue.Trim('"');
+                        if (!DateTime.TryParse(rawDate, out var parsedDate))
+                        {
+                            Console.WriteLine($"[Downtime]   Sub {sub.Id} — unparseable date '{rawDate}', skip");
+                            return false;
+                        }
+
+                        if (!validDates.Contains(parsedDate.Date))
+                        {
+                            Console.WriteLine($"[Downtime]   Sub {sub.Id} — date {parsedDate:yyyy-MM-dd} not in {string.Join(",", validDates.Select(d => d.ToString("yyyy-MM-dd")))}, skip");
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        // No date field — fall back to SubmittedAt
+                        if (!validDates.Contains(sub.SubmittedAt.Date)) return false;
+                    }
+
+                    // ── 2. Check shift field ────────────────────────────────────────
+                    if (!string.IsNullOrEmpty(shiftParent) && !string.IsNullOrEmpty(currentShift))
+                    {
+                        var shiftData = sub.SubmissionData
+                            .FirstOrDefault(d => d.FieldLabel == shiftParent);
+
+                        if (shiftData == null || string.IsNullOrWhiteSpace(shiftData.FieldValue))
+                        {
+                            Console.WriteLine($"[Downtime]   Sub {sub.Id} — no shift field value, skip");
+                            return false;
+                        }
+
+                        var storedShift = shiftData.FieldValue.Trim('"').Trim();
+
+                        // Match flexibly: "A", "Shift A", "SHIFT A" all match currentShift="A"
+                        var shiftMatches =
+                            storedShift.Equals(currentShift, StringComparison.OrdinalIgnoreCase) ||
+                            storedShift.Equals($"Shift {currentShift}", StringComparison.OrdinalIgnoreCase) ||
+                            storedShift.EndsWith(currentShift, StringComparison.OrdinalIgnoreCase);
+
+                        Console.WriteLine($"[Downtime]   Sub {sub.Id} — shift field='{storedShift}' currentShift='{currentShift}' match={shiftMatches}");
+
+                        if (!shiftMatches) return false;
+                    }
+
+                    return true;
+
+                }).ToList();
+
+                Console.WriteLine($"[Downtime] After date+shift filter: {submissions.Count} submissions");
+
+                Console.WriteLine($"[Downtime] After date filter: {submissions.Count} submissions");
+
+                Console.WriteLine($"[Downtime] Found {submissions.Count} raw submissions");
+                foreach (var s in submissions)
+                {
+                    Console.WriteLine($"[Downtime]   Sub {s.Id} submitted at {s.SubmittedAt:yyyy-MM-dd HH:mm:ss}");
+                }
+
+                Console.WriteLine($"[Downtime] Found {submissions.Count} submissions for form {downtimeFormId} on {queryDate:yyyy-MM-dd}");
+
+                var events = new List<DowntimeEvent>();
+                var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+                // Filter by the date field value inside the submission data
+                // rather than relying solely on SubmittedAt
+                if (!string.IsNullOrEmpty(dateParent))
+                {
+                    submissions = submissions.Where(sub =>
+                    {
+                        var dateFieldData = sub.SubmissionData
+                            .FirstOrDefault(d => d.FieldLabel == dateParent);
+
+                        if (dateFieldData == null || string.IsNullOrWhiteSpace(dateFieldData.FieldValue))
+                        {
+                            // No date field — fall back to SubmittedAt date match
+                            return sub.SubmittedAt.Date == queryDate ||
+                                   (isOvernight && sub.SubmittedAt.Date == nextDate);
+                        }
+
+                        // Clean JSON string wrapping if present
+                        var rawDate = dateFieldData.FieldValue.Trim('"');
+
+                        // Try parsing as date — handle ISO format "2026-04-24" or "2026-04-24T00:00:00"
+                        if (DateTime.TryParse(rawDate, out var parsedDate))
+                        {
+                            Console.WriteLine($"[Downtime]   Sub {sub.Id} date field = {parsedDate:yyyy-MM-dd}, querying {queryDate:yyyy-MM-dd}");
+                            return parsedDate.Date == queryDate;
+                        }
+
+                        // Unparseable date field — fall back to SubmittedAt
+                        return sub.SubmittedAt.Date == queryDate;
+                    }).ToList();
+
+                    Console.WriteLine($"[Downtime] After date field filter: {submissions.Count} submissions");
+                }
+
+                foreach (var sub in submissions)
+                {
+                    // ── Get the grid field value (JSON array of rows) ─────────
+                    var gridData = sub.SubmissionData
+                        .FirstOrDefault(d => d.FieldLabel == gridParentId);
+
+                    if (gridData == null || string.IsNullOrWhiteSpace(gridData.FieldValue))
+                        continue;
+
+                    List<Dictionary<string, object>> gridRows;
+                    try
+                    {
+                        gridRows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(
+                            gridData.FieldValue, jsonOptions);
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"[Downtime] Failed to parse grid JSON for submission {sub.Id}");
+                        continue;
+                    }
+
+                    if (gridRows == null || !gridRows.Any()) continue;
+
+                    // ── Get the date field value (separate non-grid field) ─────
+                    string submissionDateStr = null;
+                    if (!string.IsNullOrEmpty(dateParent))
+                    {
+                        var dateFieldData = sub.SubmissionData
+                            .FirstOrDefault(d => d.FieldLabel == dateParent);
+                        submissionDateStr = dateFieldData?.FieldValue?.Trim('"');
+                    }
+
+                    // ── Each grid row is one downtime event ───────────────────
+                    foreach (var row in gridRows)
+                    {
+                        string GetCell(string colName)
+                        {
+                            if (string.IsNullOrEmpty(colName)) return null;
+
+                            // Try exact match first
+                            if (row.TryGetValue(colName, out var val))
+                            {
+                                var str = val is JsonElement je ? je.ToString() : val?.ToString();
+                                return string.IsNullOrWhiteSpace(str) ? null : str.Trim();
+                            }
+
+                            // Try case-insensitive match
+                            var key = row.Keys.FirstOrDefault(k =>
+                                k.Trim().Equals(colName.Trim(), StringComparison.OrdinalIgnoreCase));
+                            if (key != null)
+                            {
+                                var str = row[key] is JsonElement je2 ? je2.ToString() : row[key]?.ToString();
+                                return string.IsNullOrWhiteSpace(str) ? null : str.Trim();
+                            }
+
+                            return null;
+                        }
+
+                        var timeFromRaw = GetCell(timeFromColName);
+                        var timeToRaw = GetCell(timeToColName);
+                        var causeRaw = GetCell(causeColName) ?? "Unspecified";
+
+                        if (string.IsNullOrEmpty(timeFromRaw) || string.IsNullOrEmpty(timeToRaw))
+                            continue;
+
+                        // ── Parse HH:mm times ─────────────────────────────────
+                        if (!TimeSpan.TryParse(timeFromRaw, out var tfSpan)) continue;
+                        if (!TimeSpan.TryParse(timeToRaw, out var ttSpan)) continue;
+
+                        var fromMinutes = (int)tfSpan.TotalMinutes;
+                        var toMinutes = (int)ttSpan.TotalMinutes;
+
+                        var normalizedFrom = fromMinutes;
+                        var normalizedTo = toMinutes < fromMinutes ? toMinutes + 24 * 60 : toMinutes;
+
+                        var shiftFrom = startMinutes;
+                        var shiftTo = isOvernight ? endMinutes + 24 * 60 : endMinutes;
+
+                        // For overnight shifts, early-morning times (00:00-06:00) need +24h
+                        // to be comparable with the shift start (23:15 = 1395 minutes)
+                        if (isOvernight && normalizedFrom < startMinutes)
+                        {
+                            normalizedFrom += 24 * 60;
+                            normalizedTo += 24 * 60;
+                        }
+
+                        bool overlaps = normalizedFrom < shiftTo && normalizedTo > shiftFrom;
+
+                        Console.WriteLine($"[Downtime]   timeFrom={timeFromRaw}({normalizedFrom}m) timeTo={timeToRaw}({normalizedTo}m) shiftWindow={shiftFrom}-{shiftTo} overlaps={overlaps}");
+
+                        if (!overlaps) continue;
+
+                        var clampedFrom = Math.Max(normalizedFrom, shiftFrom);
+                        var clampedTo = Math.Min(normalizedTo, shiftTo);
+                        var durationMinutes = (double)(clampedTo - clampedFrom);
+
+                        if (durationMinutes <= 0) continue;
+
+                        // ── Bucket back to 0-1439 range for FormatTime ────────────────────
+                        int ToBucket(int minutes)
+                        {
+                            var normalized = minutes % (24 * 60);
+                            return (normalized / 5) * 5;
+                        }
+
+                        events.Add(new DowntimeEvent
+                        {
+                            SubmissionId = sub.Id,
+                            TimeFrom = timeFromRaw,
+                            TimeTo = timeToRaw,
+                            Cause = causeRaw,
+                            DurationMinutes = Math.Round(durationMinutes, 1),
+                            TimeFromBucket = FormatTime(ToBucket(normalizedFrom % (24 * 60))),
+                            TimeToBucket = FormatTime(ToBucket(normalizedTo % (24 * 60))),
+                            Date = submissionDateStr
+                        });
+
+                        Console.WriteLine($"[Downtime] Event: {timeFromRaw}→{timeToRaw} cause='{causeRaw}' duration={durationMinutes}m");
+                    }
+                }
+
+                // Console.WriteLine($"[Downtime] Returning {events.Count} events, total {events.Sum(e => ((dynamic)e).durationMinutes)}m");
+
+                return Ok(new
+                {
+                    events,
+                    totalDowntimeMinutes = Math.Round(events.Sum(e => e.DurationMinutes), 1)
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Downtime] ERROR: {ex.Message}\n{ex.StackTrace}");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
         private int ParseFormattedTimeToMinutes(string formattedTime)
         {
             // Example input: "11:55 PM" or "12:10 AM"
@@ -1045,6 +1409,18 @@ namespace productionLine.Server.Controllers
 
         [JsonPropertyName("id")]         // ✅ Match frontend casing
         public long? Id { get; set; }
+    }
+
+    public class DowntimeEvent
+    {
+        public long SubmissionId { get; set; }
+        public string TimeFrom { get; set; }
+        public string TimeTo { get; set; }
+        public string Cause { get; set; }
+        public double DurationMinutes { get; set; }
+        public string TimeFromBucket { get; set; }
+        public string TimeToBucket { get; set; }
+        public string Date { get; set; }
     }
 
 }

@@ -170,6 +170,9 @@ public class ShiftConfigDto
     [JsonPropertyName("breaks")]
     public List<ShiftBreak> Breaks { get; set; } = new List<ShiftBreak>();
 
+    [JsonPropertyName("downtimeConfig")]
+    public DowntimeConfig? DowntimeConfig { get; set; }
+
     [JsonPropertyName("modelNumber")]
     public string ModelNumber { get; set; }
     [JsonPropertyName("message")]
@@ -191,6 +194,15 @@ public class ShiftBreak
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
+}
+
+public class DowntimeConfig
+{
+    [JsonPropertyName("downtimeFormId")]
+    public int? DowntimeFormId { get; set; }
+    // Keys: "timeFrom", "timeTo", "date", "cause" → field ID values
+    [JsonPropertyName("fieldMap")]
+    public Dictionary<string, string> FieldMap { get; set; }
 }
 //public class CalculatedField
 //{

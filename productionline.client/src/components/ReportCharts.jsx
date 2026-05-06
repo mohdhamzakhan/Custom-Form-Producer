@@ -373,7 +373,8 @@ const ReportCharts = React.memo(({
     const [efficiency, setEfficiency] = useState(0);
     const [remainingParts, setRemainingParts] = useState(0);
 
-
+    const [downtimeEvents, setDowntimeEvents] = useState([]);
+    const [totalDowntime, setTotalDowntime] = useState(0);
 
     const LINE_COLORS = [
         '#3b82f6',  // blue
@@ -818,7 +819,48 @@ const ReportCharts = React.memo(({
             return 0;
         }
     };
+    const fetchDowntimeEvents = async (shiftConfig) => {
+        const dtCfg = shiftConfig?.downtimeConfig;
+        if (!dtCfg?.downtimeFormId || !dtCfg?.fieldMap?.timeFrom || !dtCfg?.fieldMap?.timeTo) {
+            setDowntimeEvents([]);
+            return;
+        }
 
+        try {
+            const parts = [
+                `selectedDate=${selectedDate || new Date().toISOString().split('T')[0]}`,
+                `startTime=${encodeURIComponent(shiftConfig.startTime)}`,
+                `endTime=${encodeURIComponent(shiftConfig.endTime)}`,
+                `downtimeFormId=${dtCfg.downtimeFormId}`,
+                `timeFromFieldId=${encodeURIComponent(dtCfg.fieldMap.timeFrom)}`,
+                `timeToFieldId=${encodeURIComponent(dtCfg.fieldMap.timeTo)}`,
+                `currentShift=${encodeURIComponent(shiftConfig.shift)}`,  // "A", "B" or "C"
+            ];
+
+            if (dtCfg.fieldMap.date)
+                parts.push(`dateFieldId=${encodeURIComponent(dtCfg.fieldMap.date)}`);
+            if (dtCfg.fieldMap.cause)
+                parts.push(`causeFieldId=${encodeURIComponent(dtCfg.fieldMap.cause)}`);
+            if (dtCfg.fieldMap.shift)
+                parts.push(`shiftFieldId=${encodeURIComponent(dtCfg.fieldMap.shift)}`);
+
+            const url = `${APP_CONSTANTS.API_BASE_URL}/api/ShiftProduction/downtime-events?${parts.join('&')}`;
+            console.log('[fetchDowntimeEvents] URL:', url);
+
+            const res = await fetch(url);
+            if (!res.ok) {
+                console.error('[fetchDowntimeEvents] HTTP', res.status);
+                return;
+            }
+
+            const data = await res.json();
+            console.log(`[fetchDowntimeEvents] ${data.events?.length} events, ${data.totalDowntimeMinutes}m`);
+            setDowntimeEvents(data.events || []);
+            setTotalDowntime(data.totalDowntimeMinutes || 0);
+        } catch (err) {
+            console.error('[fetchDowntimeEvents] error:', err);
+        }
+    };
 
 
     // Render different chart types
@@ -1605,11 +1647,13 @@ const ReportCharts = React.memo(({
                 if (activeShiftConfig && activeShiftConfig.startTime && activeShiftConfig.endTime) {
                     // ✅ Fetch immediately
                     fetchShiftData(activeShiftConfig);
+                    fetchDowntimeEvents(activeShiftConfig);
 
                     // ✅ Set up auto-refresh every 30 seconds
                     interval = setInterval(() => {
                         console.log('🔄 Auto-refresh triggered');
                         fetchShiftData(activeShiftConfig);
+                        fetchDowntimeEvents(activeShiftConfig);
                     }, 90000);
                 } else {
                     setShiftError('Invalid shift configuration - missing start/end times');
@@ -1982,6 +2026,32 @@ const ReportCharts = React.memo(({
                                                         );
                                                     }
                                                 }
+
+                                                // After the existing elapsed-time ReferenceArea push, add:
+
+                                                // Downtime event overlays
+                                                downtimeEvents.forEach((event, idx) => {
+                                                    if (!event.timeFromBucket || !event.timeToBucket) return;
+                                                    areas.push(
+                                                        <ReferenceArea
+                                                            key={`downtime-${idx}`}
+                                                            x1={event.timeFromBucket}
+                                                            x2={event.timeToBucket}
+                                                            fill="#FF0000"
+                                                            fillOpacity={0.35}
+                                                            ifOverflow="visible"
+                                                            label={{
+                                                                value: event.cause?.length > 12
+                                                                    ? event.cause.slice(0, 12) + '…'
+                                                                    : event.cause,
+                                                                position: "insideBottom",
+                                                                fill: isDarkMode ? "#fca5a5" : "#b91c1c",
+                                                                fontSize: isFullscreenMode ? 13 : 10,
+                                                                fontWeight: "bold"
+                                                            }}
+                                                        />
+                                                    );
+                                                });
 
                                                 return areas;
                                             })()}

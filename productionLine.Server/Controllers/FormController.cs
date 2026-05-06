@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Dapper;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using productionLine.Server.DTO;
@@ -325,7 +326,8 @@ namespace productionLine.Server.Controllers
                     Email = user.Email,
                     FormId = id,
                     Name = user.Name,
-                    Type = user.Type
+                    Type = user.Type,
+                    AccessLevel = user.AccessLevel
                 };
                 _context.FormAccess.Add(formAccess);
             }
@@ -420,7 +422,8 @@ namespace productionLine.Server.Controllers
                     Name = a.Name,
                     Email = a.Email,
                     Type = a.Type,
-                    Level = a.Level
+                    Level = a.Level,
+                    AccessLevel = a.AccessLevel
                 }).ToList() ?? new List<ApproverDto>()),
                 allowToAccess = (form.AllowedtoAccess?.Select((FormToAdd a) => new ApproverDto
                 {
@@ -995,6 +998,15 @@ namespace productionLine.Server.Controllers
             return Ok(res);
         }
 
+        [HttpPost("GetALLWithoutForm")]
+        public async Task<IActionResult> GetALLWithoutForm()
+        {
+
+            var res = await _context.Forms
+                .ToListAsync();
+            return Ok(res);
+        }
+
         [HttpGet("GetALLForms/{submissionId}")]
         public async Task<IActionResult> GetAllForms(int submissionId)
         {
@@ -1467,9 +1479,14 @@ namespace productionLine.Server.Controllers
                         f.Id,
                         f.Name,
                         f.FormLink,
+                        
                         f.CreatedBy,
                         f.CreatedAt,
                         f.LinkedFormId,
+                        AccessLevel = _context.FormAccess
+                            .Where(a => a.FormId == f.Id && a.Name.ToLower() == createdBy)
+                            .Select(a => a.AccessLevel)
+                            .FirstOrDefault(),
                         FieldCount = _context.FormFields.Count(ff => ff.FormId == f.Id),
                         ApproverCount = _context.FormApprovers.Count(fa => fa.FormId == f.Id)
                     })
@@ -1513,6 +1530,85 @@ namespace productionLine.Server.Controllers
             }
         }
 
+        [HttpGet("{formId}/last-submission")]
+        public async Task<IActionResult> GetLastSubmission(string formId)
+        {
+            if (string.IsNullOrWhiteSpace(formId))
+                return BadRequest(new { message = "formId is required." });
 
+            int formIdInt = Convert.ToInt32(formId);
+
+            // ── Query: find the newest submission for this form ──────────────
+            //
+            // Adjust the property names below to match your actual entity:
+            //   formSubmissions  → your DbSet name
+            //   s.FormId         → the FK column linking to the form
+            //   s.SubmittedAt    → the timestamp column  (try CreatedAt / Timestamp if different)
+            //   s.Status         → optional: filter to approved/submitted only
+            //
+            var lastSubmission = await _context.FormSubmissions
+                .AsNoTracking()
+                .Where(s => s.FormId == formIdInt)
+                // ── optional: only count approved rows (mirrors your report viewer) ──
+                // .Where(s => s.Status == "approved")
+                .OrderByDescending(s => s.SubmittedAt)
+                .Select(s => new
+                {
+                    s.SubmittedAt,          // ← rename if your column is different
+                    s.FormId
+                })
+                .FirstOrDefaultAsync();
+
+            if (lastSubmission == null)
+            {
+                return NotFound(new
+                {
+                    formId,
+                    message = "No submissions found for this form."
+                });
+            }
+
+            // ── Count total submissions (optional but useful for the UI) ─────
+            var totalCount = await _context.FormSubmissions
+                .AsNoTracking()
+                .CountAsync(s => s.FormId == formIdInt);
+
+            return Ok(new
+            {
+                formIdInt,
+                lastSubmittedAt = lastSubmission.SubmittedAt,   // ISO-8601 UTC
+                totalSubmissions = totalCount
+            });
+        }
+
+        [HttpGet("config")]
+        public async Task<IActionResult> GetLinesConfig()
+        {
+            try
+            {
+                var connection = _context.Database.GetDbConnection();
+
+                // 1. We cast ID to string so React can use it as a unique key
+                // 2. We check PLANT first, then SERVER_NAME if Plant is null
+                // 3. We ensure FORMID is returned as a string for the React API calls
+                var sql = @"
+            SELECT 
+                CAST(ID AS VARCHAR2(50)) AS id, 
+                COALESCE(SERVER_NAME, PLANT, N'Unnamed Line') AS plant, 
+                CAST(FORMID AS VARCHAR2(50)) AS formId
+            FROM FF_FTPSERVERENTITY 
+            WHERE FORMID IS NOT NULL 
+              AND IS_ACTIVE = 1";
+
+                var config = await connection.QueryAsync(sql);
+
+                return Ok(config);
+            }
+            catch (System.Exception ex)
+            {
+                // Log the exception here
+                return StatusCode(500, "Error retrieving line configuration from the database.");
+            }
+        }
     }
 }

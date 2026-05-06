@@ -17,6 +17,8 @@ import 'react-toastify/dist/ReactToastify.css';
 import AuditPlanner from "./components/Auditplanner";
 import Auditapproval from "./components/Auditapproval";
 import CompletePartialForm from "./components/CompletePartialForm";
+import ProductionMonitor from "./components/ProductionMonitor";
+import ProductionMonitorConfig from "./components/productionMonitorConfig";
 
 
 
@@ -112,6 +114,8 @@ function App() {
                     <Route path="/Audit" element={<AuditPlanner />} />
                     <Route path="/AuditApproval" element={<Auditapproval />} />
                     <Route path="/form/complete/:token" element={<CompletePartialForm />} />
+                    <Route path="/production-monitor" element={<ProductionMonitor />} />
+                    <Route path="/production-monitor-config" element={<ProductionMonitorConfig />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Router>

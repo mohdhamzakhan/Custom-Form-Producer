@@ -85,10 +85,10 @@ namespace productionLine.Server.Model
         public string CreatedBy { get; set; }
 
         [Column("CREATED_AT")]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         [Column("UPDATED_AT")]
-        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
         [MaxLength(100)]
         [Column("UPDATED_BY")]
@@ -117,7 +117,7 @@ namespace productionLine.Server.Model
         public EmailSchedule EmailSchedule { get; set; }
 
         [Column("SENT_AT")]
-        public DateTime SentAt { get; set; } = DateTime.UtcNow;
+        public DateTime SentAt { get; set; } = DateTime.Now;
 
         [MaxLength(20)]
         [Column("STATUS")]
@@ -210,6 +210,6 @@ namespace productionLine.Server.Model
         public long FileSizeBytes { get; set; }
 
         [Column("UPLOADED_AT")]
-        public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UploadedAt { get; set; } = DateTime.Now;
     }
 }

@@ -137,7 +137,7 @@ namespace productionLine.Server.Service
             var log = new EmailScheduleLog
             {
                 EmailScheduleId = scheduleId,
-                SentAt = DateTime.UtcNow,
+                SentAt = DateTime.Now,
                 RecipientsTotal = resolvedEmails.Count,
                 RecipientsJson = JsonSerializer.Serialize(resolvedEmails)
             };
@@ -151,11 +151,11 @@ namespace productionLine.Server.Service
                 log.RecipientsFailed = 0;
 
                 // Update schedule metadata
-                schedule.LastSentAt = DateTime.UtcNow;
+                schedule.LastSentAt = DateTime.Now;
                 schedule.TotalSentCount++;
 
                 // Compute next run for recurring jobs
-                var next = ComputeNextSend(schedule, DateTime.UtcNow);
+                var next = ComputeNextSend(schedule, DateTime.Now);
                 if (next.HasValue &&
                     (schedule.EndDateTime == null || next <= schedule.EndDateTime))
                 {
@@ -307,7 +307,7 @@ namespace productionLine.Server.Service
             switch (schedule.OccurrenceType.ToLower())
             {
                 case "once":
-                    var delay = schedule.StartDateTime - DateTime.UtcNow;
+                    var delay = schedule.StartDateTime - DateTime.Now;
                     if (delay > TimeSpan.Zero)
                         BackgroundJob.Schedule<IEmailSchedulerService>(
                             s => s.ExecuteScheduledSendAsync(schedule.Id), delay);
@@ -422,10 +422,10 @@ namespace productionLine.Server.Service
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<FormDbContext>();
 
-            schedule.CreatedAt = DateTime.UtcNow;
-            schedule.UpdatedAt = DateTime.UtcNow;
+            schedule.CreatedAt = DateTime.Now;
+            schedule.UpdatedAt = DateTime.Now;
             schedule.Status = "Active";
-            schedule.NextSendAt = ComputeNextSend(schedule, DateTime.UtcNow);
+            schedule.NextSendAt = ComputeNextSend(schedule, DateTime.Now);
 
             db.EmailSchedules.Add(schedule);
             await db.SaveChangesAsync();
@@ -438,8 +438,8 @@ namespace productionLine.Server.Service
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<FormDbContext>();
 
-            schedule.UpdatedAt = DateTime.UtcNow;
-            schedule.NextSendAt = ComputeNextSend(schedule, DateTime.UtcNow);
+            schedule.UpdatedAt = DateTime.Now;
+            schedule.NextSendAt = ComputeNextSend(schedule, DateTime.Now);
 
             db.EmailSchedules.Update(schedule);
             await db.SaveChangesAsync();
@@ -476,7 +476,7 @@ namespace productionLine.Server.Service
                 ?? throw new KeyNotFoundException($"Schedule {scheduleId} not found.");
 
             schedule.Status = status;
-            schedule.UpdatedAt = DateTime.UtcNow;
+            schedule.UpdatedAt = DateTime.Now;
             schedule.UpdatedBy = updatedBy;
             await db.SaveChangesAsync();
 
@@ -505,7 +505,7 @@ namespace productionLine.Server.Service
                 FilePath = fullPath,
                 ContentType = contentType,
                 FileSizeBytes = new FileInfo(fullPath).Length,
-                UploadedAt = DateTime.UtcNow
+                UploadedAt = DateTime.Now
             });
             await db.SaveChangesAsync();
             return fullPath;
@@ -531,7 +531,7 @@ namespace productionLine.Server.Service
             db.EmailScheduleLogs.Add(new EmailScheduleLog
             {
                 EmailScheduleId = scheduleId,
-                SentAt = DateTime.UtcNow,
+                SentAt = DateTime.Now,
                 Status = status,
                 RecipientsTotal = total,
                 RecipientsSucceeded = succeeded,

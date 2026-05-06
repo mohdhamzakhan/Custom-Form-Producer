@@ -45,7 +45,7 @@ namespace productionLine.Server.Service
                 ApproverEmail = dto.Approver.Email,
                 Status = dto.SubmitForApproval ? "Pending" : "Draft",
                 CreatedBy = createdBy,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.Now,
                 Entries = MapEntries(dto.Entries),
             };
 
@@ -81,7 +81,7 @@ namespace productionLine.Server.Service
             existing.ApproverName = dto.Approver.Name;
             existing.ApproverEmail = dto.Approver.Email;
             existing.UpdatedBy = updatedBy;
-            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedAt = DateTime.Now;
             existing.Status = dto.SubmitForApproval ? "Pending" : "Draft";
 
             db.AuditPlanEntries.RemoveRange(existing.Entries);
@@ -125,7 +125,7 @@ namespace productionLine.Server.Service
             db.AuditPlans.Attach(plan);
 
             plan.ApprovedBy = approvedBy;
-            plan.ApprovedAt = DateTime.UtcNow;
+            plan.ApprovedAt = DateTime.Now;
             plan.Status = approved ? "Active" : "Rejected";
             plan.ApprovalComments = comments;
 
@@ -152,7 +152,7 @@ namespace productionLine.Server.Service
 
             db.AuditPlanEntries.Attach(entry);
             entry.Status = "Completed";
-            entry.CompletedAt = DateTime.UtcNow;
+            entry.CompletedAt = DateTime.Now;
             entry.HangfireJobId = null;
             entry.ReminderJobId = null;
 
@@ -184,18 +184,18 @@ namespace productionLine.Server.Service
             var reminderAt = entry.ScheduledDate.AddDays(-entry.ReminderDaysBefore);
 
             // Main notification on the audit day
-            if (sendAt > DateTime.UtcNow)
+            if (sendAt > DateTime.Now)
             {
-                var delay = sendAt - DateTime.UtcNow;
+                var delay = sendAt - DateTime.Now;
                 var jobId = BackgroundJob.Schedule<AuditPlanService>(
                     svc => svc.SendAuditNotificationEmail(entry.Id), delay);
                 entry.HangfireJobId = jobId;
             }
 
             // Reminder N days before
-            if (reminderAt > DateTime.UtcNow)
+            if (reminderAt > DateTime.Now)
             {
-                var delay = reminderAt - DateTime.UtcNow;
+                var delay = reminderAt - DateTime.Now;
                 var remId = BackgroundJob.Schedule<AuditPlanService>(
                     svc => svc.SendAuditReminderEmail(entry.Id), delay);
                 entry.ReminderJobId = remId;

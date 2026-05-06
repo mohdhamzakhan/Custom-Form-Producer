@@ -137,6 +137,7 @@ export default function EnhancedReportViewer() {
             return { 'X-Username': u.username || '' };
         } catch { return {}; }
     };
+
     useEffect(() => {
         const fetchTemplate = async () => {
             try {

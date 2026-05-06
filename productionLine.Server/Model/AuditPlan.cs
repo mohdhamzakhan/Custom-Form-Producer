@@ -20,7 +20,7 @@
         public string? UpdatedBy { get; set; }
         public string? ApprovedBy { get; set; }
         public string? ApprovalComments { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime? UpdatedAt { get; set; }
         public DateTime? ApprovedAt { get; set; }
 

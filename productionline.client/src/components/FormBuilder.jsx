@@ -968,6 +968,7 @@ const FormBuilder = () => {
                     name: u.name,
                     email: u.email,
                     type: u.type,
+                    accessLevel: u.accessLevel || "Editor",
                     formId: baseForm.id
                 })),
                 allowedtoAccess: allowedtoAccess.map((u) => ({
@@ -1486,7 +1487,13 @@ const FormBuilder = () => {
             alert("This user/group has already been added.");
             return;
         }
-        setAllowedUsers([...allowedUsers, item]);
+        setAllowedUsers([
+            ...allowedUsers,
+            {
+                ...item,
+                accessLevel: "Editor"
+            }
+        ]);
         setAccessSearchTerm("");
         setAccessSearchResults([]);
     };
@@ -2298,31 +2305,46 @@ const FormBuilder = () => {
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
-                                            {allowedUsers.map((user, index) => (
-                                                <div
-                                                    key={user.id || index}
-                                                    className="flex items-center justify-between p-3 bg-white rounded border"
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        {user.type === 'user'
-                                                            ? <User size={18} className="text-blue-600" />
-                                                            : <Users size={18} className="text-blue-600" />
-                                                        }
-                                                        <div>
-                                                            <div className="font-medium">{user.name}</div>
-                                                            <div className="text-xs text-gray-500">
-                                                                {user.type === 'user' ? user.email : 'Group'}
+                                                {allowedUsers.map((user, index) => (
+                                                    <div
+                                                        key={user.id || index}
+                                                        className="flex items-center justify-between p-3 bg-white rounded border"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            {user.type === 'user'
+                                                                ? <User size={18} className="text-blue-600" />
+                                                                : <Users size={18} className="text-blue-600" />
+                                                            }
+                                                            <div>
+                                                                <div className="font-medium">{user.name}</div>
+                                                                <div className="text-xs text-gray-500">
+                                                                    {user.type === 'user' ? user.email : 'Group'}
+                                                                </div>
                                                             </div>
                                                         </div>
+                                                        <div className="flex items-center gap-3">
+                                                            <select
+                                                                value={user.accessLevel || "Editor"}
+                                                                onChange={(e) => {
+                                                                    const updated = [...allowedUsers];
+                                                                    updated[index].accessLevel = e.target.value;
+                                                                    setAllowedUsers(updated);
+                                                                }}
+                                                                className="border rounded px-2 py-1 text-sm"
+                                                            >
+                                                                <option value="Editor">Editor</option>
+                                                                <option value="Viewer">Viewer</option>
+                                                            </select>
+
+                                                            <button
+                                                                onClick={() => removeAllowedUser(index)}
+                                                                className="text-red-500 hover:text-red-600"
+                                                            >
+                                                                <X size={18} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <button
-                                                        onClick={() => removeAllowedUser(index)}
-                                                        className="text-red-500 hover:text-red-600"
-                                                    >
-                                                        <X size={18} />
-                                                    </button>
-                                                </div>
-                                            ))}
+                                                ))}
                                         </div>
                                     )}
                                 </div>

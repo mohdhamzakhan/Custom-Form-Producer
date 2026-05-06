@@ -24,6 +24,8 @@ namespace productionLine.Server.Model
         [ForeignKey("Form")]
         [Column("FORMID")]
         public int FormId { get; set; }
+        [Column("ACCESSLEVEL")]
+        public string AccessLevel { get; set; } = "Editor";
 
 
         [JsonIgnore] // 👈 Ignore backward navigation

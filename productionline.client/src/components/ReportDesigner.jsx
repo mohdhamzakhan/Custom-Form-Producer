@@ -149,6 +149,7 @@ const AdSearchComponent = ({ selectedUsers, setSelectedUsers }) => {
 
 export default function EnhancedReportDesigner() {
     const [forms, setForms] = useState([]);
+    const [allForms, setAllForms] = useState([]);
     const [selectedFormId, setSelectedFormId] = useState("");
     const [fields, setFields] = useState([]);
     const [selectedFields, setSelectedFields] = useState([]);
@@ -660,6 +661,26 @@ export default function EnhancedReportDesigner() {
 
     }, [user]);
 
+     useEffect(() => {
+        const fetchAllForms = async () => {
+            if (!user) return;
+            try {
+                const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLWithoutForm`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    }
+                });
+                const data = await response.json();
+                setAllForms(Array.isArray(data) ? data : []);
+            } catch (err) {
+                setError(err.message || "Failed to load forms");
+            }
+        };
+         fetchAllForms();
+
+    }, [user]);
+
 
     useEffect(() => {
         if (!selectedFormId) return;
@@ -939,21 +960,7 @@ export default function EnhancedReportDesigner() {
 
                 if (chart.type === 'shift') {
                     if (chart.shiftConfigs && chart.shiftConfigs.length > 0) {
-                        baseConfig.shiftConfig = {
-                            targetParts: chart.shiftConfigs[0].targetParts || 100,
-                            cycleTimeSeconds: chart.shiftConfigs[0].cycleTimeSeconds || 30,
-                            shift: chart.shiftConfigs[0].shift || 'A',
-                            startTime: chart.shiftConfigs[0].startTime,
-                            endTime: chart.shiftConfigs[0].endTime,
-                            name: chart.shiftConfigs[0].name,
-                            breaks: chart.shiftConfigs[0].breaks || [],
-                            modelNumber: chart.shiftConfigs[0].modelNumber || "",
-                            message: chart.shiftConfigs[0].message || "",
-                            showChart: chart.shiftConfigs[0].showChart || true,
-                            groupByField: chart.shiftConfigs[0].groupByField || true,
-                        };
-
-                        baseConfig.shiftConfigs = chart.shiftConfigs.map(config => ({
+                        const serializeShiftConfig = (config) => ({
                             shift: config.shift,
                             name: config.name,
                             startTime: config.startTime,
@@ -963,8 +970,21 @@ export default function EnhancedReportDesigner() {
                             modelNumber: config.modelNumber || "",
                             message: config.message || "",
                             groupByField: config.groupByField || "",
-                            breaks: config.breaks || []
-                        }));
+                            breaks: config.breaks || [],
+                            downtimeConfig: config.downtimeConfig?.downtimeFormId
+                                ? {
+                                    downtimeFormId: config.downtimeConfig.downtimeFormId,
+                                    fieldMap: config.downtimeConfig.fieldMap || {}
+                                }
+                                : null
+                        });
+
+                        baseConfig.shiftConfig = {
+                            ...serializeShiftConfig(chart.shiftConfigs[0]),
+                            showChart: chart.showChart !== false,
+                        };
+
+                        baseConfig.shiftConfigs = chart.shiftConfigs.map(serializeShiftConfig);
                     } else {
                         baseConfig.shiftConfig = {
                             targetParts: 100,
@@ -981,7 +1001,6 @@ export default function EnhancedReportDesigner() {
                         baseConfig.shiftConfigs = null;
                     }
                 }
-
                 return baseConfig;
             }),
             GroupingConfig: groupingConfig,
@@ -991,7 +1010,7 @@ export default function EnhancedReportDesigner() {
                 ? submittedViewers
                 : null
         };
-
+        console.log('📤 Saving payload ChartConfigs:', JSON.stringify(payload.ChartConfigs, null, 2));
         try {
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/Reports/save`, {
                 method: "POST",
@@ -1844,7 +1863,29 @@ export default function EnhancedReportDesigner() {
                     return field ? (field.originalLabel || field.label) : metricId;
                 })
             },
-            shiftConfigs: chart.type === 'shift' && chart.shiftConfigs ? chart.shiftConfigs : null
+            shiftConfigs: chart.type === 'shift' && chart.shiftConfigs
+                ? chart.shiftConfigs.map(config => {
+                    const { _availableFields, ...cleanConfig } = config;
+                    return {
+                        shift: cleanConfig.shift,
+                        name: cleanConfig.name,
+                        startTime: cleanConfig.startTime,
+                        endTime: cleanConfig.endTime,
+                        targetParts: cleanConfig.targetParts || 100,
+                        cycleTimeSeconds: cleanConfig.cycleTimeSeconds || 30,
+                        modelNumber: cleanConfig.modelNumber || "",
+                        message: cleanConfig.message || "",
+                        groupByField: cleanConfig.groupByField || "",
+                        breaks: cleanConfig.breaks || [],
+                        downtimeConfig: cleanConfig.downtimeConfig
+                            ? {
+                                downtimeFormId: cleanConfig.downtimeConfig.downtimeFormId || null,
+                                fieldMap: cleanConfig.downtimeConfig.fieldMap || {}
+                            }
+                            : null
+                    };
+                })
+                : null
         }));
 
         const payload = {
@@ -2569,6 +2610,7 @@ export default function EnhancedReportDesigner() {
                             fields={activeFields}
                             calculatedFields={calculatedFields}
                             data={submissionData}
+                            forms={allForms} 
                         />
 
                         <EnhancedGroupingEditor

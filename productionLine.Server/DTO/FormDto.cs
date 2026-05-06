@@ -24,6 +24,7 @@ namespace productionLine.Server.DTO
         public string Email { get; set; }
         public string Type { get; set; }
         public int Level { get; set; }
+        public string AccessLevel { get; set; } = "Editor";
     }
 
 
