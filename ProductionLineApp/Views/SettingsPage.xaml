@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="ProductionLineApp.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:controls="clr-namespace:ProductionLineApp.Controls"
+    Title="Settings">
+
+    <ScrollView>
+
+        <VerticalStackLayout Padding="16" Spacing="8">
+
+            <!-- ACCOUNT -->
+            <Label
+                Text="Account"
+                Style="{StaticResource SectionHeader}" />
+
+            <Frame Style="{StaticResource CardFrame}">
+
+                <VerticalStackLayout Spacing="12">
+
+                    <Grid ColumnDefinitions="Auto,*">
+
+                        <!-- Avatar -->
+                        <Frame
+                            Grid.Column="0"
+                            WidthRequest="48"
+                            HeightRequest="48"
+                            CornerRadius="24"
+                            BackgroundColor="{StaticResource Primary}"
+                            BorderColor="Transparent"
+                            HasShadow="False"
+                            Padding="0">
+
+                            <Label
+                                Text="👤"
+                                FontSize="22"
+                                HorizontalTextAlignment="Center"
+                                VerticalTextAlignment="Center" />
+
+                        </Frame>
+
+                        <!-- User Info -->
+                        <VerticalStackLayout
+                            Grid.Column="1"
+                            Margin="12,0,0,0"
+                            VerticalOptions="Center">
+
+                            <Label
+                                Text="Signed In"
+                                FontAttributes="Bold"
+                                TextColor="{StaticResource TextPrimary}" />
+
+                            <Label
+                                x:Name="EmailLabel"
+                                Text="Loading..."
+                                Style="{StaticResource CaptionText}" />
+
+                        </VerticalStackLayout>
+
+                    </Grid>
+
+                    <BoxView
+                        HeightRequest="1"
+                        Color="{StaticResource DividerColor}" />
+
+                    <!-- Logout -->
+                    <Button
+                        Text="Sign Out"
+                        Clicked="OnSignOutClicked"
+                        HeightRequest="44"
+                        CornerRadius="8"
+                        BackgroundColor="#FFEBEE"
+                        TextColor="#C62828" />
+
+                </VerticalStackLayout>
+
+            </Frame>
+
+            <!-- APP INFO -->
+            <Label
+                Text="App Information"
+                Style="{StaticResource SectionHeader}" />
+
+            <Frame Style="{StaticResource CardFrame}">
+
+                <VerticalStackLayout Spacing="12">
+
+                    <Grid ColumnDefinitions="*,Auto">
+
+                        <Label
+                            Grid.Column="0"
+                            Text="App Version"
+                            Style="{StaticResource BodyText}" />
+
+                        <Label
+                            Grid.Column="1"
+                            Text="1.0.0"
+                            Style="{StaticResource CaptionText}" />
+
+                    </Grid>
+
+                    <BoxView
+                        HeightRequest="1"
+                        Color="{StaticResource DividerColor}" />
+
+                    <Grid ColumnDefinitions="*,Auto">
+
+                        <Label
+                            Grid.Column="0"
+                            Text="Data Source"
+                            Style="{StaticResource BodyText}" />
+
+                        <Label
+                            Grid.Column="1"
+                            Text="Appwrite Cloud"
+                            Style="{StaticResource CaptionText}" />
+
+                    </Grid>
+
+                    <BoxView
+                        HeightRequest="1"
+                        Color="{StaticResource DividerColor}" />
+
+                    <Grid ColumnDefinitions="*,Auto">
+
+                        <Label
+                            Grid.Column="0"
+                            Text="Push Platform"
+                            Style="{StaticResource BodyText}" />
+
+                        <Label
+                            Grid.Column="1"
+                            Text="Appwrite Native"
+                            Style="{StaticResource CaptionText}" />
+
+                    </Grid>
+
+                </VerticalStackLayout>
+
+            </Frame>
+
+            <!-- STATUS LEGEND -->
+            <Label
+                Text="Status Legend"
+                Style="{StaticResource SectionHeader}" />
+
+            <Frame Style="{StaticResource CardFrame}">
+
+                <VerticalStackLayout Spacing="10">
+
+                    <controls:LegendRow
+                        Color="#4CAF50"
+                        Title="Sent"
+                        Description="Push notification delivered successfully" />
+
+                    <BoxView
+                        HeightRequest="1"
+                        Color="{StaticResource DividerColor}" />
+
+                    <controls:LegendRow
+                        Color="#FF9800"
+                        Title="Suppressed"
+                        Description="Alert was silenced (break or quiet hours)" />
+
+                    <BoxView
+                        HeightRequest="1"
+                        Color="{StaticResource DividerColor}" />
+
+                    <controls:LegendRow
+                        Color="#F44336"
+                        Title="Failed"
+                        Description="Delivery error occurred" />
+
+                </VerticalStackLayout>
+
+            </Frame>
+
+        </VerticalStackLayout>
+
+    </ScrollView>
+
+</ContentPage>

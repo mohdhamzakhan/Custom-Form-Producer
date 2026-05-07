@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="ProductionLineApp.Views.NotificationLogsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:ProductionLineApp.Models"
+    Title="Alert Logs">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="↻" Command="{Binding LoadCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Filter Bar -->
+        <Frame
+            Grid.Row="0"
+            CornerRadius="0"
+            Padding="12,8"
+            BackgroundColor="{StaticResource Surface}"
+            BorderColor="{StaticResource DividerColor}"
+            HasShadow="False"
+            Margin="0">
+
+            <StackLayout Orientation="Horizontal" Spacing="8">
+                <Label Text="Status:" VerticalOptions="Center" FontSize="13" TextColor="{StaticResource TextSecondary}" />
+                <Picker
+                    x:Name="StatusPicker"
+                    ItemsSource="{Binding StatusFilters}"
+                    SelectedItem="{Binding SelectedStatus, Mode=TwoWay}"
+                    HorizontalOptions="FillAndExpand"
+                    VerticalOptions="Center"
+                    FontSize="14"
+                    SelectedIndexChanged="OnFilterChanged" />
+            </StackLayout>
+
+        </Frame>
+
+        <!-- Logs List -->
+        <RefreshView
+            Grid.Row="1"
+            Command="{Binding LoadCommand}"
+            IsRefreshing="{Binding IsLoading}">
+
+            <CollectionView
+                x:Name="LogsCollection"
+                ItemsSource="{Binding Logs}"
+                SelectionMode="Single"
+                SelectionChanged="OnLogSelected"
+                RemainingItemsThreshold="3"
+                RemainingItemsThresholdReachedCommand="{Binding LoadMoreCommand}">
+
+                <!-- Header: total count -->
+                <CollectionView.Header>
+                    <VerticalStackLayout Padding="16,12,16,4">
+                        <Label FontSize="13" TextColor="{StaticResource TextSecondary}">
+                            <Label.FormattedText>
+                                <FormattedString>
+                                    <Span Text="{Binding TotalCount}" FontAttributes="Bold" TextColor="{StaticResource Primary}" />
+                                    <Span Text=" total alerts" />
+                                </FormattedString>
+                            </Label.FormattedText>
+                        </Label>
+
+                        <!-- Error -->
+                        <Frame
+                            Padding="12"
+                            CornerRadius="8"
+                            BackgroundColor="#FFEBEE"
+                            BorderColor="#FFCDD2"
+                            HasShadow="False"
+                            IsVisible="{Binding HasError}"
+                            Margin="0,4">
+                            <Label Text="{Binding ErrorMessage}" TextColor="#C62828" FontSize="13" />
+                        </Frame>
+                    </VerticalStackLayout>
+                </CollectionView.Header>
+
+                <!-- Item Template -->
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:NotificationLog">
+                        <SwipeView>
+                            <SwipeView.LeftItems>
+                                <SwipeItems>
+                                    <SwipeItem
+                                        Text="Details"
+                                        BackgroundColor="{StaticResource Primary}"
+                                        IconImageSource="info.png" />
+                                </SwipeItems>
+                            </SwipeView.LeftItems>
+
+                            <Frame Style="{StaticResource CardFrame}" Margin="16,4">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+
+                                    <!-- Left accent bar -->
+                                    <BoxView
+                                        Grid.Column="0"
+                                        WidthRequest="4"
+                                        HeightRequest="60"
+                                        CornerRadius="2"
+                                        Color="{Binding StatusColor}"
+                                        VerticalOptions="Center" />
+
+                                    <!-- Content -->
+                                    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+
+                                        <!-- Row 0: Plant + Time -->
+                                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                                            <Label
+                                                Grid.Column="0"
+                                                Text="{Binding LinePlant}"
+                                                FontAttributes="Bold"
+                                                FontSize="15"
+                                                TextColor="{StaticResource TextPrimary}"
+                                                LineBreakMode="TailTruncation" />
+                                            <Label
+                                                Grid.Column="1"
+                                                Text="{Binding FormattedTime}"
+                                                Style="{StaticResource CaptionText}" />
+                                        </Grid>
+
+                                        <!-- Row 1: Recipient + Status badge -->
+                                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                                            <Label
+                                                Grid.Column="0"
+                                                Text="{Binding RecipientName}"
+                                                Style="{StaticResource CaptionText}"
+                                                LineBreakMode="TailTruncation" />
+                                            <Frame
+                                                Grid.Column="1"
+                                                Style="{StaticResource StatusBadge}"
+                                                BackgroundColor="{Binding StatusColor}"
+                                                Padding="8,2">
+                                                <Label
+                                                    Text="{Binding Status}"
+                                                    TextColor="White"
+                                                    FontSize="11"
+                                                    FontAttributes="Bold" />
+                                            </Frame>
+                                        </Grid>
+
+                                        <!-- Row 2: Platform + Error if any -->
+                                        <Label
+                                            Grid.Row="2"
+                                            Text="{Binding Platform}"
+                                            Style="{StaticResource CaptionText}" />
+
+                                    </Grid>
+
+                                </Grid>
+                            </Frame>
+                        </SwipeView>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+
+                <!-- Footer: Load More / spinner -->
+                <CollectionView.Footer>
+                    <VerticalStackLayout Padding="16" Spacing="8">
+                        <ActivityIndicator
+                            IsRunning="{Binding IsLoadingMore}"
+                            IsVisible="{Binding IsLoadingMore}"
+                            Color="{StaticResource Primary}"
+                            HorizontalOptions="Center" />
+                        <Button
+                            Text="Load More"
+                            Command="{Binding LoadMoreCommand}"
+                            Style="{StaticResource OutlineButton}"
+                            IsVisible="{Binding CanLoadMore}"
+                            Margin="0,0,0,24" />
+                    </VerticalStackLayout>
+                </CollectionView.Footer>
+
+                <!-- Empty State -->
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="12" Margin="32">
+                        <Label Text="🔕" FontSize="56" HorizontalTextAlignment="Center" />
+                        <Label Text="No alerts found" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" TextColor="{StaticResource TextPrimary}" />
+                        <Label Text="No notification logs match the current filter." HorizontalTextAlignment="Center" TextColor="{StaticResource TextSecondary}" FontSize="14" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+
+            </CollectionView>
+        </RefreshView>
+
+    </Grid>
+</ContentPage>

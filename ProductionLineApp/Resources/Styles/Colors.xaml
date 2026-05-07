@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- Brand -->
+    <Color x:Key="Primary">#1565C0</Color>
+    <Color x:Key="PrimaryDark">#003c8f</Color>
+    <Color x:Key="PrimaryLight">#5e92f3</Color>
+    <Color x:Key="Accent">#FF6F00</Color>
+
+    <!-- Status colours -->
+    <Color x:Key="StatusSent">#4CAF50</Color>
+    <Color x:Key="StatusSuppressed">#FF9800</Color>
+    <Color x:Key="StatusFailed">#F44336</Color>
+    <Color x:Key="StatusUnknown">#9E9E9E</Color>
+
+    <!-- Surfaces -->
+    <Color x:Key="Surface">#FFFFFF</Color>
+    <Color x:Key="SurfaceVariant">#F5F5F5</Color>
+    <Color x:Key="CardBackground">#FFFFFF</Color>
+    <Color x:Key="DividerColor">#E0E0E0</Color>
+
+    <!-- Text -->
+    <Color x:Key="TextPrimary">#212121</Color>
+    <Color x:Key="TextSecondary">#757575</Color>
+    <Color x:Key="TextOnPrimary">#FFFFFF</Color>
+
+    <!-- Dark mode overrides (applied automatically by MAUI) -->
+    <Color x:Key="PageBackgroundColor">#F5F7FA</Color>
+
+</ResourceDictionary>

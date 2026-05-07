@@ -370,7 +370,7 @@ namespace productionLine.Server.Model
                 e.Property(x => x.RecipientId).HasColumnName("RECIPIENT_ID")
                     .HasConversion(v => v.ToString(), v => Guid.Parse(v));
                 e.Property(x => x.RecipientName).HasColumnName("RECIPIENT_NAME").HasMaxLength(200);
-                e.Property(x => x.Platform).HasColumnName("PLATFORM").HasMaxLength(10);
+                e.Property(x => x.Platform).HasColumnName("PLATFORM").HasMaxLength(20);
                 e.Property(x => x.Status).HasColumnName("STATUS").HasMaxLength(20);
                 e.Property(x => x.SuppressReason).HasColumnName("SUPPRESS_REASON").HasMaxLength(100);
                 e.Property(x => x.SentAt).HasColumnName("SENT_AT");

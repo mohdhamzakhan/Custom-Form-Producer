@@ -332,7 +332,7 @@ namespace productionLine.Server.Model
         public string RecipientName { get; set; } = string.Empty;
 
         /// <summary>FCM or APNs.</summary>
-        [MaxLength(10)]
+        [MaxLength(20)]
         [Column("PLATFORM")]
         public string Platform { get; set; } = string.Empty;
 

@@ -1,4 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Appwrite;
+using Appwrite.Services;
+using Microsoft.EntityFrameworkCore;
 using productionLine.Server.Model;
 using System.Text.Json;
 
@@ -8,33 +10,55 @@ namespace productionLine.Server.Services
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<ProductionMonitorWorker> _logger;
-
-        // Anti-spam dictionary to remember when we last alerted someone for a line
         private readonly Dictionary<string, DateTime> _lastAlertSent = new();
+
+        // Appwrite Services
+        private readonly Client _appwriteClient;
+        private readonly Users _appwriteUsers;
+        private readonly Messaging _appwriteMessaging;
+        private readonly Databases _appwriteDatabases;
+        private readonly TablesDB _tablesDB;
+
+
+
+        // Configuration - Replace with your actual Appwrite details
+        private const string AppwriteEndpoint = "https://fra.cloud.appwrite.io/v1";
+        private const string AppwriteProjectId = "69fad71700047614a4fe";
+        private const string AppwriteApiKey = "standard_941048efcab14c1972acbb5fee8053601c035956d9e3290b83a8db986559203ee0b72d740a254dba24ea13d21caef3f01cec5e11c120383097a9209ec644dcd6bfd248ed5f4b62064c18333dafbf9ea306895d35ea406bc4ef5dd32eef72b8c211fa0493dcd9e02d006c4365b8e561af715655b28cf55766d197c4205bd7e3d1"; // Needs users.read, messages.write, documents.write
+        private const string AppwriteDatabaseId = "69fad726001482a22c65";
+        private const string AppwriteCollectionId = "notification_logs";
 
         public ProductionMonitorWorker(IServiceScopeFactory scopeFactory, ILogger<ProductionMonitorWorker> logger)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
+
+            _appwriteClient = new Client()
+                .SetEndpoint(AppwriteEndpoint)
+                .SetProject(AppwriteProjectId)
+                .SetKey(AppwriteApiKey);
+
+            _appwriteUsers = new Users(_appwriteClient);
+            _appwriteMessaging = new Messaging(_appwriteClient);
+            _appwriteDatabases = new Databases(_appwriteClient);
+            _tablesDB = new TablesDB(_appwriteClient);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Production Monitor Worker started.");
+            _logger.LogInformation("Appwrite Production Monitor Worker started.");
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
                     await ProcessLineStatusesAsync(stoppingToken);
-                    _logger.LogInformation("Started the background Service");
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error occurred during background monitoring.");
                 }
 
-                // Wait 1 minute before checking again
                 await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             }
         }
@@ -44,134 +68,174 @@ namespace productionLine.Server.Services
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<FormDbContext>();
 
-            // 1. Fetch Global Configs
             var shifts = await db.ShiftConfigs.AsNoTracking().ToListAsync(cancellationToken);
             var quietHours = await db.QuietHoursConfigs.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
             var recipients = await db.RecipientConfigs.AsNoTracking().Where(r => r.Enabled).ToListAsync(cancellationToken);
-             var lines = await db.LineConfigs.AsNoTracking().ToListAsync(cancellationToken);
+            var lines = await db.LineConfigs.AsNoTracking().ToListAsync(cancellationToken);
 
-            // 2. Check Global Suppression (Breaks & Quiet Hours)
             var (inBreak, breakName) = CheckBreak(shifts);
             bool inQuietHours = CheckQuietHours(quietHours);
             bool isSuppressedGlobally = (inBreak && quietHours?.SkipBreaks == true) || inQuietHours;
-            string suppressReason = inQuietHours ? "QuietHours" : (inBreak ? breakName : null);
-
-            var currentShiftKey = CurrentShiftKey(shifts);
+            string? suppressReason = inQuietHours ? "QuietHours" : (inBreak ? breakName : null);
 
             foreach (var line in lines)
             {
-                // 3. Get the Last Submission Age for this Line
-                // Replace this with your actual logic/query to get the last submission time from your dynamic forms tables
-                DateTime? lastSubmissionTime = await GetLastSubmissionTimeAsync(db, line.FormId);
+                // TODO: Replace with your actual database query to find the last form submission time
+                DateTime? lastSubmissionTime = db.FormSubmissions.Where(f=>f.FormId.ToString() == line.FormId).OrderByDescending(f => f.SubmittedAt).Select(f => (DateTime?)f.SubmittedAt).FirstOrDefault();
 
                 if (!lastSubmissionTime.HasValue) continue;
 
                 var ageMinutes = (DateTime.Now - lastSubmissionTime.Value).TotalMinutes;
 
-                // 4. Identify the "Respected Persons" (Personnel currently on duty for this line)
-                var onDutyEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                var activeEngineers = line.Engineers.Where(e => string.IsNullOrEmpty(e.Shift) || e.Shift == currentShiftKey);
-                var activeSupervisors = line.Supervisors.Where(s => string.IsNullOrEmpty(s.Shift) || s.Shift == currentShiftKey);
-
-                foreach (var p in activeEngineers.Concat(activeSupervisors).Where(p => !string.IsNullOrWhiteSpace(p.Email)))
-                {
-                    onDutyEmails.Add(p.Email);
-                }
-
-                // 5. Evaluate Recipients mapped to this line
                 foreach (var recipient in recipients)
                 {
-                    // Check if recipient wants alerts for this line, AND if they are the on-duty person (by email match)
-                    bool mappedToLine = !recipient.LineIds.Any() || recipient.LineIds.Contains(line.FormId.ToString());
+                    // Check if this recipient is mapped to this line using FormId
+                    bool mappedToLine = recipient.LineIds == null || !recipient.LineIds.Any() || recipient.LineIds.Contains(line.FormId);
 
                     if (!mappedToLine) continue;
 
-                    // 6. Check if line is DOWN based on THIS recipient's delay threshold
                     if (ageMinutes >= recipient.DelayMin)
                     {
                         string alertKey = $"{line.Id}_{recipient.Id}";
 
-                        // Prevent spam: Only send once every 30 minutes per incident
+                        // Cooldown filter: Don't spam notifications
                         if (_lastAlertSent.TryGetValue(alertKey, out DateTime lastSent) && (DateTime.Now - lastSent).TotalMinutes < 30)
-                        {
                             continue;
-                        }
 
-                        var logEntry = new NotificationLog
-                        {
-                            LineId = line.Id.ToString(),
-                            LinePlant = line.Plant,
-                            RecipientId = recipient.Id,
-                            RecipientName = recipient.Name,
-                            Platform = recipient.Android && recipient.Ios ? "Both" : (recipient.Android ? "Android" : "iOS"),
-                            SentAt = DateTime.Now
-                        };
+                        string status = "Sent";
+                        string errorMsg = "";
 
                         if (isSuppressedGlobally)
                         {
-                            logEntry.Status = "Suppressed";
-                            logEntry.SuppressReason = suppressReason;
+                            status = "Suppressed";
                         }
                         else
                         {
-                            // 🚀 FIRE THE PUSH NOTIFICATION
-                            bool success = await SendPushNotificationAsync(recipient, line.Plant, ageMinutes);
+                            // 1. Send Push via Appwrite Native Messaging
+                            try
+                            {
+                                string? appwriteUserId = await GetAppwriteUserIdByEmailAsync(recipient.Email);
 
-                            logEntry.Status = success ? "Sent" : "Failed";
-                            if (!success) logEntry.ErrorMsg = "FCM/APNs Gateway rejected the push.";
+                                if (appwriteUserId != null)
+                                {
+                                    await _appwriteMessaging.CreatePush(
+                                        messageId: ID.Unique(),
+                                        title: $"🚨 Line Down: {line.Plant}",
+                                        body: $"No data received for {Math.Round(ageMinutes)} minutes.",
+                                        users: new List<string> { appwriteUserId }
+                                    );
 
-                            // Mark as alerted
-                            _lastAlertSent[alertKey] = DateTime.Now;
+                                    _lastAlertSent[alertKey] = DateTime.Now;
+                                }
+                                else
+                                {
+                                    status = "Failed";
+                                    errorMsg = "User email not found in Appwrite Auth.";
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                status = "Failed";
+                                errorMsg = $"Appwrite Push Error: {ex.Message}";
+                                _logger.LogError($"Push failed for {recipient.Name}: {ex.Message}");
+                            }
                         }
 
-                        db.NotificationLogs.Add(logEntry);
+                        // 2. Dual-Logging Phase
+
+                        // A. Log to Local Oracle Database
+                        try
+                        {
+                            var localLogEntry = new NotificationLog
+                            {
+                                LineId = line.Id.ToString(),
+                                LinePlant = line.Plant,
+                                RecipientId = recipient.Id,
+                                RecipientName = recipient.Name,
+                                Platform = "Appwrite Native",
+                                Status = status,
+                                SuppressReason = suppressReason,
+                                ErrorMsg = errorMsg,
+                                SentAt = DateTime.Now
+                            };
+
+                            db.NotificationLogs.Add(localLogEntry);
+                            await db.SaveChangesAsync(cancellationToken);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError($"Failed to write to local Oracle DB: {ex.Message}");
+                        }
+
+                        // B. Log to Cloud Appwrite Database
+                        await LogToAppwriteDatabaseAsync(
+                            line.Id.ToString(),
+                            line.Plant,
+                            recipient.Name,
+                            recipient.Email,
+                            "Appwrite Native",
+                            status,
+                            suppressReason,
+                            errorMsg
+                        );
                     }
                 }
             }
-
-            await db.SaveChangesAsync(cancellationToken);
         }
 
-        // --- Utility Methods ---
+        // --- Appwrite Helper Methods ---
 
-        private async Task<DateTime?> GetLastSubmissionTimeAsync(FormDbContext db, string formId)
+        private async Task<string?> GetAppwriteUserIdByEmailAsync(string? email)
         {
-            // TODO: Write your EF query here that checks your specific form submission table 
-            // e.g., return await db.Submissions.Where(s => s.FormId == formId).MaxAsync(s => s.SubmittedAt);
-            return DateTime.Now.AddMinutes(-10); // Mocked for demonstration
-        }
-
-
-
-        private async Task<bool> SendPushNotificationAsync(RecipientConfig recipient, string plantName, double downMinutes)
-        {
-            if (string.IsNullOrWhiteSpace(recipient.DeviceTokensJson) || recipient.DeviceTokens.Count == 0)
-                return false;
-
-            string title = $"🚨 Line Down: {plantName}";
-            string body = $"No data received for {Math.Round(downMinutes)} minutes.";
+            if (string.IsNullOrWhiteSpace(email)) return null;
 
             try
             {
-                // TODO: Integrate FirebaseAdmin (FCM) or Apple Push here.
-                // foreach (var token in recipient.DeviceTokens) { FirebaseMessaging.DefaultInstance.SendAsync(...) }
-                _logger.LogInformation($"Sending Push to {recipient.Name}: {title} - {body}");
-                return true;
+                var result = await _appwriteUsers.List(queries: new List<string> { Query.Equal("email", email) });
+                if (result.Total > 0)
+                {
+                    return result.Users[0].Id;
+                }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return false;
+                _logger.LogError($"Failed to lookup user by email {email}: {ex.Message}");
+            }
+            return null;
+        }
+
+        private async Task LogToAppwriteDatabaseAsync(string lineId, string plantName, string recipientName, string recipientEmail, string platform, string status, string? suppressReason, string? errorMsg)
+        {
+            try
+            {
+                var logData = new Dictionary<string, object>
+                {
+                    { "lineId", lineId },
+                    { "linePlant", plantName ?? "Unknown" },
+                    { "recipientName", recipientName ?? "Unknown" },
+                    { "recipientEmail", recipientEmail ?? "No Email" },
+                    { "platform", platform },
+                    { "status", status },
+                    { "sentAt", DateTime.Now.ToString("o") }
+                };
+
+                if (!string.IsNullOrEmpty(suppressReason)) logData.Add("suppressReason", suppressReason);
+                if (!string.IsNullOrEmpty(errorMsg)) logData.Add("errorMsg", errorMsg);
+
+                await _tablesDB.CreateRow(
+                    databaseId: AppwriteDatabaseId,
+                    tableId: AppwriteCollectionId,
+                    rowId: ID.Unique(),
+                    data: logData
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Failed to write log to Appwrite DB: {ex.Message}");
             }
         }
 
-        // Duplicated from your controller for background use
-        private string CurrentShiftKey(List<ShiftConfig> shifts)
-        {
-            var now = DateTime.Now.Hour * 60 + DateTime.Now.Minute;
-            return shifts.FirstOrDefault(s => IsTimeInRange(now, TimeToMinutes(s.Start), TimeToMinutes(s.End)))?.Key ?? "";
-        }
-
+        // --- Time & Suppression Helpers ---
         private (bool, string?) CheckBreak(List<ShiftConfig> shifts)
         {
             var now = DateTime.Now.Hour * 60 + DateTime.Now.Minute;

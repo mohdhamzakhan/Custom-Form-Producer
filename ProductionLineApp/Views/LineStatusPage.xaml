@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="ProductionLineApp.Views.LineStatusPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:ProductionLineApp.ViewModels"
+    xmlns:models="clr-namespace:ProductionLineApp.Models"
+    Title="Line Status">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="↻" Command="{Binding LoadCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsLoading}">
+        <CollectionView ItemsSource="{Binding LineStatuses}" SelectionMode="None">
+
+            <CollectionView.Header>
+                <VerticalStackLayout Padding="16,12">
+                    <Label Text="Production Lines" Style="{StaticResource PageTitle}" />
+                    <Label Text="Live status from notification history" Style="{StaticResource CaptionText}" />
+                </VerticalStackLayout>
+            </CollectionView.Header>
+
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:LineStatus">
+                    <Frame Style="{StaticResource CardFrame}" Margin="16,4">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+
+                            <!-- Status indicator circle -->
+                            <Frame
+                                Grid.Column="0"
+                                WidthRequest="48"
+                                HeightRequest="48"
+                                CornerRadius="24"
+                                BackgroundColor="{Binding StatusColor}"
+                                HasShadow="False"
+                                BorderColor="Transparent"
+                                Padding="0"
+                                VerticalOptions="Center">
+                                <Label
+                                    Text="🏭"
+                                    FontSize="20"
+                                    HorizontalTextAlignment="Center"
+                                    VerticalTextAlignment="Center" />
+                            </Frame>
+
+                            <!-- Line info -->
+                            <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="4">
+                                <Label Text="{Binding PlantName}" FontAttributes="Bold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                <Label Text="{Binding LineId}" Style="{StaticResource CaptionText}" />
+                                <Label Text="{Binding MinutesSinceActivity, StringFormat='Last activity: {0}'}" Style="{StaticResource CaptionText}" />
+                            </VerticalStackLayout>
+
+                            <!-- Alert count badge -->
+                            <VerticalStackLayout Grid.Column="2" HorizontalOptions="End" VerticalOptions="Center" Spacing="4">
+                                <Frame
+                                    Style="{StaticResource StatusBadge}"
+                                    BackgroundColor="{Binding StatusColor}"
+                                    Padding="10,4">
+                                    <Label Text="{Binding LastStatus}" TextColor="White" FontSize="12" FontAttributes="Bold" />
+                                </Frame>
+                                <Label
+                                    Text="{Binding AlertCount, StringFormat='{0} alerts'}"
+                                    Style="{StaticResource CaptionText}"
+                                    HorizontalTextAlignment="End" />
+                            </VerticalStackLayout>
+
+                        </Grid>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+
+            <CollectionView.EmptyView>
+                <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="12" Margin="32,64">
+                    <Label Text="🏭" FontSize="56" HorizontalTextAlignment="Center" />
+                    <Label Text="No lines found" FontSize="18" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+                    <Label Text="Pull to refresh or check your connection." HorizontalTextAlignment="Center" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </CollectionView.EmptyView>
+
+        </CollectionView>
+    </RefreshView>
+
+</ContentPage>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="ProductionLineApp.Controls.LegendRow"
+    x:Name="This"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <HorizontalStackLayout Spacing="12">
+
+        <!-- Color Dot -->
+        <Frame
+            WidthRequest="14"
+            HeightRequest="14"
+            CornerRadius="7"
+            Padding="0"
+            HasShadow="False"
+            BorderColor="Transparent"
+            VerticalOptions="Start"
+            BackgroundColor="{Binding Source={x:Reference This}, Path=Color}" />
+
+        <!-- Text -->
+        <VerticalStackLayout Spacing="2">
+
+            <Label
+                FontSize="15"
+                FontAttributes="Bold"
+                TextColor="{StaticResource TextPrimary}"
+                Text="{Binding Source={x:Reference This}, Path=Title}" />
+
+            <Label
+                FontSize="13"
+                TextColor="{StaticResource TextSecondary}"
+                Text="{Binding Source={x:Reference This}, Path=Description}" />
+
+        </VerticalStackLayout>
+
+    </HorizontalStackLayout>
+
+</ContentView>

@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="ProductionLineApp.Views.DashboardPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:ProductionLineApp.ViewModels"
+    xmlns:models="clr-namespace:ProductionLineApp.Models"
+    Title="Dashboard">
+
+    <RefreshView
+        Command="{Binding LoadCommand}"
+        IsRefreshing="{Binding IsLoading}">
+
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="4">
+
+                <!-- Header -->
+                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                    <VerticalStackLayout Grid.Column="0">
+                        <Label Text="Production Monitor" Style="{StaticResource PageTitle}" />
+                        <Label Text="{Binding LastRefreshed}" Style="{StaticResource CaptionText}" />
+                    </VerticalStackLayout>
+                    <Button
+                        Grid.Column="1"
+                        Text="↻ Refresh"
+                        Command="{Binding LoadCommand}"
+                        Style="{StaticResource OutlineButton}"
+                        VerticalOptions="Center"
+                        Padding="12,8" />
+                </Grid>
+
+                <!-- Error Banner -->
+                <Frame
+                    Padding="12"
+                    CornerRadius="8"
+                    BackgroundColor="#FFEBEE"
+                    BorderColor="#FFCDD2"
+                    HasShadow="False"
+                    IsVisible="{Binding HasError}"
+                    Margin="0,8,0,0">
+                    <Label Text="{Binding ErrorMessage}" TextColor="#C62828" FontSize="13" />
+                </Frame>
+
+                <!-- ── Stats Row ─────────────────────────────────────── -->
+                <Label Text="Today's Overview" Style="{StaticResource SectionHeader}" />
+
+                <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto" ColumnSpacing="8">
+
+                    <!-- Total -->
+                    <Frame Grid.Column="0" Style="{StaticResource StatCard}">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding TotalAlerts}" Style="{StaticResource StatNumber}" TextColor="{StaticResource Primary}" />
+                            <Label Text="Total" Style="{StaticResource StatLabel}" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Sent -->
+                    <Frame Grid.Column="1" Style="{StaticResource StatCard}">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding SentAlerts}" Style="{StaticResource StatNumber}" TextColor="{StaticResource StatusSent}" />
+                            <Label Text="Sent" Style="{StaticResource StatLabel}" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Suppressed -->
+                    <Frame Grid.Column="2" Style="{StaticResource StatCard}">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding SuppressedAlerts}" Style="{StaticResource StatNumber}" TextColor="{StaticResource StatusSuppressed}" />
+                            <Label Text="Paused" Style="{StaticResource StatLabel}" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Failed -->
+                    <Frame Grid.Column="3" Style="{StaticResource StatCard}">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding FailedAlerts}" Style="{StaticResource StatNumber}" TextColor="{StaticResource StatusFailed}" />
+                            <Label Text="Failed" Style="{StaticResource StatLabel}" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                </Grid>
+
+                <!-- Active Lines count -->
+                <Frame Style="{StaticResource CardFrame}" Margin="0,8">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Label Grid.Column="0" Text="🏭" FontSize="28" VerticalOptions="Center" Margin="0,0,12,0" />
+                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                            <Label Text="Active Production Lines" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                            <Label Text="Lines with recorded activity" Style="{StaticResource CaptionText}" />
+                        </VerticalStackLayout>
+                        <Label
+                            Grid.Column="2"
+                            Text="{Binding ActiveLines}"
+                            FontSize="32"
+                            FontAttributes="Bold"
+                            TextColor="{StaticResource Primary}"
+                            VerticalOptions="Center" />
+                    </Grid>
+                </Frame>
+
+                <!-- ── Recent Alerts ──────────────────────────────────── -->
+                <Label Text="Recent Alerts" Style="{StaticResource SectionHeader}" />
+
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding RecentLogs}" Spacing="8">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:NotificationLog">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,2">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+
+                                    <!-- Status dot -->
+                                    <BoxView
+                                        Grid.Column="0"
+                                        WidthRequest="10"
+                                        HeightRequest="10"
+                                        CornerRadius="5"
+                                        Color="{Binding StatusColor}"
+                                        VerticalOptions="Center" />
+
+                                    <!-- Info -->
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                        <Label Text="{Binding LinePlant}" FontAttributes="Bold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding RecipientName}" Style="{StaticResource CaptionText}" />
+                                    </VerticalStackLayout>
+
+                                    <!-- Time + Status -->
+                                    <VerticalStackLayout Grid.Column="2" HorizontalOptions="End" Spacing="4">
+                                        <Label Text="{Binding TimeAgo}" Style="{StaticResource CaptionText}" HorizontalTextAlignment="End" />
+                                        <Frame
+                                            Style="{StaticResource StatusBadge}"
+                                            BackgroundColor="{Binding StatusColor}"
+                                            Padding="8,3">
+                                            <Label Text="{Binding Status}" TextColor="White" FontSize="11" FontAttributes="Bold" />
+                                        </Frame>
+                                    </VerticalStackLayout>
+
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <!-- Empty state -->
+                <VerticalStackLayout
+                    IsVisible="{Binding RecentLogs.Count, Converter={StaticResource ZeroToBoolConverter}}"
+                    HorizontalOptions="Center"
+                    Margin="0,24"
+                    Spacing="8">
+                    <Label Text="📭" FontSize="48" HorizontalTextAlignment="Center" />
+                    <Label Text="No recent alerts" Style="{StaticResource CaptionText}" HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+
+                <!-- View All button -->
+                <Button
+                    Text="View All Alerts →"
+                    Style="{StaticResource OutlineButton}"
+                    Margin="0,8,0,24"
+                    Clicked="OnViewAllClicked" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+
+</ContentPage>

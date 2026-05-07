@@ -19,6 +19,7 @@ import Auditapproval from "./components/Auditapproval";
 import CompletePartialForm from "./components/CompletePartialForm";
 import ProductionMonitor from "./components/ProductionMonitor";
 import ProductionMonitorConfig from "./components/productionMonitorConfig";
+import AppwriteMenu from "./components/AppwriteMenu";
 
 
 
@@ -116,6 +117,7 @@ function App() {
                     <Route path="/form/complete/:token" element={<CompletePartialForm />} />
                     <Route path="/production-monitor" element={<ProductionMonitor />} />
                     <Route path="/production-monitor-config" element={<ProductionMonitorConfig />} />
+                    <Route path="/appwrite-config" element={<AppwriteMenu />} />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Router>
