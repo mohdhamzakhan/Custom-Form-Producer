@@ -81,11 +81,20 @@ namespace productionLine.Server.Services
             foreach (var line in lines)
             {
                 // TODO: Replace with your actual database query to find the last form submission time
-                DateTime? lastSubmissionTime = db.FormSubmissions.Where(f=>f.FormId.ToString() == line.FormId).OrderByDescending(f => f.SubmittedAt).Select(f => (DateTime?)f.SubmittedAt).FirstOrDefault();
+                //DateTime? lastSubmissionTime = db.FormSubmissions.Where(f => f.FormId.ToString() == line.FormId).OrderByDescending(f => f.SubmittedAt).Select(f => (DateTime?)f.SubmittedAt).FirstOrDefault();
 
+                DateTime? lastSubmissionTime =  DateTime.Now.AddMinutes(-10); // Simulate a line that has been down for 10 minutes. Replace with actual query in production.
                 if (!lastSubmissionTime.HasValue) continue;
 
                 var ageMinutes = (DateTime.Now - lastSubmissionTime.Value).TotalMinutes;
+
+                string supNames = string.Join(", ", line.Supervisors.Select(s => s.Name));
+                string supEmails = string.Join(", ", line.Supervisors.Select(s => s.Email));
+                string supPhones = string.Join(", ", line.Supervisors.Select(s => s.Phone));
+
+                string engNames = string.Join(", ", line.Engineers.Select(e => e.Name));
+                string engEmails = string.Join(", ", line.Engineers.Select(e => e.Email));
+                string engPhones = string.Join(", ", line.Engineers.Select(e => e.Phone));
 
                 foreach (var recipient in recipients)
                 {
@@ -169,14 +178,20 @@ namespace productionLine.Server.Services
 
                         // B. Log to Cloud Appwrite Database
                         await LogToAppwriteDatabaseAsync(
-                            line.Id.ToString(),
-                            line.Plant,
-                            recipient.Name,
-                            recipient.Email,
-                            "Appwrite Native",
-                            status,
-                            suppressReason,
-                            errorMsg
+                            lineId: line.Id.ToString(),
+                            plantName: line.Plant,
+                            recipientName: recipient.Name,
+                            recipientEmail: recipient.Email,
+                            platform: "Appwrite Native",
+                            status: status,
+                            suppressReason: suppressReason,
+                            errorMsg: errorMsg,
+                            supervisorName: supNames,
+                            supervisorEmail: supEmails,
+                            supervisorPhone: supPhones,
+                            engineerName: engNames,
+                            engineerEmail: engEmails,
+                            engineerPhone: engPhones
                         );
                     }
                 }
@@ -204,7 +219,7 @@ namespace productionLine.Server.Services
             return null;
         }
 
-        private async Task LogToAppwriteDatabaseAsync(string lineId, string plantName, string recipientName, string recipientEmail, string platform, string status, string? suppressReason, string? errorMsg)
+        private async Task LogToAppwriteDatabaseAsync(string lineId, string plantName, string recipientName, string recipientEmail, string platform, string status, string? suppressReason, string? errorMsg, string? supervisorName, string? supervisorEmail, string? supervisorPhone, string? engineerName, string? engineerEmail, string? engineerPhone)
         {
             try
             {
@@ -216,7 +231,14 @@ namespace productionLine.Server.Services
                     { "recipientEmail", recipientEmail ?? "No Email" },
                     { "platform", platform },
                     { "status", status },
-                    { "sentAt", DateTime.Now.ToString("o") }
+                    { "sentAt", DateTime.Now.ToString("o") },
+                    { "supervisorName", supervisorName ?? "N/A" },
+                    { "supervisorEmail", supervisorEmail ?? "N/A" },
+                    { "supervisorPhone", supervisorPhone ?? "N/A" },
+                    { "engineerName", engineerName ?? "N/A" },
+                    { "engineerEmail", engineerEmail ?? "N/A" },
+                    { "engineerPhone", engineerPhone ?? "N/A" }
+
                 };
 
                 if (!string.IsNullOrEmpty(suppressReason)) logData.Add("suppressReason", suppressReason);

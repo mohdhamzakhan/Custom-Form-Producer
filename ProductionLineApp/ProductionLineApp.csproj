@@ -24,7 +24,7 @@
 		<ApplicationTitle>ProductionLineApp</ApplicationTitle>
 
 		<!-- App Identifier -->
-		<ApplicationId>com.companyname.productionlineapp</ApplicationId>
+		<ApplicationId>com.meaiinternal.productionlineapp</ApplicationId>
 
 		<!-- Versions -->
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
@@ -54,6 +54,18 @@
 
 		<!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Remove="Platforms\Android\google-services.json" />
+	  <None Remove="Platforms\iOS\GoogleService-Info.plist" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <GoogleServicesJson Include="Platforms\Android\google-services.json">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </GoogleServicesJson>
+	  <GoogleServicesJson Include="Platforms\iOS\GoogleService-Info.plist" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -1,7 +1,14 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Maui.LifecycleEvents;
+using Plugin.Firebase.CloudMessaging;
 using ProductionLineApp.Services;
 using ProductionLineApp.ViewModels;
 using ProductionLineApp.Views;
+#if IOS
+using Plugin.Firebase.Core.Platforms.iOS;
+#elif ANDROID
+using Plugin.Firebase.Core.Platforms.Android;
+#endif
 
 namespace ProductionLineApp
 {
@@ -16,6 +23,7 @@ namespace ProductionLineApp
 
             builder
                 .UseMauiApp<App>()
+                .RegisterFirebaseServices()
                 .ConfigureFonts(fonts =>
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -25,6 +33,8 @@ namespace ProductionLineApp
             // ── Services ───────────────────────────────────────────────────────
             builder.Services.AddSingleton<AppwriteService>();
             builder.Services.AddSingleton<AuthService>();
+            builder.Services.AddSingleton<MenuService>();
+            builder.Services.AddSingleton<PushNotificationService>();
 
             // ── ViewModels ─────────────────────────────────────────────────────
             builder.Services.AddSingleton<DashboardViewModel>();
@@ -46,6 +56,27 @@ namespace ProductionLineApp
             var app = builder.Build();
             Services = app.Services;
             return app;
+        }
+
+        private static MauiAppBuilder RegisterFirebaseServices(this MauiAppBuilder builder)
+        {
+            builder.ConfigureLifecycleEvents(events =>
+            {
+#if IOS
+                events.AddiOS(iOS => iOS.WillFinishLaunching((_, __) =>
+                {
+                    CrossFirebase.Initialize();
+                    FirebaseCloudMessagingImplementation.Initialize();
+                    return false;
+                }));
+#elif ANDROID
+                events.AddAndroid(android => android.OnCreate((activity, _) =>
+                {
+                    CrossFirebase.Initialize(activity, () => activity);
+                }));
+#endif
+            });
+            return builder;
         }
     }
 }

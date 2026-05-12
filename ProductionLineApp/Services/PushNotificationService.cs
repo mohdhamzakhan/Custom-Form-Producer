@@ -3,41 +3,60 @@ using Plugin.Firebase.CloudMessaging.EventArgs;
 
 namespace ProductionLineApp.Services
 {
-    /// <summary>
-    /// Subscribes to Firebase Cloud Messaging events forwarded by Appwrite.
-    /// Handles both foreground display and notification-tap navigation.
-    /// </summary>
     public class PushNotificationService
     {
-        private readonly IFirebaseCloudMessaging _fcm;
+        private readonly AppwriteService _appwriteService;
 
-        public PushNotificationService(IFirebaseCloudMessaging fcm)
+        // Add constructor to get your AppwriteService
+        public PushNotificationService(AppwriteService appwriteService)
         {
-            _fcm = fcm;
+            _appwriteService = appwriteService;
         }
-
         public async Task InitializeAsync()
         {
-            // Subscribe to foreground messages
-            CrossFirebaseCloudMessaging.Current.NotificationReceived += OnNotificationReceived;
+            try
+            {
+                await CrossFirebaseCloudMessaging.Current.CheckIfValidAsync();
+                CrossFirebaseCloudMessaging.Current.NotificationReceived += OnNotificationReceived;
+                CrossFirebaseCloudMessaging.Current.NotificationTapped += OnNotificationTapped;
+                var token = await CrossFirebaseCloudMessaging.Current.GetTokenAsync();
+                Console.WriteLine($"[FCM] Initialized. Token: {token}");
+                // NEW: Register this token with Appwrite
+                if (!string.IsNullOrEmpty(token))
+                {
+                    await _appwriteService.RegisterPushTokenAsync(token);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FCM] InitializeAsync error: {ex.Message}");
+            }
+        }
 
-            // Subscribe to notification taps (app opened via notification)
-            CrossFirebaseCloudMessaging.Current.NotificationTapped += OnNotificationTapped;
+        
 
-            // Get the FCM token (Appwrite will use this to send pushes to this device)
-            var token = await CrossFirebaseCloudMessaging.Current.GetTokenAsync();
-            Console.WriteLine($"[FCM] Device token: {token}");
+        public async Task<string?> GetTokenAsync()
+        {
+            try
+            {
+                await CrossFirebaseCloudMessaging.Current.CheckIfValidAsync();
+                return await CrossFirebaseCloudMessaging.Current.GetTokenAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[FCM] GetToken error: {ex.Message}");
+                return null;
+            }
         }
 
         private void OnNotificationReceived(object? sender, FCMNotificationReceivedEventArgs e)
         {
             MainThread.BeginInvokeOnMainThread(async () =>
             {
-                // Show in-app banner when app is in foreground
                 if (Application.Current?.MainPage != null)
                 {
                     await Application.Current.MainPage.DisplayAlert(
-                        e.Notification.Title ?? "Production Alert",
+                        e.Notification.Title ?? "🚨 Production Alert",
                         e.Notification.Body ?? "A production line requires attention.",
                         "View");
                 }
@@ -48,7 +67,6 @@ namespace ProductionLineApp.Services
         {
             MainThread.BeginInvokeOnMainThread(async () =>
             {
-                // Navigate to the alerts tab when user taps a notification
                 if (Shell.Current != null)
                     await Shell.Current.GoToAsync("//alerts");
             });
