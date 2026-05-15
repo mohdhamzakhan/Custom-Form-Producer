@@ -102,6 +102,7 @@ builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpS
 builder.Services.AddScoped<IEmailSchedulerService, EmailSchedulerService>();
 builder.Services.AddScoped<IAdDirectoryService, AdDirectoryService>();
 builder.Services.AddScoped<IAuditPlanService, AuditPlanService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 // Register the background monitor service
 builder.Services.AddHostedService<productionLine.Server.Services.ProductionMonitorWorker>();

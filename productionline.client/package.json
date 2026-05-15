@@ -30,6 +30,7 @@
     "react-toastify": "^11.0.5",
     "recharts": "^3.8.1",
     "tailwindcss": "^4.0.17",
+    "uuid": "^14.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

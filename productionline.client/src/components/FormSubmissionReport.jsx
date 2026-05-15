@@ -383,6 +383,27 @@ export default function FormSubmissionReport() {
 
         return !hasDecision;
     };
+    const fetchRejectedSubmissions = async (userNames) => {
+        console.log(userNames)
+        try {
+            const response = await fetch(
+                `${APP_CONSTANTS.API_BASE_URL}/api/forms/rejected-submissions`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(userNames)
+                });
+
+            if (!response.ok)
+                throw new Error("Failed to fetch rejected submissions");
+
+            const data = await response.json();
+
+            setSubmissions(data);
+        } catch (err) {
+            setError(err.message || "Failed to fetch rejected submissions");
+        }
+    };
 
     return (
         <Layout>
@@ -425,6 +446,23 @@ export default function FormSubmissionReport() {
                     >
                         My Pending Approvals
                     </button>
+                    <button
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${viewMode === "rejectedOnly"
+                                ? "border-red-500 text-red-600"
+                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                            }`}
+                        onClick={() => {
+                            setSelectedFormId("");
+                            setFormDefinition(null);
+                            setSubmissions([]);
+                            setError(null);
+                            setViewMode("rejectedOnly");
+                            updateUrlParams({ view: "rejectedOnly" });
+                            fetchRejectedSubmissions(user);
+                        }}
+                    >
+                        Rejected Approvals
+                    </button>
                 </nav>
             </div>
 
@@ -449,7 +487,7 @@ export default function FormSubmissionReport() {
 
             {loading ? (
                 <div className="flex justify-center"><p>Loading...</p></div>
-            ) : (viewMode === "pendingOnly" || (selectedFormId && formDefinition)) ? (
+            ) : (viewMode === "pendingOnly" || viewMode === "rejectedOnly" || (selectedFormId && formDefinition)) ? (
                 <div>
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-semibold">

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using productionLine.Server.DTO;
 using productionLine.Server.Model;
+using productionLine.Server.Service;
 using System.DirectoryServices.AccountManagement;
 using System.Globalization;
 using System.Net;
@@ -18,10 +19,15 @@ namespace productionLine.Server.Controllers
     {
         private readonly IMemoryCache _cache;
         private readonly FormDbContext _context;
-        public FormController(FormDbContext context, IMemoryCache cache)
+        private readonly IEmailService _emailService;
+        private readonly IConfiguration _configuration;
+
+        public FormController(FormDbContext context, IMemoryCache cache, IEmailService emailService, IConfiguration configuration)
         {
             _context = context;
             _cache = cache;
+            _emailService = emailService;
+            _configuration = configuration;
         }
 
         [HttpGet]
@@ -728,7 +734,10 @@ namespace productionLine.Server.Controllers
                     }
                     else
                     {
-                        foreach (var approver in form.Approvers)
+                        var orderedApprovers = form.Approvers
+    .OrderBy(a => a.Level)
+    .ToList();
+                        foreach (var approver in orderedApprovers)
                         {
                             var approval = new FormApproval
                             {
@@ -742,6 +751,72 @@ namespace productionLine.Server.Controllers
                             // 🔥 IMPORTANT
                             _context.FormApprovals.Add(approval);
                         }
+                        var firstApprover = form.Approvers
+    .OrderBy(a => a.Level)
+    .FirstOrDefault();
+
+                        if (firstApprover != null && !string.IsNullOrWhiteSpace(firstApprover.Email))
+                        {
+                            
+                            string subject = $"Approval Required - {form.Name}";
+                            string baseUrl = _configuration["AppSettings:BaseUrl"];
+                            string approvalUrl = $"{baseUrl}/submissions/{formSubmission.Id}/approve";
+
+                            string body = $@"
+    <h2>New Approval Request</h2>
+
+    <p>
+        A form requires your approval.
+    </p>
+
+    <table border='1' cellpadding='8' cellspacing='0'>
+        <tr>
+            <td><strong>Form</strong></td>
+            <td>{form.Name}</td>
+        </tr>
+
+        <tr>
+            <td><strong>Submission ID</strong></td>
+            <td>{formSubmission.Id}</td>
+        </tr>
+
+        <tr>
+            <td><strong>Submitted At</strong></td>
+            <td>{formSubmission.SubmittedAt}</td>
+        </tr>
+    </table>
+
+    <br/>
+
+    <a href='{approvalUrl}'
+       style='
+            background-color:#007bff;
+            color:white;
+            padding:12px 20px;
+            text-decoration:none;
+            border-radius:5px;
+            display:inline-block;
+       '>
+       Open Approval Page
+    </a>
+
+    <br/><br/>
+
+    <p>
+        Or copy this link:
+    </p>
+
+    <p>
+        <a href='{approvalUrl}'>{approvalUrl}</a>
+    </p>
+";
+
+                            await _emailService.SendEmailAsync(
+                                firstApprover.Email,
+                                subject,
+                                body);
+                        }
+
                     }
                 }
 
@@ -1178,7 +1253,7 @@ namespace productionLine.Server.Controllers
 
         [HttpPost("submissions/{submissionId}/approve")]
         public async Task<IActionResult> ApproveSubmission(int submissionId, [FromBody] ApprovalActionDto approvalDto)
-        {
+         {
             try
             {
                 // Load submission once
@@ -1209,6 +1284,96 @@ namespace productionLine.Server.Controllers
                     existingApproval.Comments = approvalDto.Comments;
 
                     await _context.SaveChangesAsync();
+
+                    // =======================================
+                    // EMAIL NEXT APPROVER
+                    // =======================================
+
+                    if (approvalDto.Status == "Approved")
+                    {
+                        int nextLevel = approvalDto.Level + 1;
+
+                        // Find next approver from form definition
+                        var nextApprover = submission.Form.Approvers
+                            .FirstOrDefault(a => a.Level == nextLevel);
+
+                        if (nextApprover != null &&
+                            !string.IsNullOrWhiteSpace(nextApprover.Email))
+                        {
+                            // Find corresponding pending approval row
+                            var nextApproval = await _context.FormApprovals
+                                .FirstOrDefaultAsync(a =>
+                                    a.FormSubmissionId == submissionId &&
+                                    a.ApprovalLevel == nextLevel);
+
+                            if (nextApproval != null)
+                            {
+                                string approvalUrl =
+                                    $"/submissions/{submissionId}/approve";
+
+                                string subject =
+                                    $"Approval Required - {submission.Form.Name}";
+
+                                string body = $@"
+                <h2>Approval Required</h2>
+
+                <p>
+                    A form is waiting for your approval.
+                </p>
+
+                <table border='1'
+                       cellpadding='8'
+                       cellspacing='0'>
+
+                    <tr>
+                        <td><strong>Form</strong></td>
+                        <td>{submission.Form.Name}</td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Submission ID</strong></td>
+                        <td>{submissionId}</td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Previous Approver</strong></td>
+                        <td>{approvalDto.ApproverName}</td>
+                    </tr>
+
+                </table>
+
+                <br/>
+
+    <a href='{approvalUrl}'
+       style='
+            background-color:#007bff;
+            color:white;
+            padding:12px 20px;
+            text-decoration:none;
+            border-radius:5px;
+            display:inline-block;
+       '>
+       Open Approval Page
+    </a>
+
+    <br/><br/>
+
+    <p>
+        Or copy this link:
+    </p>
+
+    <p>
+        <a href='{approvalUrl}'>{approvalUrl}</a>
+    </p>
+            ";
+
+                                await _emailService.SendEmailAsync(
+                                    nextApprover.Email,
+                                    subject,
+                                    body);
+                            }
+                        }
+                    }
 
                     return Ok(new
                     {
@@ -1320,11 +1485,13 @@ namespace productionLine.Server.Controllers
     .Include(s => s.Form)
         .ThenInclude(f => f.Approvers)
     .Where(s =>
-        s.Form.Approvers.Any(a =>
-            normalizedUserNames.Contains(a.Name.ToLower()))
-        &&
-        s.Approvals.Any(a => a.Status == "Pending")
-    )
+    s.Form.Approvers.Any(a =>
+        normalizedUserNames.Contains(a.Name.ToLower()))
+    &&
+    s.Approvals.Any(a => a.Status == "Pending")
+    &&
+    !s.Approvals.Any(a => a.Status == "Rejected")
+)
     .OrderByDescending(s => s.SubmittedAt)
     .Select(s => new PendingSubmissionDto
     {
@@ -1357,6 +1524,58 @@ namespace productionLine.Server.Controllers
             catch (Exception ex)
             {
                 return BadRequest();
+            }
+        }
+
+        [HttpPost("rejected-submissions")]
+        public async Task<IActionResult> GetRejectedSubmissions([FromBody] List<string> userNames)
+        {
+            try
+            {
+                if (userNames == null || userNames.Count == 0)
+                    return Ok(Array.Empty<PendingSubmissionDto>());
+
+                var normalizedUserNames = userNames
+                    .Select(u => u.ToLower())
+                    .ToList();
+
+                var submissions = await _context.FormSubmissions
+                    .AsNoTracking()
+                    .Include(s => s.Form)
+                        .ThenInclude(f => f.Approvers)
+                    .Include(s => s.Approvals)
+                    .Where(s =>
+                        s.Form.Approvers.Any(a =>
+                            normalizedUserNames.Contains(a.Name.ToLower()))
+                        &&
+                        s.Approvals.Any(a => a.Status == "Rejected")
+                    )
+                    .OrderByDescending(s => s.SubmittedAt)
+                    .Select(s => new PendingSubmissionDto
+                    {
+                        Id = s.Id,
+                        SubmittedAt = s.SubmittedAt,
+                        FormName = s.Form.Name,
+                        FormId = s.FormId,
+                        FormLink = s.Form.FormLink,
+
+                        Approvals = s.Approvals
+                            .OrderBy(a => a.ApprovalLevel)
+                            .Select(a => new ApprovalDto
+                            {
+                                ApprovalLevel = a.ApprovalLevel,
+                                ApproverName = a.ApproverName,
+                                Status = a.Status
+                            })
+                            .ToList()
+                    })
+                    .ToListAsync();
+
+                return Ok(submissions);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
             }
         }
 

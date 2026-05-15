@@ -1461,23 +1461,51 @@ const FormBuilder = () => {
             alert("This approver has already been added.");
             return;
         }
-        setApprovers([...approvers, { ...item, level: approvers.length + 1 }]);
+
+        const updatedApprovers = [
+            ...approvers,
+            {
+                ...item,
+                level: approvers.length + 1
+            }
+        ];
+
+        // Recalculate levels properly
+        const normalizedApprovers = updatedApprovers.map((a, index) => ({
+            ...a,
+            level: index + 1
+        }));
+
+        setApprovers(normalizedApprovers);
+
         setSearchTerm("");
         setSearchResults([]);
     };
 
     const removeApprover = (index) => {
-        setApprovers(approvers.filter((_, i) => i !== index));
+        const updated = approvers
+            .filter((_, i) => i !== index)
+            .map((a, idx) => ({
+                ...a,
+                level: idx + 1
+            }));
+
+        setApprovers(updated);
     };
 
     const moveApprover = (fromIndex, toIndex) => {
         setApprovers(prev => {
             if (fromIndex === toIndex) return prev;
-            if (toIndex < 0 || toIndex >= prev.length) return prev; // out of bounds
+            if (toIndex < 0 || toIndex >= prev.length) return prev;
+
             const next = [...prev];
             const [moved] = next.splice(fromIndex, 1);
             next.splice(toIndex, 0, moved);
-            return next;
+
+            return next.map((a, index) => ({
+                ...a,
+                level: index + 1
+            }));
         });
     };
 

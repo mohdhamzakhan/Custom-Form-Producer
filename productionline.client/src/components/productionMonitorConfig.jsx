@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { APP_CONSTANTS } from "./store";
+import { v4 as uuidv4 } from 'uuid';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ProductionMonitorConfig.jsx
@@ -20,7 +21,8 @@ const getAuthHeaders = () => {
     }
 };
 
-const uid = () => crypto.randomUUID();
+
+const uid = () => uuidv4();
 
 const initials = (name = "") =>
     name.split(" ").filter(Boolean).map((w) => w[0].toUpperCase()).slice(0, 2).join("");

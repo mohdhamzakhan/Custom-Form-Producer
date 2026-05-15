@@ -36,6 +36,20 @@ const ProtectedRoute = ({ children }) => {
     return children;
 };
 
+const HamzaRoute = ({ children }) => {
+    try {
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+        if (user?.username !== "hamza.khan") {
+            return <Navigate to="/Mainpage" replace />;
+        }
+
+        return children;
+    } catch {
+        return <Navigate to="/login" replace />;
+    }
+};
+
 function App() {
     return (
         <>
@@ -116,8 +130,27 @@ function App() {
                     <Route path="/AuditApproval" element={<Auditapproval />} />
                     <Route path="/form/complete/:token" element={<CompletePartialForm />} />
                     <Route path="/production-monitor" element={<ProductionMonitor />} />
-                    <Route path="/production-monitor-config" element={<ProductionMonitorConfig />} />
-                    <Route path="/appwrite-config" element={<AppwriteMenu />} />
+                    <Route
+                        path="/production-monitor-config"
+                        element={
+                            <ProtectedRoute>
+                                <HamzaRoute>
+                                    <ProductionMonitorConfig />
+                                </HamzaRoute>
+                            </ProtectedRoute>
+                        }
+                    />
+
+                    <Route
+                        path="/appwrite-config"
+                        element={
+                            <ProtectedRoute>
+                                <HamzaRoute>
+                                    <AppwriteMenu />
+                                </HamzaRoute>
+                            </ProtectedRoute>
+                        }
+                    />
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Router>
