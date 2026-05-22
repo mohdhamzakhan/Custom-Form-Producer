@@ -387,9 +387,9 @@ function LineCard({ line, status }) {
                 <div className="pm-ts">{formatTs(s.lastTimestamp)}</div>
                 <div className={agoCls}>{agoText}</div>
 
-                {s.totalSubmissions !== undefined && (
-                    <div className="pm-count">{s.totalSubmissions.toLocaleString()} total</div>
-                )}
+                {/*{s.totalSubmissions !== undefined && (*/}
+                {/*    <div className="pm-count">{s.totalSubmissions.toLocaleString()} total</div>*/}
+                {/*)}*/}
                 {state === "error" && (
                     <div className="pm-hint">check form id or api</div>
                 )}
@@ -411,7 +411,7 @@ export default function ProductionMonitor() {
 
     const [statuses, setStatuses] = useState({});
     const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD_MINUTES);
-    const [cfgOpen, setCfgOpen] = useState(true);
+    const [cfgOpen, setCfgOpen] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [syncingDb, setSyncingDb] = useState(false);
     const [lastRefresh, setLastRefresh] = useState(null);

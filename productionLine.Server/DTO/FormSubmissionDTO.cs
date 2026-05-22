@@ -6,6 +6,7 @@
         public int? SubmissionId { get; set; }
         public string? SubmittedAt { get; set; }
         public string Status { get; set; }
+        public string? CreatedBy { get; set; }
         public List<FormSubmissionDataDTO> SubmissionData { get; set; } = new List<FormSubmissionDataDTO>();
     }
 }

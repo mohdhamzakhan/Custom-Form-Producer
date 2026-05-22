@@ -81,9 +81,9 @@ namespace productionLine.Server.Services
             foreach (var line in lines)
             {
                 // TODO: Replace with your actual database query to find the last form submission time
-                //DateTime? lastSubmissionTime = db.FormSubmissions.Where(f => f.FormId.ToString() == line.FormId).OrderByDescending(f => f.SubmittedAt).Select(f => (DateTime?)f.SubmittedAt).FirstOrDefault();
+                DateTime? lastSubmissionTime = db.FormSubmissions.Where(f => f.FormId.ToString() == line.FormId).OrderByDescending(f => f.SubmittedAt).Select(f => (DateTime?)f.SubmittedAt).FirstOrDefault();
 
-                DateTime? lastSubmissionTime =  DateTime.Now.AddMinutes(-10); // Simulate a line that has been down for 10 minutes. Replace with actual query in production.
+                //DateTime? lastSubmissionTime =  DateTime.Now.AddMinutes(-10); // Simulate a line that has been down for 10 minutes. Replace with actual query in production.
                 if (!lastSubmissionTime.HasValue) continue;
 
                 var ageMinutes = (DateTime.Now - lastSubmissionTime.Value).TotalMinutes;

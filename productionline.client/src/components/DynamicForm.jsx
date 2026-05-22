@@ -35,7 +35,7 @@ export default function DynamicForm() {
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [activeSignature, setActiveSignature] = useState(null);
     const signaturePadRef = useRef(null);// ── Replace the entire partial submission section ──────────────────────────
-
+    let createdBy = "System";
     
 
     // State
@@ -152,36 +152,80 @@ export default function DynamicForm() {
         s => s.status === "Draft"
     );
 
-    useEffect(() => {
-        console.log("🔐 Authorization check triggered");
+    //useEffect(() => {
+    //    console.log("🔐 Authorization check triggered");
 
+    //    if (!formData) return;
+
+    //    const allowedAccess = formData.allowToAccess || [];
+    //    console.log("allowToAccess:", allowedAccess);
+    //    console.log("userNames:", userNames);
+
+    //    // 🔐 If restricted & no user → redirect
+    //    if (allowedAccess.length > 0 && (!userNames || userNames.length === 0)) {
+    //        navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+    //        return;
+    //    }
+
+    //    // 🌐 If unrestricted → allow everyone
+    //    if (allowedAccess.length === 0) return;
+
+    //    const isAuthorized = userNames.some(u =>
+    //        allowedAccess.some(a =>
+    //            a.name?.toLowerCase() === u.toLowerCase()
+    //        )
+    //    );
+
+    //    if (!isAuthorized) {
+    //        alert("You are not authorized to access this form.");
+    //        navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+    //    }
+
+    //}, [formData, userNames, navigate]);
+
+    useEffect(() => {
         if (!formData) return;
 
         const allowedAccess = formData.allowToAccess || [];
-        console.log("allowToAccess:", allowedAccess);
-        console.log("userNames:", userNames);
 
-        // 🔐 If restricted & no user → redirect
-        if (allowedAccess.length > 0 && (!userNames || userNames.length === 0)) {
+        // No restrictions — anyone can access
+        if (allowedAccess.length === 0) return;
+
+        // Restrictions exist — now check localStorage
+        const storedUserData = localStorage.getItem("user");
+        if (!storedUserData || storedUserData === "undefined") {
             navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
             return;
         }
 
-        // 🌐 If unrestricted → allow everyone
-        if (allowedAccess.length === 0) return;
+        const storedUser = JSON.parse(storedUserData);
 
-        const isAuthorized = userNames.some(u =>
+        console.log("stored User", storedUser)
+        // Check session expiry
+        if (storedUser.expiry && Date.now() > storedUser.expiry) {
+            localStorage.removeItem("user");
+            localStorage.removeItem("meaiFormToken");
+            navigate(`/login?expired=true`);
+            return;
+        }
+
+        const names = [storedUser.username, ...storedUser.groups];
+        setUserNames(names);
+
+        // Check if user is authorized
+        const isAuthorized = names.some(u =>
             allowedAccess.some(a =>
-                a.name?.toLowerCase() === u.toLowerCase()
+                a.name?.toLowerCase() === u.toLowerCase() ||
+                a.email?.toLowerCase() === u.toLowerCase()
             )
         );
 
         if (!isAuthorized) {
             alert("You are not authorized to access this form.");
-            navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+            navigate("/");
         }
 
-    }, [formData, userNames, navigate]);
+    }, [formData, navigate]);
 
     useEffect(() => {
         if (showSignatureModal && activeSignature && signaturePadRef.current) {
@@ -1480,11 +1524,20 @@ export default function DynamicForm() {
         setSubmitted(true);
 
         if (Object.keys(validationErrors).length > 0) return;
+        try {
+            const storedUser = JSON.parse(localStorage.getItem("user"));
 
+            if (storedUser?.username) {
+                createdBy = storedUser.username;
+            }
+        } catch {
+            createdBy = "System";
+        }
         const submissionData = {
             formId: formData.id,
             submissionId: editingSubmissionId,
             status,
+            createdBy,
             submissionData: []
         };
 

@@ -542,6 +542,7 @@ namespace productionLine.Server.Controllers
             return Ok(formDto);
         }
 
+
         [HttpPost("{formId}/submit")]
         public async Task<IActionResult> SubmitForm(
     int formId,
@@ -681,7 +682,8 @@ namespace productionLine.Server.Controllers
                         SubmittedAt = submittedAt,
                         SubmissionData = new List<FormSubmissionData>(),
                         Approvals = new List<FormApproval>(),
-                        Status = submissionDTO.Status ?? "Submitted"
+                        Status = submissionDTO.Status ?? "Submitted",
+                        SubmittedBy = submissionDTO.CreatedBy
                     };
 
                     _context.FormSubmissions.Add(formSubmission);
@@ -962,6 +964,63 @@ namespace productionLine.Server.Controllers
         }
 
         // Assuming you have a controller like [Route("api/forms")]
+        //[HttpGet("{submittedBy}/my-submissions")]
+        //public async Task<IActionResult> GetMySubmissions(string submittedBy, [FromQuery] string status = null)
+        //{
+        //    var query = _context.FormSubmissions
+        //        .Include(s => s.Approvals.OrderBy(a => a.ApprovalLevel)) // ← order matters
+        //        .Include(s => s.Form)
+        //        .Where(s => s.SubmittedBy == submittedBy)
+        //        .AsQueryable();
+
+        //    // Derive display status from approvals, not s.Status
+        //    var submissions = await query
+        //        .OrderByDescending(s => s.SubmittedAt)
+        //        .Select(s => new {
+        //            id = s.Id,
+        //            formId = s.FormId,
+        //            formName = s.Form.Name,
+        //            submittedAt = s.SubmittedAt,
+        //            submissionStatus = s.Status,
+        //            approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
+        //                a.ApproverName,
+        //                a.ApprovalLevel,
+        //                a.Status
+        //            }).ToList()
+        //        })
+        //        .ToListAsync();
+
+        //    // Compute derived status for filtering
+        //    var result = submissions.Select(s => {
+        //        string derivedStatus;
+        //        if (s.approvals.Count == 0)
+        //            derivedStatus = "NotSent";
+        //        else if (s.approvals.Count == 1 && s.approvals[0].ApproverName == "System Approval")
+        //            derivedStatus = "Approved";
+        //        else if (s.approvals.All(a => a.Status == "Approved"))
+        //            derivedStatus = "Approved";
+        //        else if (s.approvals.Any(a => a.Status == "Rejected"))
+        //            derivedStatus = "Rejected";
+        //        else
+        //            derivedStatus = "Pending";
+
+        //        return new
+        //        {
+        //            s.id,
+        //            s.formId,
+        //            s.formName,
+        //            s.submittedAt,
+        //            derivedStatus,
+        //            s.approvals
+        //        };
+        //    });
+
+        //    // Filter by derived status
+        //    if (!string.IsNullOrWhiteSpace(status) && status.ToLower() != "all")
+        //        result = result.Where(s => s.derivedStatus == status);
+
+        //    return Ok(result);
+        //}
         //[HttpGet("{form}/lastsubmissions")]
         //public async Task<IActionResult> GetLastSubmissions(string form)
         //{
@@ -1139,17 +1198,161 @@ namespace productionLine.Server.Controllers
         }
 
 
+        // 1. By Form
         [HttpGet("{formId}/submissions")]
-        public async Task<ActionResult<IEnumerable<FormSubmission>>> GetFormSubmissions(int formId)
+        public async Task<IActionResult> GetFormSubmissions(int formId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
-            if (await _context.Forms.FindAsync(formId) == null)
+            var query = _context.FormSubmissions
+                .Where(s => s.FormId == formId)
+                .OrderByDescending(s => s.SubmittedAt);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(s => new {
+                    id = s.Id,
+                    formId = s.FormId,
+                    formName = s.Form.Name,
+                    submittedAt = s.SubmittedAt,
+                    submittedBy = s.SubmittedBy,
+                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
+                        a.ApproverName,
+                        a.ApprovalLevel,
+                        a.Status
+                    }),
+                    submissionData = s.SubmissionData.Select(d => new {
+                        d.FieldLabel,
+                        d.FieldValue
+                    })
+                })
+                .ToListAsync();
+
+            return Ok(new PagedResult<object>
             {
-                return NotFound();
-            }
-            return Ok(await _context.FormSubmissions.Where((FormSubmission s) => s.FormId == formId).Include((FormSubmission s) => s.SubmissionData).Include((FormSubmission s) => s.Approvals)
-                .Include((FormSubmission s) => s.Form)
-                .ThenInclude((Form f) => f.Approvers)
-                .ToListAsync());
+                Items = items.Cast<object>().ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            });
+        }
+
+        // 2. Pending approvals
+        [HttpPost("pending-submissions")]
+        public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            var query = _context.FormApprovals
+                .Where(a => userNames.Contains(a.ApproverName) && a.Status == "Pending")
+                .Select(a => a.FormSubmission)
+                .Distinct()
+                .OrderByDescending(s => s.SubmittedAt);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(s => new {
+                    id = s.Id,
+                    formId = s.FormId,
+                    formName = s.Form.Name,
+                    submittedAt = s.SubmittedAt,
+                    submittedBy = s.SubmittedBy,
+                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
+                        a.ApproverName,
+                        a.ApprovalLevel,
+                        a.Status
+                    })
+                })
+                .ToListAsync();
+
+            return Ok(new PagedResult<object>
+            {
+                Items = items.Cast<object>().ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            });
+        }
+
+        // 3. Rejected approvals
+        [HttpPost("rejected-submissions")]
+        public async Task<IActionResult> GetRejectedSubmissions([FromBody] List<string> userNames, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            var query = _context.FormApprovals
+                .Where(a => userNames.Contains(a.ApproverName) && a.Status == "Rejected")
+                .Select(a => a.FormSubmission)
+                .Distinct()
+                .OrderByDescending(s => s.SubmittedAt);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(s => new {
+                    id = s.Id,
+                    formId = s.FormId,
+                    formName = s.Form.Name,
+                    submittedAt = s.SubmittedAt,
+                    submittedBy = s.SubmittedBy,
+                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
+                        a.ApproverName,
+                        a.ApprovalLevel,
+                        a.Status
+                    })
+                })
+                .ToListAsync();
+
+            return Ok(new PagedResult<object>
+            {
+                Items = items.Cast<object>().ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            });
+        }
+
+        // 4. My submissions
+        [HttpGet("{submittedBy}/my-submissions")]
+        public async Task<IActionResult> GetMySubmissions(string submittedBy, [FromQuery] string status = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            var query = _context.FormSubmissions
+                .Include(s => s.Approvals.OrderBy(a => a.ApprovalLevel))
+                .Include(s => s.Form)
+                .Where(s => s.SubmittedBy == submittedBy)
+                .OrderByDescending(s => s.SubmittedAt);
+
+            var allItems = await query.Select(s => new {
+                id = s.Id,
+                formId = s.FormId,
+                formName = s.Form.Name,
+                submittedAt = s.SubmittedAt,
+                approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
+                    a.ApproverName,
+                    a.ApprovalLevel,
+                    a.Status
+                }).ToList()
+            }).ToListAsync();
+
+            var withDerived = allItems.Select(s => {
+                string derivedStatus;
+                if (s.approvals.Count == 0) derivedStatus = "NotSent";
+                else if (s.approvals.Count == 1 && s.approvals[0].ApproverName == "System Approval") derivedStatus = "Approved";
+                else if (s.approvals.All(a => a.Status == "Approved")) derivedStatus = "Approved";
+                else if (s.approvals.Any(a => a.Status == "Rejected")) derivedStatus = "Rejected";
+                else derivedStatus = "Pending";
+                return new { s.id, s.formId, s.formName, s.submittedAt, derivedStatus, s.approvals };
+            });
+
+            if (!string.IsNullOrWhiteSpace(status) && status.ToLower() != "all")
+                withDerived = withDerived.Where(s => s.derivedStatus == status);
+
+            var totalCount = withDerived.Count();
+            var items = withDerived.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            return Ok(new { items, totalCount, page, pageSize, totalPages = (int)Math.Ceiling((double)totalCount / pageSize) });
         }
 
         [HttpGet("submissions/{submissionId}")]
@@ -1308,8 +1511,8 @@ namespace productionLine.Server.Controllers
 
                             if (nextApproval != null)
                             {
-                                string approvalUrl =
-                                    $"/submissions/{submissionId}/approve";
+                                string baseUrl = _configuration["AppSettings:BaseUrl"];
+                                string approvalUrl = $"{baseUrl}/submissions/{submissionId}/approve";
 
                                 string subject =
                                     $"Approval Required - {submission.Form.Name}";
@@ -1467,117 +1670,117 @@ namespace productionLine.Server.Controllers
         //                     select s).ToListAsync());
         //}
 
-        [HttpPost("pending-submissions")]
-        public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
-        {
-            try
-            {
-                if (userNames == null || userNames.Count == 0)
-                    return Ok(Array.Empty<PendingSubmissionDto>());
+//        [HttpPost("pending-submissions")]
+//        public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
+//        {
+//            try
+//            {
+//                if (userNames == null || userNames.Count == 0)
+//                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-                var normalizedUserNames = userNames
-                    .Select(u => u.ToLower())
-                    .ToList();
-
-
-                var submissions = await _context.FormSubmissions
-    .AsNoTracking()
-    .Include(s => s.Form)
-        .ThenInclude(f => f.Approvers)
-    .Where(s =>
-    s.Form.Approvers.Any(a =>
-        normalizedUserNames.Contains(a.Name.ToLower()))
-    &&
-    s.Approvals.Any(a => a.Status == "Pending")
-    &&
-    !s.Approvals.Any(a => a.Status == "Rejected")
-)
-    .OrderByDescending(s => s.SubmittedAt)
-    .Select(s => new PendingSubmissionDto
-    {
-        Id = s.Id,
-        SubmittedAt = s.SubmittedAt,
-        FormName = s.Form.Name,
-        FormId = s.FormId,
-        FormLink = s.Form.FormLink,
-
-        Approvals = s.Approvals
-            .Where(a => a.Status == "Pending")
-            .OrderBy(a => a.ApprovalLevel)
-            .Take(1)
-            .Select(a => new ApprovalDto
-            {
-                ApprovalLevel = a.ApprovalLevel,
-                ApproverName = a.ApproverName,
-                Status = a.Status
-            })
-            .ToList()
-    })
-    .ToListAsync();
+//                var normalizedUserNames = userNames
+//                    .Select(u => u.ToLower())
+//                    .ToList();
 
 
+//                var submissions = await _context.FormSubmissions
+//    .AsNoTracking()
+//    .Include(s => s.Form)
+//        .ThenInclude(f => f.Approvers)
+//    .Where(s =>
+//    s.Form.Approvers.Any(a =>
+//        normalizedUserNames.Contains(a.Name.ToLower()))
+//    &&
+//    s.Approvals.Any(a => a.Status == "Pending")
+//    &&
+//    !s.Approvals.Any(a => a.Status == "Rejected")
+//)
+//    .OrderByDescending(s => s.SubmittedAt)
+//    .Select(s => new PendingSubmissionDto
+//    {
+//        Id = s.Id,
+//        SubmittedAt = s.SubmittedAt,
+//        FormName = s.Form.Name,
+//        FormId = s.FormId,
+//        FormLink = s.Form.FormLink,
+
+//        Approvals = s.Approvals
+//            .Where(a => a.Status == "Pending")
+//            .OrderBy(a => a.ApprovalLevel)
+//            .Take(1)
+//            .Select(a => new ApprovalDto
+//            {
+//                ApprovalLevel = a.ApprovalLevel,
+//                ApproverName = a.ApproverName,
+//                Status = a.Status
+//            })
+//            .ToList()
+//    })
+//    .ToListAsync();
 
 
 
-                return Ok(submissions);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest();
-            }
-        }
 
-        [HttpPost("rejected-submissions")]
-        public async Task<IActionResult> GetRejectedSubmissions([FromBody] List<string> userNames)
-        {
-            try
-            {
-                if (userNames == null || userNames.Count == 0)
-                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-                var normalizedUserNames = userNames
-                    .Select(u => u.ToLower())
-                    .ToList();
+//                return Ok(submissions);
+//            }
+//            catch (Exception ex)
+//            {
+//                return BadRequest();
+//            }
+//        }
 
-                var submissions = await _context.FormSubmissions
-                    .AsNoTracking()
-                    .Include(s => s.Form)
-                        .ThenInclude(f => f.Approvers)
-                    .Include(s => s.Approvals)
-                    .Where(s =>
-                        s.Form.Approvers.Any(a =>
-                            normalizedUserNames.Contains(a.Name.ToLower()))
-                        &&
-                        s.Approvals.Any(a => a.Status == "Rejected")
-                    )
-                    .OrderByDescending(s => s.SubmittedAt)
-                    .Select(s => new PendingSubmissionDto
-                    {
-                        Id = s.Id,
-                        SubmittedAt = s.SubmittedAt,
-                        FormName = s.Form.Name,
-                        FormId = s.FormId,
-                        FormLink = s.Form.FormLink,
+//        [HttpPost("rejected-submissions")]
+//        public async Task<IActionResult> GetRejectedSubmissions([FromBody] List<string> userNames)
+//        {
+//            try
+//            {
+//                if (userNames == null || userNames.Count == 0)
+//                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-                        Approvals = s.Approvals
-                            .OrderBy(a => a.ApprovalLevel)
-                            .Select(a => new ApprovalDto
-                            {
-                                ApprovalLevel = a.ApprovalLevel,
-                                ApproverName = a.ApproverName,
-                                Status = a.Status
-                            })
-                            .ToList()
-                    })
-                    .ToListAsync();
+//                var normalizedUserNames = userNames
+//                    .Select(u => u.ToLower())
+//                    .ToList();
 
-                return Ok(submissions);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ex.Message);
-            }
-        }
+//                var submissions = await _context.FormSubmissions
+//                    .AsNoTracking()
+//                    .Include(s => s.Form)
+//                        .ThenInclude(f => f.Approvers)
+//                    .Include(s => s.Approvals)
+//                    .Where(s =>
+//                        s.Form.Approvers.Any(a =>
+//                            normalizedUserNames.Contains(a.Name.ToLower()))
+//                        &&
+//                        s.Approvals.Any(a => a.Status == "Rejected")
+//                    )
+//                    .OrderByDescending(s => s.SubmittedAt)
+//                    .Select(s => new PendingSubmissionDto
+//                    {
+//                        Id = s.Id,
+//                        SubmittedAt = s.SubmittedAt,
+//                        FormName = s.Form.Name,
+//                        FormId = s.FormId,
+//                        FormLink = s.Form.FormLink,
+
+//                        Approvals = s.Approvals
+//                            .OrderBy(a => a.ApprovalLevel)
+//                            .Select(a => new ApprovalDto
+//                            {
+//                                ApprovalLevel = a.ApprovalLevel,
+//                                ApproverName = a.ApproverName,
+//                                Status = a.Status
+//                            })
+//                            .ToList()
+//                    })
+//                    .ToListAsync();
+
+//                return Ok(submissions);
+//            }
+//            catch (Exception ex)
+//            {
+//                return BadRequest(ex.Message);
+//            }
+//        }
 
         [HttpGet("linked-data/{formId}")]
         public async Task<IActionResult> GetLinkedData(int formId, [FromQuery] string keyMappings)
@@ -1828,6 +2031,16 @@ namespace productionLine.Server.Controllers
                 // Log the exception here
                 return StatusCode(500, "Error retrieving line configuration from the database.");
             }
+        }
+
+        // Shared pagination helper (add to your controller or a helper class)
+        public class PagedResult<T>
+        {
+            public List<T> Items { get; set; }
+            public int TotalCount { get; set; }
+            public int Page { get; set; }
+            public int PageSize { get; set; }
+            public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
         }
     }
 }

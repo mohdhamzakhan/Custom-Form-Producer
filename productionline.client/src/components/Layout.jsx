@@ -48,6 +48,7 @@ export default function Layout({ children }) {
         { name: "Approval", path: "/reports" },
         { name: "Report", path: "/report" },
         { name: "Create Form", path: "/MyForm" },
+        { name: "Live Monitor", path: "/production-monitor" },
         
     ];
 

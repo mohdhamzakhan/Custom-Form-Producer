@@ -101,6 +101,15 @@ namespace productionLine.Server.Model
                 .HasForeignKey(f => f.FormId);
 
             modelBuilder.Entity<FormSubmission>()
+                .HasIndex(s => s.FormId);
+
+            modelBuilder.Entity<FormSubmission>()
+                .HasIndex(s => s.SubmittedBy);
+
+            modelBuilder.Entity<FormSubmissionData>()
+                .HasIndex(d => d.FormSubmissionId);
+
+            modelBuilder.Entity<FormSubmission>()
                 .HasMany(f => f.SubmissionData)
                 .WithOne(d => d.FormSubmission)
                 .HasForeignKey(d => d.FormSubmissionId);
