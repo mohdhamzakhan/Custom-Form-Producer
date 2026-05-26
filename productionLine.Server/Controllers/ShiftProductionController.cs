@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using productionLine.Server.Model;
+using productionLine.Server.Service;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using static productionLine.Server.Model.FormDbContext;
@@ -43,6 +44,8 @@ namespace productionLine.Server.Controllers
         {
             try
             {
+                var multiplier = QuantityMultiplierService.GetMultiplier();
+                Console.WriteLine($"[ShiftProduction] Using quantity multiplier: {multiplier}");
                 Console.WriteLine($"[ShiftProduction] Received request:");
                 Console.WriteLine($"  Date: {selectedDate:yyyy-MM-dd} (parsed from query)");
                 Console.WriteLine($"  Date kind: {selectedDate.Kind}");
@@ -216,7 +219,7 @@ namespace productionLine.Server.Controllers
                         var linesChartData = BuildMultiLineChartData(groupedSubmissions, targetLineData);
                         var lineCount = groupedSubmissions.Count;
                         var totalTargetParts = targetParts * lineCount;
-                        var currentProduction = submissions.Count;
+                        var currentProduction = (int)Math.Round(submissions.Count * multiplier);
                         var efficiency = targetParts > 0 ? (int)Math.Round((double)currentProduction / targetParts / lineCount * 100) : 0;
                         var remainingParts = Math.Max(0, totalTargetParts - currentProduction);
 
@@ -247,9 +250,9 @@ namespace productionLine.Server.Controllers
                 // SINGLE-LINE chart data (Fallback)
                 // ============================================================
                 Console.WriteLine($"[ShiftProduction] Building SINGLE-LINE combined chart data...");
-                var combinedData = BuildCombinedChartData(submissions, targetLineData);
+                var combinedData = BuildCombinedChartData(submissions, targetLineData,multiplier);
 
-                var currentProductionSingle = submissions.Count;
+                var currentProductionSingle = (int)Math.Round(submissions.Count * multiplier);
                 var efficiencySingle = targetParts > 0 ? (int)Math.Round((double)currentProductionSingle / targetParts * 100) : 0;
                 var remainingPartsSingle = Math.Max(0, targetParts - currentProductionSingle);
 
@@ -681,7 +684,8 @@ namespace productionLine.Server.Controllers
         //   }
         private List<ChartDataPoint> BuildCombinedChartData(
             List<FormSubmission> submissions,
-            List<ChartDataPoint> targetLineData)
+            List<ChartDataPoint> targetLineData,
+            double multiplier = 1.0)
         {
             int ToBucket(int totalMinutes) => (totalMinutes / 5) * 5;
 
@@ -903,11 +907,15 @@ namespace productionLine.Server.Controllers
                     }
                 }
 
+
+
                 result.Add(new ChartDataPoint
                 {
                     Time = targetPoint.Time,
                     TargetParts = targetPoint.TargetParts,
-                    ActualParts = actualParts,
+                    ActualParts = actualParts.HasValue
+                                ? (int?)Math.Round(actualParts.Value * multiplier)
+                                : null,
                     IsBreak = targetPoint.IsBreak,
                     BreakName = targetPoint.BreakName,
                     NewPartsInBucket = newParts
@@ -1370,6 +1378,9 @@ namespace productionLine.Server.Controllers
 
             return $"{displayHour}:{mins:D2} {period}";
         }
+
+        // Services/QuantityMultiplierService.cs
+        
 
     }
 

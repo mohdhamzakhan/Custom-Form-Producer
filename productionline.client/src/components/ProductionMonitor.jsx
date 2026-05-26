@@ -38,7 +38,7 @@ const formatTs = (ts) => {
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-const DEFAULT_THRESHOLD_MINUTES = 5;
+const DEFAULT_THRESHOLD_MINUTES = 30;
 const AUTO_REFRESH_MS = 60_000;
 const AGE_TICK_MS = 5_000;
 
@@ -410,7 +410,10 @@ export default function ProductionMonitor() {
     });
 
     const [statuses, setStatuses] = useState({});
-    const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD_MINUTES);
+    const [threshold, setThreshold] = useState(() => {
+        const saved = localStorage.getItem("pm_threshold");
+        return saved ? Math.max(1, parseInt(saved) || DEFAULT_THRESHOLD_MINUTES) : DEFAULT_THRESHOLD_MINUTES;
+    });
     const [cfgOpen, setCfgOpen] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [syncingDb, setSyncingDb] = useState(false);
@@ -428,6 +431,7 @@ export default function ProductionMonitor() {
 
     useEffect(() => { threshRef.current = threshold; }, [threshold]);
     useEffect(() => { localStorage.setItem("pm_theme", theme); }, [theme]);
+    useEffect(() => { localStorage.setItem("pm_threshold", threshold); }, [threshold]);
 
     useEffect(() => {
         const id = "pm-global-styles";
