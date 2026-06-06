@@ -1513,6 +1513,10 @@ export default function EnhancedReportViewer() {
                                                     String(v).match(/^\d{2}\/\d{2}\/\d{4}/)
                                                 );
 
+                                                const hasTimePattern = allValues.some(v =>
+                                                    /^\d{1,2}:\d{2}(:\d{2})?$/.test(String(v))
+                                                );
+
                                                 const hasTextIndicators = allValues.some(v => {
                                                     const str = String(v);
                                                     return str.includes(' ') ||
@@ -1524,7 +1528,7 @@ export default function EnhancedReportViewer() {
                                                         str.length > 15;
                                                 });
 
-                                                isTextField = hasDatePattern || hasTextIndicators;
+                                                isTextField = hasDatePattern || hasTextIndicators || hasTimePattern;
 
                                                 if (isTextField) {
                                                     const unique = [...new Set(allValues)];
@@ -1749,7 +1753,7 @@ export default function EnhancedReportViewer() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
-                                    Refresh
+                                    
                                 </button>
 
                                 {/* Exit Maximized Button */}
@@ -1758,10 +1762,10 @@ export default function EnhancedReportViewer() {
                                     className="minimize-btn"
                                     title="Exit maximized view"
                                 >
-                                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
-                                    Exit
+                                    
                                 </button>
                             </div>
                         </div>
@@ -3568,6 +3572,8 @@ export default function EnhancedReportViewer() {
 
                 // Determine if values are numeric or text
                 const allNumeric = allValues.every(v => {
+                    // ✅ Don't treat time strings as numeric
+                    if (typeof v === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(v)) return false;
                     const num = parseFloat(v);
                     return !isNaN(num) && isFinite(num);
                 });
@@ -3612,6 +3618,10 @@ export default function EnhancedReportViewer() {
     const parseFieldValue = (value) => {
         if (value === null || value === undefined || value === '' || value === '-' || value === '—') {
             return 0;
+        }
+
+        if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
+            return value;
         }
 
         // ✅ NEW: Handle percentage strings

@@ -3538,6 +3538,29 @@ export default function DynamicForm() {
         }));
     };
 
+    const handleRemoveDraft = async (draftId) => {
+        if (!window.confirm("Remove this draft? Its status will be changed to Rejected.")) return;
+
+        try {
+            const res = await fetch(
+                `${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${draftId}/status`,
+                {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "Rejected" }),
+                }
+            );
+
+            if (!res.ok) throw new Error("Failed to update status");
+
+            // Refresh all lists so the draft disappears and appears under Rejected
+            await loadDrafts();
+            await loadRejected();
+            await fetchRecentSubmissions();
+        } catch (err) {
+            alert("Error removing draft: " + err.message);
+        }
+    };
 
 
     if (loading) return <LoadingDots />;
@@ -3828,7 +3851,7 @@ export default function DynamicForm() {
                                                     <td className="py-2 px-4 border-b">
                                                         {new Date(draft.submittedAt).toLocaleString()}
                                                     </td>
-                                                    <td className="py-2 px-4 border-b">
+                                                    <td className="py-2 px-4 border-b flex gap-3 items-center">
                                                         <button
                                                             className="text-blue-600 hover:underline"
                                                             onClick={() => {
@@ -3837,6 +3860,12 @@ export default function DynamicForm() {
                                                             }}
                                                         >
                                                             Resume
+                                                        </button>
+                                                        <button
+                                                            className="text-red-500 hover:text-red-700 hover:underline"
+                                                            onClick={() => handleRemoveDraft(draft.id)}
+                                                        >
+                                                            Remove
                                                         </button>
                                                     </td>
                                                 </tr>

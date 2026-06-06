@@ -1380,6 +1380,35 @@ namespace productionLine.Server.Controllers
             }
         }
 
+        [HttpPatch("submissions/{submissionId}/status")]
+        public async Task<IActionResult> UpdateSubmissionStatus(int submissionId, [FromBody] UpdateSubmissionStatusDto dto)
+        {
+            try
+            {
+                var submission = await _context.FormSubmissions
+                    .FirstOrDefaultAsync(s => s.Id == submissionId);
+
+                if (submission == null)
+                    return NotFound(new { message = $"Submission {submissionId} not found." });
+
+                if (submission.Status != "Draft")
+                    return BadRequest(new { message = "Only Draft submissions can be removed." });
+
+                if (string.IsNullOrWhiteSpace(dto.Status))
+                    return BadRequest(new { message = "Status is required." });
+
+                submission.Status = dto.Status;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Status updated successfully.", submissionId, status = dto.Status });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Internal server error: " + ex.Message);
+            }
+        }
+
+
         [SupportedOSPlatform("windows")]
         [HttpGet("ad-search")]
         public async Task<IActionResult> SearchActiveDirectory([FromQuery] string term)
@@ -2041,6 +2070,11 @@ namespace productionLine.Server.Controllers
             public int Page { get; set; }
             public int PageSize { get; set; }
             public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
+        }
+
+        public class UpdateSubmissionStatusDto
+        {
+            public string Status { get; set; }
         }
     }
 }
