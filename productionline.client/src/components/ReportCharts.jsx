@@ -108,7 +108,83 @@ const marqueeStyle = `
   }
 `;
 
+const toggleBarStyle = `
+  .rc-toggle-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .rc-toggle-bar.light { background: #f1f5f9; border: 1px solid #e2e8f0; }
+  .rc-toggle-bar.dark  { background: #1e293b; border: 1px solid #334155; }
 
+  .rc-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+  }
+  .rc-toggle-label.light { color: #374151; }
+  .rc-toggle-label.dark  { color: #d1d5db; }
+
+  /* iOS-style toggle switch */
+  .rc-switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+  .rc-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .rc-switch-track {
+    position: absolute; inset: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .rc-switch-track.off-light { background: #cbd5e1; }
+  .rc-switch-track.off-dark  { background: #475569; }
+  .rc-switch-track.on        { background: #3b82f6; }
+  .rc-switch-thumb {
+    position: absolute;
+    height: 18px; width: 18px;
+    left: 3px; bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  .rc-switch-thumb.on { transform: translateX(18px); }
+
+  /* Mode pill */
+  .rc-mode-pill {
+    display: inline-flex;
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .rc-mode-pill.light { background: #e2e8f0; }
+  .rc-mode-pill.dark  { background: #0f172a; }
+  .rc-mode-btn {
+    padding: 5px 16px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.15s;
+    letter-spacing: 0.02em;
+  }
+  .rc-mode-btn.inactive-light { background: transparent; color: #6b7280; }
+  .rc-mode-btn.inactive-dark  { background: transparent; color: #6b7280; }
+  .rc-mode-btn.active-light   { background: white;       color: #1d4ed8; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+  .rc-mode-btn.active-dark    { background: #1e40af;     color: white;   box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+
+  .rc-divider { flex: 1; }
+  .rc-bar-hint { font-size: 11px; }
+  .rc-bar-hint.light { color: #94a3b8; }
+  .rc-bar-hint.dark  { color: #475569; }
+`;
 
 const getCurrentShift = () => {
     const now = new Date();
@@ -375,6 +451,9 @@ const ReportCharts = React.memo(({
 
     const [downtimeEvents, setDowntimeEvents] = useState([]);
     const [totalDowntime, setTotalDowntime] = useState(0);
+    const [localShowChart, setLocalShowChart] = useState(showChart ?? true);
+    const [metricsMode, setMetricsMode] = useState('current');
+
 
     const LINE_COLORS = [
         '#3b82f6',  // blue
@@ -654,6 +733,8 @@ const ReportCharts = React.memo(({
             );
         }
     }
+
+    const th = isDarkMode ? 'dark' : 'light';
 
     // Colors for charts
     const colors = isDarkMode ? [
@@ -1455,6 +1536,7 @@ const ReportCharts = React.memo(({
             const [shiftMetrics, setShiftMetrics] = useState(null);
             const [shiftLoading, setShiftLoading] = useState(true);
             const [shiftError, setShiftError] = useState(null);
+            const [expectedTillNow, setExpectedTillNow] = useState(0);
             function parseTimeToMinutes(timeStr) {
                 // Example: "5:40 AM", "11:20 PM"
                 const match = timeStr.match(/(\d+):(\d+) (\w+)/);
@@ -1506,7 +1588,7 @@ const ReportCharts = React.memo(({
             const shouldShowChart = showChart ?? true;
 
             console.log("shouldShowChart", shouldShowChart)
-
+           
             // Fetch data from backend API
             useEffect(() => {
                 // ✅ Clear any existing intervals when dependencies change
@@ -1725,18 +1807,17 @@ const ReportCharts = React.memo(({
             }, [isMultiLine, mergedChartData, shiftChartData, selectedDate, type, lineNames]);
             // Inject marquee styles
             React.useEffect(() => {
-                const styleId = 'marquee-style';
-                if (!document.getElementById(styleId)) {
-                    const style = document.createElement('style');
-                    style.id = styleId;
-                    style.textContent = marqueeStyle;
-                    document.head.appendChild(style);
-                }
-                return () => {
-                    const existingStyle = document.getElementById(styleId);
-                    if (existingStyle) {
-                        existingStyle.remove();
+                const styleIds = ['marquee-style', 'rc-toggle-style'];
+                const styles = [marqueeStyle, toggleBarStyle];
+                styleIds.forEach((id, i) => {
+                    if (!document.getElementById(id)) {
+                        const style = document.createElement('style');
+                        style.id = id; style.textContent = styles[i];
+                        document.head.appendChild(style);
                     }
+                });
+                return () => {
+                    styleIds.forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
                 };
             }, []);
 
@@ -1777,7 +1858,34 @@ const ReportCharts = React.memo(({
                 );
             }
 
+            const metricsData = shiftMetrics || {
+                currentProduction: 0,
+                targetParts: 0,
+                efficiency: 0,
+                remainingParts: 0,
+                expectedTillNow: 0
+            };
 
+            const currentEfficiency = expectedTillNow > 0
+                ? ((metricsData.currentProduction / expectedTillNow) * 100).toFixed(1)
+                : 0;
+
+            const displayTarget = metricsMode === 'till' ? expectedTillNow : (activeShiftConfig?.targetParts || metricsData.targetParts);
+            const displayProduction = metricsData.currentProduction;
+            const displayEfficiency = metricsMode === 'till' ? currentEfficiency : metricsData.efficiency;
+            const displayRemaining = metricsData.remainingParts;
+
+            const targetLabel = metricsMode === 'till' ? 'Expected till now' : 'Target Parts';
+            const prodLabel = metricsMode === 'till' ? 'Cumulative production' : 'Current production';
+            const effLabel = metricsMode === 'till' ? 'Efficiency (shift %)' : 'Efficiency %';
+            const remainLabel = 'Remaining Qty';
+
+            const effNum = parseFloat(displayEfficiency) || 0;
+            const effColorClass = effNum >= 100
+                ? (isDarkMode ? 'bg-emerald-900 border-emerald-700 text-emerald-100' : 'bg-emerald-50 border-emerald-300 text-emerald-900')
+                : effNum >= 80
+                    ? (isDarkMode ? 'bg-yellow-900 border-yellow-700 text-yellow-100' : 'bg-yellow-50 border-yellow-300 text-yellow-900')
+                    : (isDarkMode ? 'bg-red-900 border-red-700 text-red-100' : 'bg-red-50 border-red-300 text-red-900');
 
 
 
@@ -1869,32 +1977,68 @@ const ReportCharts = React.memo(({
                     )}
 
 
-                    {/* Current Shift Info */}
+                    {/* Header Section */}
                     {!isFullscreenMode && (
-                        <div className={`${isMaximized ? 'mb-2' : 'mb-6'} p-4 rounded-lg border ${isDarkMode
+                        <div className={`mb-6 p-4 rounded-xl border ${isDarkMode
                             ? 'bg-gradient-to-r from-gray-800 to-gray-700 border-gray-600'
                             : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
                             }`}>
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h3 className={`${isMaximized ? 'text-base' : 'text-lg'} font-semibold ${isDarkMode ? 'text-blue-300' : 'text-blue-800'}`}>
+
+                            {/* Left-Aligned Horizontal Group */}
+                            <div className="flex items-center gap-6 mb-4">
+                                {/* Date & Time */}
+                                <div className={`text-sm border-r pr-6 ${isDarkMode ? 'border-gray-600' : 'border-blue-200'}`}>
+                                    <div className="font-medium text-gray-500">
+                                        {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    </div>
+                                    <div className={`text-2xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+                                        {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                </div>
+
+                                {/* Shift Info */}
+                                <div className="text-left">
+                                    <h3 className="text-lg font-bold text-blue-600">
                                         {activeShiftConfig.name} {activeShiftConfig.modelNumber && `[${activeShiftConfig.modelNumber}]`}
                                     </h3>
-                                    <p className={`${isMaximized ? 'text-xs' : 'text-sm'} ${isDarkMode ? 'text-gray-300' : 'text-blue-600'}`}>
+                                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                                         {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
-                                        Target: {activeShiftConfig.targetParts} parts •
                                         Cycle: {activeShiftConfig.cycleTimeSeconds}s •
                                         Breaks: {activeShiftConfig.breaks?.length || 0}
                                     </p>
                                 </div>
-                                <div className="text-right">
-                                    <div className={`${isMaximized ? 'text-xs' : 'text-sm'} ${isDarkMode ? 'text-blue-300' : 'text-blue-600'}`}>
-                                        Last Updated
+                            </div>
+
+                            {/* Toggle Bar Row */}
+                            <div className={`rc-toggle-bar ${th}`} style={{ marginTop: 0, marginBottom: 0 }}>
+                                <label className={`rc-toggle-label ${th}`}>
+                                    <span>📊 Chart</span>
+                                    <div className="rc-switch" onClick={() => setLocalShowChart(v => !v)}>
+                                        <div className={`rc-switch-track ${localShowChart ? 'on' : `off-${th}`}`}></div>
+                                        <div className={`rc-switch-thumb ${localShowChart ? 'on' : ''}`}></div>
                                     </div>
-                                    <div className={`${isMaximized ? 'text-sm' : 'text-base'} ${isDarkMode ? 'text-blue-200' : 'text-blue-800'} font-medium`}>
-                                        {new Date().toLocaleTimeString()}
-                                    </div>
+                                    <span style={{ fontSize: 11, opacity: 0.7 }}>{localShowChart ? 'Visible' : 'Hidden'}</span>
+                                </label>
+
+                                <div style={{ width: '1px', height: 28, background: isDarkMode ? '#334155' : '#e2e8f0', margin: '0 8px' }}></div>
+
+                                <div className={`rc-mode-pill ${th}`}>
+                                    {['current', 'till'].map(m => (
+                                        <button
+                                            key={m}
+                                            className={`rc-mode-btn ${metricsMode === m ? `active-${th}` : `inactive-${th}`}`}
+                                            onClick={() => setMetricsMode(m)}
+                                        >
+                                            {m === 'current' ? '⚡ Current' : '📅 Till now'}
+                                        </button>
+                                    ))}
                                 </div>
+
+                                <div className="rc-divider"></div>
+
+                                <span className={`rc-bar-hint ${th}`} style={{ fontSize: 11 }}>
+                                    {metricsMode === 'current' ? 'Live snapshots' : 'Cumulative stats'}
+                                </span>
                             </div>
                         </div>
                     )}
@@ -1911,26 +2055,26 @@ const ReportCharts = React.memo(({
                                     ? getCurrentChartBucketIndex(shiftChartData)
                                     : shiftChartData.length - 1;
 
-                                if (currentTimeIndex > 0) {
-                                    return (
-                                        <div style={{
-                                            position: 'absolute',
-                                            top: isMaximized ? '80px' : '30px',
-                                            left: isMaximized ? '60px' : '40px',
-                                            zIndex: 10,
-                                            backgroundColor: 'rgba(74, 222, 128, 0.9)',
-                                            color: '#ffffff',
-                                            padding: isMaximized ? '8px 16px' : '6px 12px',
-                                            borderRadius: '6px',
-                                            fontWeight: 'bold',
-                                            fontSize: isMaximized ? '16px' : '14px',
-                                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                                            pointerEvents: 'none'
-                                        }}>
-                                            ⏱️ Time Elapsed
-                                        </div>
-                                    );
-                                }
+                                //if (currentTimeIndex > 0) {
+                                //    return (
+                                //        <div style={{
+                                //            position: 'absolute',
+                                //            top: isMaximized ? '80px' : '30px',
+                                //            left: isMaximized ? '60px' : '40px',
+                                //            zIndex: 10,
+                                //            backgroundColor: 'rgba(74, 222, 128, 0.9)',
+                                //            color: '#ffffff',
+                                //            padding: isMaximized ? '8px 16px' : '6px 12px',
+                                //            borderRadius: '6px',
+                                //            fontWeight: 'bold',
+                                //            fontSize: isMaximized ? '16px' : '14px',
+                                //            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                //            pointerEvents: 'none'
+                                //        }}>
+                                //            ⏱️ Time Elapsed
+                                //        </div>
+                                //    );
+                                //}
                                 return null;
                             })()}
 
@@ -2270,26 +2414,26 @@ const ReportCharts = React.memo(({
                                         const currentTimeIndex = isViewingToday(selectedDate)
                                             ? getCurrentChartBucketIndex(chartData)
                                             : chartData.length - 1;
-                                        if (currentTimeIndex > 0) {
-                                            return (
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: isMaximized ? '80px' : '30px',
-                                                    left: isMaximized ? '60px' : '40px',
-                                                    zIndex: 10,
-                                                    backgroundColor: 'rgba(74, 222, 128, 0.9)',
-                                                    color: '#ffffff',
-                                                    padding: isMaximized ? '8px 16px' : '6px 12px',
-                                                    borderRadius: '6px',
-                                                    fontWeight: 'bold',
-                                                    fontSize: isMaximized ? '16px' : '14px',
-                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                                                    pointerEvents: 'none'
-                                                }}>
-                                                    ⏱️ Time Elapsed
-                                                </div>
-                                            );
-                                        }
+                                        //if (currentTimeIndex > 0) {
+                                        //    return (
+                                        //        <div style={{
+                                        //            position: 'absolute',
+                                        //            top: isMaximized ? '80px' : '30px',
+                                        //            left: isMaximized ? '60px' : '40px',
+                                        //            zIndex: 10,
+                                        //            backgroundColor: 'rgba(74, 222, 128, 0.9)',
+                                        //            color: '#ffffff',
+                                        //            padding: isMaximized ? '8px 16px' : '6px 12px',
+                                        //            borderRadius: '6px',
+                                        //            fontWeight: 'bold',
+                                        //            fontSize: isMaximized ? '16px' : '14px',
+                                        //            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                                        //            pointerEvents: 'none'
+                                        //        }}>
+                                        //            ⏱️ Time Elapsed
+                                        //        </div>
+                                        //    );
+                                        //}
                                         return null;
                                     })()}
 
@@ -2337,67 +2481,55 @@ const ReportCharts = React.memo(({
                     {/* ✅ UPDATED: Production Summary Cards with extended height when chart is hidden */}
                     {/* Production Summary Cards - LARGER when chart is hidden */}
                     {!isFullscreenMode && shiftMetrics && (
-                        <div className={`${isMaximized ? 'mt-1' : 'mt-2'} ${!shouldShowChart ? 'flex-1 flex items-center' : ''}`}>
-                            <div className={`grid grid-cols-2 md:grid-cols-4 gap-${isMaximized ? '2' : shouldShowChart ? '4' : '6'} ${!shouldShowChart ? 'w-full' : ''}`}>
-                                {/* Current Production */}
-                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[750px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${isDarkMode
-                                        ? 'bg-slate-800 border-slate-500 text-blue-200'
-                                        : 'bg-blue-50 border-blue-300 text-blue-900'
-                                    }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {shiftMetrics.currentProduction}
+                        <div className={`${isMaximized ? 'mt-1' : 'mt-2'} ${!localShowChart ? 'flex-1 flex items-center' : ''}`}>
+                            {/* If chart is visible, grid-cols-4; if hidden, grid-cols-2 for big tiles */}
+                            <div className={`grid gap-${isMaximized ? '2' : localShowChart ? '4' : '6'} ${localShowChart ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2'} ${!localShowChart ? 'w-full' : ''}`}>
+
+                                {/* 1. Production / Expected Card */}
+                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
+                ${isDarkMode ? 'bg-slate-800 border-slate-500 text-blue-200' : 'bg-blue-50 border-blue-300 text-blue-900'}`}>
+                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
+                                        {displayProduction}
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        Current Production
+                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
+                                        {prodLabel}
                                     </div>
                                 </div>
 
-                                {/* Target Parts */}
-                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${isDarkMode
-                                        ? 'bg-orange-900 border-orange-700 text-orange-100'
-                                        : 'bg-orange-50 border-orange-300 text-orange-900'
-                                    }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {shiftMetrics.targetParts}
+                                {/* 2. Target / Expected Till Now Card */}
+                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
+                ${isDarkMode ? 'bg-orange-900 border-orange-700 text-orange-100' : 'bg-orange-50 border-orange-300 text-orange-900'}`}>
+                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
+                                        {displayTarget}
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        Target Parts
+                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
+                                        {targetLabel}
                                     </div>
                                 </div>
 
-                                {/* Efficiency */}
-                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${shiftMetrics.efficiency >= 100
-                                        ? isDarkMode ? 'bg-emerald-900 border-emerald-700 text-emerald-100' : 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                                        : shiftMetrics.efficiency >= 80
-                                            ? isDarkMode ? 'bg-yellow-900 border-yellow-700 text-yellow-100' : 'bg-yellow-50 border-yellow-300 text-yellow-900'
-                                            : isDarkMode ? 'bg-red-900 border-red-700 text-red-100' : 'bg-red-50 border-red-300 text-red-900'
-                                    }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {shiftMetrics.efficiency}%
+                                {/* 3. Efficiency Card */}
+                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
+                ${effColorClass}`}>
+                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
+                                        {displayEfficiency}%
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        Current %
+                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
+                                        {effLabel}
                                     </div>
                                 </div>
 
-                                {/* Remaining Parts */}
-                                <div className={`p-${isMaximized ? '3' : shouldShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!shouldShowChart ? 'min-h-[250px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${isDarkMode
-                                        ? 'bg-purple-900 border-purple-700 text-purple-100'
-                                        : 'bg-purple-50 border-purple-300 text-purple-900'
-                                    }`}>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {shiftMetrics.remainingParts}
+                                {/* 4. Remaining Parts Card */}
+                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
+                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
+                ${isDarkMode ? 'bg-purple-900 border-purple-700 text-purple-100' : 'bg-purple-50 border-purple-300 text-purple-900'}`}>
+                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
+                                        {displayRemaining}
                                     </div>
-                                    <div className={`${!shouldShowChart ? 'text-7xl mb-4' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        Remaining Parts
+                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
+                                        {remainLabel}
                                     </div>
                                 </div>
                             </div>
