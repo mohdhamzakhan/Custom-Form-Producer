@@ -379,7 +379,7 @@ function LineCard({ line, status }) {
                 <StatusBadge state={state} />
 
                 <div className="pm-plant">{line.plant || "(Unnamed)"}</div>
-                <div className="pm-fid">{line.formId || "no form id set"}</div>
+                {/*<div className="pm-fid">{line.formId || "no form id set"}</div>*/}
 
                 <div className="pm-sep" />
 

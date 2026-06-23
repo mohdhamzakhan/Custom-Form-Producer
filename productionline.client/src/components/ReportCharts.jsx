@@ -448,13 +448,49 @@ const ReportCharts = React.memo(({
     const [currentProduction, setCurrentProduction] = useState(0);
     const [efficiency, setEfficiency] = useState(0);
     const [remainingParts, setRemainingParts] = useState(0);
-
+    const [expectedTillNow, setExpectedTillNow] = useState(0);
     const [downtimeEvents, setDowntimeEvents] = useState([]);
     const [totalDowntime, setTotalDowntime] = useState(0);
     const [localShowChart, setLocalShowChart] = useState(showChart ?? true);
-    const [metricsMode, setMetricsMode] = useState('current');
+    const [metricsMode, setMetricsMode] = useState('current'); /*for manesar it should be till*/
+    const [controlsVisible, setControlsVisible] = useState(true);
+    const controlsTimerRef = React.useRef(null);
+    const chartContainerRef = React.useRef(null);
+    const [chartHeight, setChartHeight] = useState(400);
 
+    useEffect(() => {
+        const showControls = () => {
+            setControlsVisible(true);
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+            controlsTimerRef.current = setTimeout(() => {
+                setControlsVisible(false);
+            }, 3000);
+        };
 
+        showControls(); // hide after 3s on mount
+        window.addEventListener('mousemove', showControls);
+        window.addEventListener('mousedown', showControls);
+        window.addEventListener('touchstart', showControls);
+
+        return () => {
+            window.removeEventListener('mousemove', showControls);
+            window.removeEventListener('mousedown', showControls);
+            window.removeEventListener('touchstart', showControls);
+            if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        const updateChartHeight = () => {
+            if (chartContainerRef.current) {
+                const containerHeight = chartContainerRef.current.parentElement?.clientHeight || window.innerHeight;
+                setChartHeight(controlsVisible ? Math.floor(containerHeight * 0.45) : Math.floor(containerHeight * 0.65));
+            }
+        };
+        updateChartHeight();
+        window.addEventListener('resize', updateChartHeight);
+        return () => window.removeEventListener('resize', updateChartHeight);
+    }, [controlsVisible]);
     const LINE_COLORS = [
         '#3b82f6',  // blue
         '#10b981',  // green
@@ -942,7 +978,58 @@ const ReportCharts = React.memo(({
             console.error('[fetchDowntimeEvents] error:', err);
         }
     };
+    useEffect(() => {
+        if (!activeShiftConfig) return;
+        const updateExpected = () => {
+            setExpectedTillNow(calculateExpectedTillNow(activeShiftConfig));
+        };
+        updateExpected();
+        const interval = setInterval(updateExpected, 10000);
+        return () => clearInterval(interval);
+    }, [activeShiftConfig]);
 
+    const calculateExpectedTillNow = (shiftConfig) => {
+        if (!shiftConfig) return 0;
+        try {
+            const now = new Date();
+            const [startHour, startMinute] = shiftConfig.startTime.split(":").map(Number);
+            const [endHour, endMinute] = shiftConfig.endTime.split(":").map(Number);
+            const shiftStart = new Date();
+            shiftStart.setHours(startHour, startMinute, 0, 0);
+            const shiftEnd = new Date();
+            shiftEnd.setHours(endHour, endMinute, 0, 0);
+            if (shiftEnd <= shiftStart) shiftEnd.setDate(shiftEnd.getDate() + 1);
+
+            let elapsedMinutes = Math.max(0, Math.min(
+                (now - shiftStart) / 60000,
+                (shiftEnd - shiftStart) / 60000
+            ));
+
+            let elapsedBreakMinutes = 0;
+            (shiftConfig.breaks || []).forEach(b => {
+                const [bStartHour, bStartMinute] = b.startTime.split(":").map(Number);
+                const [bEndHour, bEndMinute] = b.endTime.split(":").map(Number);
+                const breakStart = new Date();
+                breakStart.setHours(bStartHour, bStartMinute, 0, 0);
+                const breakEnd = new Date();
+                breakEnd.setHours(bEndHour, bEndMinute, 0, 0);
+                if (breakEnd <= breakStart) breakEnd.setDate(breakEnd.getDate() + 1);
+                if (now > breakEnd) {
+                    elapsedBreakMinutes += (breakEnd - breakStart) / 60000;
+                } else if (now > breakStart && now < breakEnd) {
+                    elapsedBreakMinutes += (now - breakStart) / 60000;
+                }
+            });
+
+            const effectiveSeconds = Math.max(0, elapsedMinutes - elapsedBreakMinutes) * 60;
+            const cycleTime = shiftConfig.cycleTimeSeconds || 0;
+            if (cycleTime === 0) return 0;
+            return Math.floor(effectiveSeconds / cycleTime);
+        } catch (error) {
+            console.error("Expected calculation error:", error);
+            return 0;
+        }
+    };
 
     // Render different chart types
     switch (type) {
@@ -1536,7 +1623,6 @@ const ReportCharts = React.memo(({
             const [shiftMetrics, setShiftMetrics] = useState(null);
             const [shiftLoading, setShiftLoading] = useState(true);
             const [shiftError, setShiftError] = useState(null);
-            const [expectedTillNow, setExpectedTillNow] = useState(0);
             function parseTimeToMinutes(timeStr) {
                 // Example: "5:40 AM", "11:20 PM"
                 const match = timeStr.match(/(\d+):(\d+) (\w+)/);
@@ -1585,10 +1671,10 @@ const ReportCharts = React.memo(({
 
             console.log("Test Hamza", passedShiftConfig)
 
-            const shouldShowChart = showChart ?? true;
+            const shouldShowChart = localShowChart;
 
             console.log("shouldShowChart", shouldShowChart)
-           
+
             // Fetch data from backend API
             useEffect(() => {
                 // ✅ Clear any existing intervals when dependencies change
@@ -1872,12 +1958,13 @@ const ReportCharts = React.memo(({
 
             const displayTarget = metricsMode === 'till' ? expectedTillNow : (activeShiftConfig?.targetParts || metricsData.targetParts);
             const displayProduction = metricsData.currentProduction;
-            const displayEfficiency = metricsMode === 'till' ? currentEfficiency : metricsData.efficiency;
+            const displayEfficiency = metricsMode === 'till' ? (expectedTillNow > 0 ? ((metricsData.currentProduction / expectedTillNow) * 100).toFixed(1) : 0) : metricsData.efficiency;
             const displayRemaining = metricsData.remainingParts;
 
-            const targetLabel = metricsMode === 'till' ? 'Expected till now' : 'Target Parts';
-            const prodLabel = metricsMode === 'till' ? 'Cumulative production' : 'Current production';
-            const effLabel = metricsMode === 'till' ? 'Efficiency (shift %)' : 'Efficiency %';
+
+            const targetLabel = metricsMode === 'till' ? 'Current Target' : 'Current Target';
+            const prodLabel = metricsMode === 'till' ? 'Current Production' : 'Current Production';
+            const effLabel = metricsMode === 'till' ? 'Efficiency (till %)' : 'Efficiency (shift %)';
             const remainLabel = 'Remaining Qty';
 
             const effNum = parseFloat(displayEfficiency) || 0;
@@ -1898,14 +1985,14 @@ const ReportCharts = React.memo(({
         `}
                     style={isMaximized ? {
                         position: 'fixed',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        zIndex: 999,
-                        margin: 0,
-                        padding: '10px'
-                    } : {}}
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        zIndex: 999, margin: 0, padding: '10px'
+                    } : {
+                        zoom: 0.85,
+                        transformOrigin: 'top left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                    }}
                 >
 
                     {/* Header Section */}
@@ -1979,17 +2066,34 @@ const ReportCharts = React.memo(({
 
                     {/* Header Section */}
                     {!isFullscreenMode && (
-                        <div className={`mb-6 p-4 rounded-xl border ${isDarkMode
-                            ? 'bg-gradient-to-r from-gray-800 to-gray-700 border-gray-600'
-                            : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
-                            }`}>
+                        <div
+                            style={{ position: 'relative', zIndex: 1, marginBottom: '8px' }}
+                            className={`p-4 rounded-xl border ${isDarkMode
+                                ? 'bg-gradient-to-r from-gray-800 to-gray-700 border-gray-600'
+                                : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
+                                }`}
+                        >
 
+                            {/* Left-Aligned Horizontal Group */}
+                            {/*<div*/}
+                            {/*    className="flex items-center gap-6"*/}
+                            {/*    style={{*/}
+                            {/*        transition: 'max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease',*/}
+                            {/*        maxHeight: controlsVisible ? '80px' : '0px',*/}
+                            {/*        opacity: controlsVisible ? 1 : 0,*/}
+                            {/*        overflow: 'hidden',*/}
+                            {/*        marginBottom: controlsVisible ? '16px' : '0px',*/}
+                            {/*        pointerEvents: controlsVisible ? 'auto' : 'none',*/}
+                            {/*    }}*/}
+                            {/*>*/}
                             {/* Left-Aligned Horizontal Group */}
                             <div className="flex items-center gap-6 mb-4">
                                 {/* Date & Time */}
                                 <div className={`text-sm border-r pr-6 ${isDarkMode ? 'border-gray-600' : 'border-blue-200'}`}>
                                     <div className="font-medium text-gray-500">
-                                        {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                        {
+                                            new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                                        }
                                     </div>
                                     <div className={`text-2xl font-bold ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
                                         {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2002,15 +2106,43 @@ const ReportCharts = React.memo(({
                                         {activeShiftConfig.name} {activeShiftConfig.modelNumber && `[${activeShiftConfig.modelNumber}]`}
                                     </h3>
                                     <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
-                                        Cycle: {activeShiftConfig.cycleTimeSeconds}s •
-                                        Breaks: {activeShiftConfig.breaks?.length || 0}
+                                        🕐 {activeShiftConfig.startTime} - {activeShiftConfig.endTime} •
+                                        ⚙ Cycle: {activeShiftConfig.cycleTimeSeconds}s •
+                                        ☕ Breaks: {activeShiftConfig.breaks?.length || 0}
                                     </p>
                                 </div>
+
+                                {metricsMode === 'till' && (
+                                    <div
+                                        className={`ml-auto font-bold px-3 rounded-lg shadow-md text-center min-w-[120px]
+                                            ${isDarkMode
+                                                ? 'bg-gradient-to-r from-violet-900 to-purple-800 text-white border border-violet-400'
+                                                : 'bg-gradient-to-r from-violet-200 to-purple-200 text-violet-900 border border-violet-500'
+                                            }`}
+                                    >
+                                        <div
+                                        style={{ fontSize: isMaximized ? '33px' : '18px' }}
+                                            className="text-large font-extrabold">
+                                            🎯 Target Parts {activeShiftConfig?.targetParts || 0}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Toggle Bar Row */}
-                            <div className={`rc-toggle-bar ${th}`} style={{ marginTop: 0, marginBottom: 0 }}>
+                            <div
+                                className={`rc-toggle-bar ${th}`}
+                                style={{
+                                    marginTop: 0,
+                                    marginBottom: 0,
+                                    transition: 'opacity 0.4s ease, max-height 0.4s ease, padding 0.4s ease, margin 0.4s ease',
+                                    opacity: controlsVisible ? 1 : 0,
+                                    maxHeight: controlsVisible ? '60px' : '0px',
+                                    padding: controlsVisible ? undefined : '0px',
+                                    margin: controlsVisible ? undefined : '0px',
+                                    overflow: 'hidden',
+                                    pointerEvents: controlsVisible ? 'auto' : 'none',
+                                }}
+                            >
                                 <label className={`rc-toggle-label ${th}`}>
                                     <span>📊 Chart</span>
                                     <div className="rc-switch" onClick={() => setLocalShowChart(v => !v)}>
@@ -2029,7 +2161,7 @@ const ReportCharts = React.memo(({
                                             className={`rc-mode-btn ${metricsMode === m ? `active-${th}` : `inactive-${th}`}`}
                                             onClick={() => setMetricsMode(m)}
                                         >
-                                            {m === 'current' ? '⚡ Current' : '📅 Till now'}
+                                            {m === 'current' ? '⚡ Shift Status' : '📅 Till now'}
                                         </button>
                                     ))}
                                 </div>
@@ -2046,8 +2178,15 @@ const ReportCharts = React.memo(({
                     {/* Production Chart */}
                     {shouldShowChart && (
                         <div
-                            className={`${isMaximized ? 'flex-1 overflow-hidden' : 'mb-7'}`}
-                            style={isMaximized ? { minHeight: 0 } : {}}
+                            className={`${isMaximized ? 'flex-1 overflow-hidden' : ''}`}
+                            style={isMaximized ? { minHeight: 0 } : {
+                                height: controlsVisible ? '500px' : '680px',
+                                transition: 'height 0.4s ease',
+                                marginBottom: '8px',
+                                position: 'relative',
+                                zIndex: 0,
+                                overflow: 'visible'
+                            }}
                         >
                             {/* ✅ Add "Time Elapsed" label as HTML element */}
                             {shiftChartData && (() => {
@@ -2078,21 +2217,17 @@ const ReportCharts = React.memo(({
                                 return null;
                             })()}
 
-                            {/* ============================================================ */}
-                            {/* FIND the block starting with: {type === 'shift' && (        */}
-                            {/* REPLACE the entire block with this:                         */}
-                            {/* ============================================================ */}
 
                             {type === 'shift' && (
-                                <div style={{ width: '100%', height: isMaximized ? '80vh' : 500 }}>
-                                    <ResponsiveContainer width="100%" height={isMaximized ? "100%" : 500}>
+                                <div style={{ width: '100%', height: '100%' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
                                         <LineChart
                                             data={clippedChartData}
                                             margin={{
-                                                top: isMaximized ? 0 : 10,
+                                                top: 5,
                                                 right: 30,
                                                 left: 20,
-                                                bottom: isMaximized ? 100 : 0
+                                                bottom: 0
                                             }}
                                         >
                                             <CartesianGrid
@@ -2202,10 +2337,10 @@ const ReportCharts = React.memo(({
 
                                             <XAxis
                                                 dataKey="time"
-                                                tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
+                                                tick={{ fontSize: isFullscreenMode ? 14 : 11, fill: isFullscreenMode ? 'white' : '#666' }}
                                                 angle={-45}
                                                 textAnchor="end"
-                                                height={80}
+                                                height={120}
                                             />
                                             <YAxis
                                                 tick={{ fontSize: isFullscreenMode ? 14 : 12, fill: isFullscreenMode ? 'white' : '#666' }}
@@ -2368,40 +2503,40 @@ const ReportCharts = React.memo(({
                                             ) : (
                                                 <>
                                                     {/* ===== SINGLE-LINE MODE: your existing two lines ===== */}
-                                                        <Line
-                                                            type="monotone"
-                                                            dataKey="targetParts"
-                                                            stroke={isDarkMode ? "#ffffff" : "#ff0000"}
-                                                            strokeWidth={isFullscreenMode ? 12 : 6}
-                                                            strokeDasharray="8 8"
-                                                            name="Target Production"
-                                                            dot={false}
-                                                        />
-                                                        <Line
-                                                            type="monotone"
-                                                            dataKey="actualParts"
-                                                            stroke="#2563eb"
-                                                            strokeWidth={isFullscreenMode ? 12 : 6}
-                                                            name="Actual Production"
-                                                            connectNulls={false}
-                                                            dot={(props) => {
-                                                                const { cx, cy, payload } = props;
-                                                                if (payload.actualParts && payload.actualParts > 0) {
-                                                                    return (
-                                                                        <circle
-                                                                            cx={cx}
-                                                                            cy={cy}
-                                                                            r={isFullscreenMode ? 6 : 4}
-                                                                            fill="#2563eb"
-                                                                            stroke="#fff"
-                                                                            strokeWidth={2}
-                                                                        />
-                                                                    );
-                                                                }
-                                                                return null;
-                                                            }}
-                                                            activeDot={{ r: isFullscreenMode ? 8 : 6 }}
-                                                        />
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="targetParts"
+                                                        stroke={isDarkMode ? "#ffffff" : "#ff0000"}
+                                                        strokeWidth={isFullscreenMode ? 12 : 6}
+                                                        strokeDasharray="8 8"
+                                                        name="Target Production"
+                                                        dot={false}
+                                                    />
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="actualParts"
+                                                        stroke="#2563eb"
+                                                        strokeWidth={isFullscreenMode ? 12 : 6}
+                                                        name="Actual Production"
+                                                        connectNulls={false}
+                                                        dot={(props) => {
+                                                            const { cx, cy, payload } = props;
+                                                            if (payload.actualParts && payload.actualParts > 0) {
+                                                                return (
+                                                                    <circle
+                                                                        cx={cx}
+                                                                        cy={cy}
+                                                                        r={isFullscreenMode ? 6 : 4}
+                                                                        fill="#2563eb"
+                                                                        stroke="#fff"
+                                                                        strokeWidth={2}
+                                                                    />
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                        activeDot={{ r: isFullscreenMode ? 8 : 6 }}
+                                                    />
                                                 </>
                                             )}
                                         </LineChart>
@@ -2478,64 +2613,6 @@ const ReportCharts = React.memo(({
                         </div>
                     )}
 
-                    {/* ✅ UPDATED: Production Summary Cards with extended height when chart is hidden */}
-                    {/* Production Summary Cards - LARGER when chart is hidden */}
-                    {!isFullscreenMode && shiftMetrics && (
-                        <div className={`${isMaximized ? 'mt-1' : 'mt-2'} ${!localShowChart ? 'flex-1 flex items-center' : ''}`}>
-                            {/* If chart is visible, grid-cols-4; if hidden, grid-cols-2 for big tiles */}
-                            <div className={`grid gap-${isMaximized ? '2' : localShowChart ? '4' : '6'} ${localShowChart ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-2'} ${!localShowChart ? 'w-full' : ''}`}>
-
-                                {/* 1. Production / Expected Card */}
-                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${isDarkMode ? 'bg-slate-800 border-slate-500 text-blue-200' : 'bg-blue-50 border-blue-300 text-blue-900'}`}>
-                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {displayProduction}
-                                    </div>
-                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        {prodLabel}
-                                    </div>
-                                </div>
-
-                                {/* 2. Target / Expected Till Now Card */}
-                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${isDarkMode ? 'bg-orange-900 border-orange-700 text-orange-100' : 'bg-orange-50 border-orange-300 text-orange-900'}`}>
-                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {displayTarget}
-                                    </div>
-                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        {targetLabel}
-                                    </div>
-                                </div>
-
-                                {/* 3. Efficiency Card */}
-                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${effColorClass}`}>
-                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {displayEfficiency}%
-                                    </div>
-                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        {effLabel}
-                                    </div>
-                                </div>
-
-                                {/* 4. Remaining Parts Card */}
-                                <div className={`p-${isMaximized ? '3' : localShowChart ? '4' : '8'} rounded-lg border shadow-sm flex flex-col justify-center 
-                ${!localShowChart ? 'min-h-[300px]' : isMaximized ? 'min-h-[160px]' : ''} 
-                ${isDarkMode ? 'bg-purple-900 border-purple-700 text-purple-100' : 'bg-purple-50 border-purple-300 text-purple-900'}`}>
-                                    <div className={`${!localShowChart ? 'text-8xl mb-4' : isMaximized ? 'text-6xl' : 'text-3xl'} font-bold text-center`}>
-                                        {displayRemaining}
-                                    </div>
-                                    <div className={`${!localShowChart ? 'text-4xl' : isMaximized ? 'text-3xl' : 'text-1xl'} font-bold text-center`}>
-                                        {remainLabel}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Marquee Message */}
                     {activeShiftConfig?.message && (
                         <div className="mb-0">
@@ -2547,6 +2624,113 @@ const ReportCharts = React.memo(({
                             </div>
                         </div>
                     )}
+
+                    {/* ✅ UPDATED: Production Summary Cards with extended height when chart is hidden */}
+                    {/* Production Summary Cards - LARGER when chart is hidden */}
+                    {!isFullscreenMode && shiftMetrics && (
+                        <div className={`${isMaximized ? 'mt-1' : 'mt-2'}`} style={!localShowChart ? { flex: '1 1 auto' } : {}}>
+                            <div className={`grid grid-cols-2 md:grid-cols-4 gap-${isMaximized ? '2' : '4'} w-full ${!localShowChart ? 'h-full' : ''}`}>
+
+                                {/* 1. Production / Expected Card */}
+                                <div className={`p-0 rounded-lg border shadow-sm flex flex-col items-center justify-center 
+    ${!localShowChart ? 'h-full min-h-[200px]' : isMaximized ? 'min-h-[100px]' : 'min-h-[80px]'}
+                ${isDarkMode ? 'bg-slate-800 border-slate-500 text-blue-200' : 'bg-blue-50 border-blue-300 text-blue-900'}`}>
+                                    <div className="font-bold text-center" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(4rem, 8vw, 10rem)'
+                                            : isMaximized
+                                                ? 'clamp(2rem, 4vw, 4rem)'
+                                                : 'clamp(1.5rem, 3vw, 3rem)'
+                                    }}>
+                                        {displayProduction}
+                                    </div>
+                                    <div className="font-bold text-center mt-2" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(5rem, 2vw, 5rem)'
+                                            : isMaximized
+                                                ? 'clamp(1rem, 2vw, 2rem)'
+                                                : 'clamp(0.8rem, 1.5vw, 1.2rem)'
+                                    }}>
+                                        {prodLabel}
+                                    </div>
+                                </div>
+
+                                {/* 2. Target / Expected Till Now Card */}
+                                <div className={`p-0 rounded-lg border shadow-sm flex flex-col items-center justify-center 
+    ${!localShowChart ? 'h-full min-h-[200px]' : isMaximized ? 'min-h-[100px]' : 'min-h-[80px]'}
+                ${isDarkMode ? 'bg-orange-900 border-orange-700 text-orange-100' : 'bg-orange-50 border-orange-300 text-orange-900'}`}>
+                                    <div className="font-bold text-center" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(4rem, 8vw, 10rem)'
+                                            : isMaximized
+                                                ? 'clamp(2rem, 4vw, 4rem)'
+                                                : 'clamp(1.5rem, 3vw, 3rem)'
+                                    }}>
+                                        {displayTarget}
+                                    </div>
+                                    <div className="font-bold text-center mt-2" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(5rem, 2vw, 5rem)'
+                                            : isMaximized
+                                                ? 'clamp(1rem, 2vw, 2rem)'
+                                                : 'clamp(0.8rem, 1.5vw, 1.2rem)'
+                                    }}>
+                                        {targetLabel}
+                                    </div>
+                                </div>
+
+                                {/* 3. Efficiency Card */}
+                                <div className={`p-0 rounded-lg border shadow-sm flex flex-col items-center justify-center 
+    ${!localShowChart ? 'h-full min-h-[200px]' : isMaximized ? 'min-h-[100px]' : 'min-h-[80px]'}
+                ${effColorClass}`}>
+                                    <div className="font-bold text-center" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(4rem, 8vw, 10rem)'
+                                            : isMaximized
+                                                ? 'clamp(2rem, 4vw, 4rem)'
+                                                : 'clamp(1.5rem, 3vw, 3rem)'
+                                    }}>
+                                        {displayEfficiency}%
+                                    </div>
+                                    <div className="font-bold text-center mt-2" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(5rem, 2vw, 5rem)'
+                                            : isMaximized
+                                                ? 'clamp(1rem, 2vw, 2rem)'
+                                                : 'clamp(0.8rem, 1.5vw, 1.2rem)'
+                                    }}>
+                                        {effLabel}
+                                    </div>
+                                </div>
+
+                                {/* 4. Remaining Parts Card */}
+                                <div className={`p-0 rounded-lg border shadow-sm flex flex-col items-center justify-center 
+    ${!localShowChart ? 'h-full min-h-[200px]' : isMaximized ? 'min-h-[100px]' : 'min-h-[80px]'}
+                ${isDarkMode ? 'bg-purple-900 border-purple-700 text-purple-100' : 'bg-purple-50 border-purple-300 text-purple-900'}`}>
+                                    <div className="font-bold text-center" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(4rem, 8vw, 10rem)'
+                                            : isMaximized
+                                                ? 'clamp(2rem, 4vw, 4rem)'
+                                                : 'clamp(1.5rem, 3vw, 3rem)'
+                                    }}>
+                                        {displayRemaining}
+                                    </div>
+                                    <div className="font-bold text-center mt-2" style={{
+                                        fontSize: !localShowChart
+                                            ? 'clamp(5rem, 2vw, 5rem)'
+                                            : isMaximized
+                                                ? 'clamp(1rem, 2vw, 2rem)'
+                                                : 'clamp(0.8rem, 1.5vw, 1.2rem)'
+                                    }}>
+                                        {remainLabel}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    
 
                     {/* Break Schedule */}
                     {/*{isMaximized && activeShiftConfig.breaks && activeShiftConfig.breaks.length > 0 && (*/}
