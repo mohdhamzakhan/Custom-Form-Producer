@@ -506,7 +506,17 @@ export default function EnhancedReportDesigner() {
                             });
 
                             setFields(expandedFields);
-                            setSelectedFields(expandedFields.map(f => f.id));
+                            //setSelectedFields(expandedFields.map(f => f.id));
+
+                            const savedFieldOrder = (data.fields || [])
+                                .slice()
+                                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                                .map(f => f.fieldId || f.id)
+                                .filter(id => expandedFields.some(ef => ef.id === id)); // drop fields no longer on the form
+
+                            setSelectedFields(
+                                savedFieldOrder.length > 0 ? savedFieldOrder : expandedFields.map(f => f.id)
+                            );
                         } catch (err) {
                             console.error('Failed to load form fields:', err);
                         }
@@ -2177,9 +2187,17 @@ export default function EnhancedReportDesigner() {
                                                     key={fieldId}
                                                     className="flex items-center gap-2 p-2 bg-blue-50 rounded hover:bg-blue-100"
                                                     draggable
+                                                
                                                     onDragStart={(e) => {
                                                         e.dataTransfer.effectAllowed = "move";
-                                                        e.dataTransfer.setData("text/plain", index.toString());
+
+                                                        // Store a form-scoped index (not the global flattened index)
+                                                        const scopedIndex = multiFormMode
+                                                            ? formFieldMappings[field.formId]?.selectedFields.indexOf(fieldId)
+                                                            : index;
+
+                                                        e.dataTransfer.setData("text/plain", scopedIndex.toString());
+                                                        e.dataTransfer.setData("application/form-id", String(field.formId ?? ""));
                                                     }}
                                                     onDragOver={(e) => {
                                                         e.preventDefault();
@@ -2188,32 +2206,42 @@ export default function EnhancedReportDesigner() {
                                                     onDrop={(e) => {
                                                         e.preventDefault();
                                                         const dragIndex = parseInt(e.dataTransfer.getData("text/plain"));
-                                                        const dropIndex = index;
+                                                        const dragFormId = e.dataTransfer.getData("application/form-id");
 
-                                                        if (dragIndex !== dropIndex) {
-                                                            if (!multiFormMode) {
-                                                                const newFields = [...selectedFields];
-                                                                const [removed] = newFields.splice(dragIndex, 1);
-                                                                newFields.splice(dropIndex, 0, removed);
-                                                                setSelectedFields(newFields);
-                                                            } else {
-                                                                // Handle reordering in multi-form mode
-                                                                const formId = field.formId;
-                                                                const formSelected = formFieldMappings[formId].selectedFields;
-                                                                const newFields = [...formSelected];
-                                                                const [removed] = newFields.splice(dragIndex, 1);
-                                                                newFields.splice(dropIndex, 0, removed);
+                                                        if (!multiFormMode) {
+                                                            const dropIndex = index;
+                                                            if (dragIndex === dropIndex) return;
 
-                                                                setFormFieldMappings(prev => ({
-                                                                    ...prev,
-                                                                    [formId]: {
-                                                                        ...prev[formId],
-                                                                        selectedFields: newFields
-                                                                    }
-                                                                }));
-                                                            }
+                                                            const newFields = [...selectedFields];
+                                                            const [removed] = newFields.splice(dragIndex, 1);
+                                                            newFields.splice(dropIndex, 0, removed);
+                                                            setSelectedFields(newFields);
+                                                        } else {
+                                                            const formId = field.formId;
+
+                                                            // Ignore drops coming from a different form's list
+                                                            if (dragFormId && dragFormId !== String(formId ?? "")) return;
+
+                                                            // Drop index must also be scoped to this form's array, not the global index
+                                                            const formSelected = formFieldMappings[formId].selectedFields;
+                                                            const dropIndex = formSelected.indexOf(fieldId);
+
+                                                            if (dragIndex === dropIndex || dragIndex < 0 || dropIndex < 0) return;
+
+                                                            const newFields = [...formSelected];
+                                                            const [removed] = newFields.splice(dragIndex, 1);
+                                                            newFields.splice(dropIndex, 0, removed);
+
+                                                            setFormFieldMappings(prev => ({
+                                                                ...prev,
+                                                                [formId]: {
+                                                                    ...prev[formId],
+                                                                    selectedFields: newFields
+                                                                }
+                                                            }));
                                                         }
                                                     }}
+
                                                 >
                                                     <GripVertical className="w-4 h-4 text-gray-400 cursor-move" />
 

@@ -828,7 +828,10 @@ export default function FormSubmissionReport() {
                     const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/GetALLForms/${selectedFormId}`);
                     if (!response.ok) throw new Error("Unable to retrieve form data");
                     const data = await response.json();
+                    console.log("RAW formDefinition:", data);
                     setFormDefinition(data);
+                    console.log("formDefinition full object:", data);
+                    console.log("formDefinition keys:", Object.keys(data));
                     fetchSubmissions(selectedFormId);
                 } catch (err) {
                     setError(err.message || "Failed to load form definition");
@@ -988,8 +991,8 @@ export default function FormSubmissionReport() {
     };
 
     const getFieldLabelById = (fieldId) => {
-        if (!formDefinition || !formDefinition.fields) return fieldId;
-        const field = formDefinition.fields.find(f => f.id === fieldId);
+        if (!formDefinition?.form?.fields) return fieldId;
+        const field = formDefinition.form.fields.find(f => f.id === fieldId);
         return field ? field.label : fieldId;
     };
 
@@ -1065,6 +1068,26 @@ export default function FormSubmissionReport() {
         if (submission.approvals.some(a => a.approvalLevel >= 2)) return false;
         return !submission.approvals.some(a => a.status === "Approved" || a.status === "Rejected");
     };
+    const normalize = (str) => (str || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const LINE_FIELD_ALIASES = ["production line", "line name"];
+
+    const lineField = formDefinition?.form?.fields?.find(
+        f => LINE_FIELD_ALIASES.includes(normalize(f.label))
+    );
+
+    const getLineValue = (submission) => {
+        if (!lineField) return '';
+        // submission.data is keyed by GUID (fieldLabel), not by label text
+        return submission.data?.[lineField.id]?.value || '';
+    };
+
+    //const getLineValue = (submission) => {
+    //    if (!lineFieldLabel) return '';
+    //    const key = Object.keys(submission.data || {}).find(
+    //        k => normalize(k) === normalize(lineFieldLabel)
+    //    );
+    //    return key ? submission.data[key].value : '';
+    //};
 
     // Shared header row for pending/rejected/byForm table
     const renderTableHeader = () => (
@@ -1287,6 +1310,9 @@ export default function FormSubmissionReport() {
                                     <tr>
                                         <th className="text-left py-3 px-4 border-b">Submission ID</th>
                                         <th className="text-left py-3 px-4 border-b">Submitted At</th>
+                                        {viewMode === "byForm" && lineField && (
+                                            <th className="text-left py-3 px-4 border-b">{lineField.label}</th>
+                                        )}
                                         <th className="text-left py-3 px-4 border-b">Actions</th>
                                     </tr>
                                 </thead>
@@ -1295,6 +1321,9 @@ export default function FormSubmissionReport() {
                                         <tr key={submission.id} className="hover:bg-gray-50">
                                             <td className="py-2 px-4 border-b">{submission.id}</td>
                                             <td className="py-2 px-4 border-b">{formatDate(submission.submittedAt)}</td>
+                                            {viewMode === "byForm" && lineField && (
+                                                <td className="py-2 px-4 border-b">{getLineValue(submission)}</td>
+                                            )}
                                             <td className="py-2 px-4 border-b">
                                                 {submission.approvals.length === 0 ? (
                                                     <span className="text-blue-500 font-semibold">Not yet sent for approval</span>

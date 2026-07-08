@@ -565,67 +565,77 @@ namespace productionLine.Server.Controllers
                 if (!string.IsNullOrWhiteSpace(submissionDTO.SubmittedAt))
                 {
                     var formats = new[]
-    {
-    // =========================
-    // ISO 8601 (BEST / STANDARD)
-    // =========================
-    "yyyy-MM-ddTHH:mm:ss",
-    "yyyy-MM-ddTHH:mm:ssZ",
-    "yyyy-MM-ddTHH:mm:ss.fff",
-    "yyyy-MM-ddTHH:mm:ss.fffZ",
-    "yyyy-MM-dd HH:mm:ss",
-    "yyyy-MM-dd HH:mm",
+                    {
+        // =========================
+        // ISO 8601 (BEST / STANDARD)
+        // =========================
+        "yyyy-MM-ddTHH:mm:ss",
+        "yyyy-MM-ddTHH:mm:ssZ",
+        "yyyy-MM-ddTHH:mm:ss.f",
+        "yyyy-MM-ddTHH:mm:ss.ff",
+        "yyyy-MM-ddTHH:mm:ss.fff",
+        "yyyy-MM-ddTHH:mm:ss.ffff",
+        "yyyy-MM-ddTHH:mm:ss.fffff",
+        "yyyy-MM-ddTHH:mm:ss.ffffff",
+        "yyyy-MM-ddTHH:mm:ss.fffffff",
+        "yyyy-MM-ddTHH:mm:ss.fffZ",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd HH:mm",
+        // =========================
+        // Slash-based (very common)
+        // =========================
+        "yyyy/MM/dd HH:mm:ss",
+        "yyyy/MM/dd HH:mm",
+        "dd/MM/yyyy HH:mm:ss",
+        "dd/MM/yyyy HH:mm",
+        "MM/dd/yyyy HH:mm:ss",
+        "MM/dd/yyyy HH:mm",
+        // =========================
+        // Dash-based (legacy systems)
+        // =========================
+        "dd-MM-yyyy HH:mm:ss",
+        "dd-MM-yyyy HH:mm",
+        "MM-dd-yyyy HH:mm:ss",
+        "MM-dd-yyyy HH:mm",
+        // =========================
+        // Two-digit year (dangerous but common)
+        // =========================
+        "dd/MM/yy HH:mm:ss",
+        "dd/MM/yy HH:mm",
+        "dd-MM-yy HH:mm:ss",
+        "dd-MM-yy HH:mm",
+        // =========================
+        // Date only (no time)
+        // =========================
+        "yyyy-MM-dd",
+        "yyyy/MM/dd",
+        "dd/MM/yyyy",
+        "dd-MM-yyyy",
+        "MM/dd/yyyy",
+        "MM-dd-yyyy",
+        // =========================
+        // Time only (rare but possible)
+        // =========================
+        "HH:mm:ss",
+        "HH:mm"
+    };
 
-    // =========================
-    // Slash-based (very common)
-    // =========================
-    "yyyy/MM/dd HH:mm:ss",
-    "yyyy/MM/dd HH:mm",
-    "dd/MM/yyyy HH:mm:ss",
-    "dd/MM/yyyy HH:mm",
-    "MM/dd/yyyy HH:mm:ss",
-    "MM/dd/yyyy HH:mm",
-
-    // =========================
-    // Dash-based (legacy systems)
-    // =========================
-    "dd-MM-yyyy HH:mm:ss",
-    "dd-MM-yyyy HH:mm",
-    "MM-dd-yyyy HH:mm:ss",
-    "MM-dd-yyyy HH:mm",
-
-    // =========================
-    // Two-digit year (dangerous but common)
-    // =========================
-    "dd/MM/yy HH:mm:ss",
-    "dd/MM/yy HH:mm",
-    "dd-MM-yy HH:mm:ss",
-    "dd-MM-yy HH:mm",
-
-    // =========================
-    // Date only (no time)
-    // =========================
-    "yyyy-MM-dd",
-    "yyyy/MM/dd",
-    "dd/MM/yyyy",
-    "dd-MM-yyyy",
-    "MM/dd/yyyy",
-    "MM-dd-yyyy",
-
-    // =========================
-    // Time only (rare but possible)
-    // =========================
-    "HH:mm:ss",
-    "HH:mm"
-};
-
+                    var trimmed = submissionDTO.SubmittedAt.Trim();
                     DateTime parsed;
-                    if (DateTime.TryParseExact(
-                        submissionDTO.SubmittedAt.Trim(),
-            formats,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.None,
-                        out parsed))
+
+                    // Try the standard round-trip / general ISO parse first —
+                    // this alone handles "2026-07-02T13:20:23.2508647" and most real-world ISO variants.
+                    if (DateTime.TryParse(
+                            trimmed,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind,
+                            out parsed)
+                        || DateTime.TryParseExact(
+                            trimmed,
+                            formats,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
+                            out parsed))
                     {
                         submittedAt = parsed;
                     }
@@ -1167,6 +1177,11 @@ namespace productionLine.Server.Controllers
                                 a.Id,
                                 a.Name,
                                 a.Level
+                            }),
+                            Fields = s.Form.Fields.Select(f => new   // <-- add this
+                            {
+                                f.Id,
+                                f.Label
                             })
                         },
 

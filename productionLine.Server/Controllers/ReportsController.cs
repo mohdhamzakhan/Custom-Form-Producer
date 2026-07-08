@@ -1759,11 +1759,13 @@ namespace productionLine.Server.Controllers
                                         match.FieldValue, jsonOptions);
 
                                     var vals = gridRows?
-                                        .Select(r =>
-                                        {
-                                            if (!r.ContainsKey(colName)) return null;
-                                            var cell = r[colName];
-                                            if (cell is JsonElement je)
+                                         .Select(r =>
+                                         {
+                                             var matchingKey = r.Keys.FirstOrDefault(k =>
+                                                 k.Trim().Equals(colName, StringComparison.OrdinalIgnoreCase));
+                                             if (matchingKey == null) return null;
+                                             var cell = r[matchingKey];
+                                             if (cell is JsonElement je)
                                                 return je.ValueKind == JsonValueKind.Null ? null : je.ToString();
                                             return cell?.ToString();
                                         })
@@ -2066,7 +2068,20 @@ namespace productionLine.Server.Controllers
                     foreach (var field in group)
                     {
                         var columnName = field.FieldLabel.Split("→")[1].Trim();
-                        var value = row != null && row.TryGetValue(columnName, out var val) ? val?.ToString() ?? "-" : "-";
+
+                        Console.WriteLine($"🔍 Looking for column: '{columnName}'");
+                        Console.WriteLine($"🔍 Available keys: {string.Join(", ", row?.Keys.Select(k => $"'{k}'") ?? new List<string>())}");
+
+                        var matchingKey = row?.Keys.FirstOrDefault(k =>
+                            k.Trim().Equals(columnName, StringComparison.OrdinalIgnoreCase));
+
+                        Console.WriteLine($"🔍 Matching key found: '{matchingKey}'");
+
+                        var value = matchingKey != null && row.TryGetValue(matchingKey, out var val)
+                            ? val?.ToString() ?? "-"
+                            : "-";
+
+                        Console.WriteLine($"🔍 Final value: '{value}'");
 
                         rowData.Add(new { fieldLabel = field.FieldLabel, value = value, visible = field.Visible });
                     }

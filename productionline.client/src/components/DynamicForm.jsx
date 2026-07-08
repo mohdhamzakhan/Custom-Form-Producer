@@ -46,6 +46,8 @@ export default function DynamicForm() {
     const [selectedUser, setSelectedUser] = useState(null);
     const [sendingPartial, setSendingPartial] = useState(false);
     const [submissionLimit, setSubmissionLimit] = useState(20);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [originalSubmittedAt, setOriginalSubmittedAt] = useState(null);
 
     const handleAdSearch = async (term) => {
         setAdSearchTerm(term);
@@ -987,6 +989,8 @@ export default function DynamicForm() {
             // Optional: update form structure if needed
             setFormData(formDefinition);
 
+            setOriginalSubmittedAt(submission.submittedAt || null);
+
             const updatedValues = {};
             const updatedRemarks = {};
 
@@ -1518,12 +1522,17 @@ export default function DynamicForm() {
         if (e) {
             e.preventDefault();
         }
+        // 🚫 Block duplicate clicks while a submission is already in flight
+        if (isSubmitting) return;
 
         const validationErrors = status === "Submitted" ? validateForm() : {};
         setFormErrors(validationErrors);
         setSubmitted(true);
 
         if (Object.keys(validationErrors).length > 0) return;
+
+        setIsSubmitting(true);
+
         try {
             const storedUser = JSON.parse(localStorage.getItem("user"));
 
@@ -1538,6 +1547,9 @@ export default function DynamicForm() {
             submissionId: editingSubmissionId,
             status,
             createdBy,
+            ...(editingSubmissionId && originalSubmittedAt
+                ? { submittedAt: originalSubmittedAt }
+                : {}),
             submissionData: []
         };
 
@@ -1633,6 +1645,8 @@ export default function DynamicForm() {
 
             // Better error message
             alert(`Network error. Please check:\n1. Server is running at ${APP_CONSTANTS.API_BASE_URL}\n2. CORS is configured\n3. Check browser console for details`);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -1697,6 +1711,7 @@ export default function DynamicForm() {
         setFormErrors({});
         setSubmitted(false);
         setEditingSubmissionId(null);
+        setOriginalSubmittedAt(null);
     };
 
     const getDayName = (date) => {
@@ -3645,7 +3660,7 @@ export default function DynamicForm() {
             focus:outline-none focus:ring-2 focus:ring-blue-400
         "
                         >
-                            Submit
+                            {isSubmitting ? "Submitting…" : "Submit"}
                         </button>
 
                         {/* Secondary Action */}

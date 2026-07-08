@@ -1458,7 +1458,9 @@ export default function EnhancedReportViewer() {
                                                     r.submissionId === subId ||
                                                     (r._mergedFrom && r._mergedFrom.includes(subId))
                                                 );
-                                                const firstRowCalcValue = rows[0]?.data?.find(d => d.fieldLabel === field?.label)?.value;
+                                                const firstRowCalcValue = rows[0]?.data?.find(d =>
+                                                    d.fieldLabel.replace(/\s+/g, ' ').trim() === field?.label?.replace(/\s+/g, ' ').trim()
+                                                )?.value;
 
                                                 return (
                                                     <td key={j} style={{
@@ -1484,7 +1486,10 @@ export default function EnhancedReportViewer() {
 
                                             const allValues = rows
                                                 .map(row => {
-                                                    const cell = row.data?.find(d => d.fieldLabel === field?.label);
+                                                    const normalizedFieldLabel = field?.label?.replace(/\s+/g, ' ').trim();
+                                                    const cell = row.data?.find(d =>
+                                                        d.fieldLabel.replace(/\s+/g, ' ').trim() === normalizedFieldLabel
+                                                    );
                                                     return cell?.value;
                                                 })
                                                 .filter(v => v && v !== '-' && v !== '—' && v !== 'null' && v !== '');
@@ -3437,6 +3442,8 @@ export default function EnhancedReportViewer() {
         console.log(`│ Submission ID: ${submissionId}`);
         console.log(`└─────────────────────────────────────────────────────────┘`);
 
+        console.log(`🔍 getFieldValue called with: "${fieldName}"`);
+
         if (!rowData || !Array.isArray(rowData)) {
             console.log(`   ❌ Invalid rowData`);
             return 0;
@@ -3446,7 +3453,9 @@ export default function EnhancedReportViewer() {
         // STEP 1: Try exact label match
         // ---------------------------------------------------------------
         console.log(`\n   🔍 STEP 1: Trying exact label match...`);
-        let fieldData = rowData.find(d => d.fieldLabel === fieldName);
+        let fieldData = rowData.find(d =>
+            d.fieldLabel.replace(/\s+/g, ' ').trim() === fieldName.replace(/\s+/g, ' ').trim()
+        );
 
         if (fieldData) {
             console.log(`   ✅ Exact match found!`);
@@ -3464,7 +3473,11 @@ export default function EnhancedReportViewer() {
         // STEP 2: Try field lookup by ID
         // ---------------------------------------------------------------
         console.log(`\n   🔍 STEP 2: Trying field lookup by ID...`);
+        //const field = fields.find(f => f.label === fieldName || f.id === fieldName);
+        console.log(`   🔍 fieldName: "${fieldName}"`);
+        console.log(`   🔍 fields labels:`, fields.map(f => f.label));
         const field = fields.find(f => f.label === fieldName || f.id === fieldName);
+        console.log(`   🔍 field found:`, field);
 
         if (field) {
             console.log(`   ✅ Field found in registry!`);
@@ -3488,8 +3501,10 @@ export default function EnhancedReportViewer() {
             console.log(`\n   🔍 STEP 2.2: Trying qualified label match...`);
             fieldData = rowData.find(d => {
                 if (d.fieldLabel.includes('→')) {
-                    const cleanLabel = d.fieldLabel.split('→').pop().trim();
-                    return cleanLabel === field.label;
+                    const cleanLabel = d.fieldLabel.split('→').pop().trim().replace(/\s+/g, ' ');
+                    const cleanFieldLabel = field.label.replace(/\s+/g, ' ').trim();
+                    console.log(`   🔍 Comparing: "${cleanLabel}" === "${cleanFieldLabel}"`);
+                    return cleanLabel === cleanFieldLabel;
                 }
                 return false;
             });
@@ -3518,7 +3533,10 @@ export default function EnhancedReportViewer() {
         // STEP 3: Try partial label match
         // ---------------------------------------------------------------
         console.log(`\n   🔍 STEP 3: Trying partial label match...`);
-        fieldData = rowData.find(d => d.fieldLabel.includes(fieldName));
+        const normalizedFieldName = fieldName.replace(/\s+/g, ' ').trim();
+        fieldData = rowData.find(d =>
+            d.fieldLabel.replace(/\s+/g, ' ').trim().includes(normalizedFieldName)
+        );
 
         if (fieldData) {
             console.log(`   ✅ Partial match found!`);
