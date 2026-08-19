@@ -54,5 +54,6 @@ namespace productionLine.Server.DTO
         public string? lengthValidationMessage { get; set; }
         public int? maxLength { get; set; }
         public int? minLength { get; set; }
+        public string? ratingStyle { get; set; }
     }
 }

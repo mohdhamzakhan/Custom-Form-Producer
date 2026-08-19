@@ -232,9 +232,6 @@ namespace productionLine.Server.Controllers
                     existingField.AllowEditQuestions = field.AllowEditQuestions;
                     existingField.FilledBy = field.FilledBy;
 
-
-
-
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
                         Operator = rt.Operator,
@@ -285,7 +282,7 @@ namespace productionLine.Server.Controllers
                     DefaultRowsJson = field.DefaultRowsJson,
                     AllowAddRows = field.AllowAddRows,
                     AllowEditQuestions = field.AllowEditQuestions,
-
+                    
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
                         Operator = rt.Operator,
@@ -525,8 +522,8 @@ namespace productionLine.Server.Controllers
                         maxLength = ct.maxLength,
                         minLength = ct.minLength,
                         disabled = ct.disable,
-                        visible = ct.visible
-
+                        visible = ct.visible,
+                        ratingStyle=ct.RatingStyle
 
                     }).ToList() ?? new List<GridColumnDto>()),
 

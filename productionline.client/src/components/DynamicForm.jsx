@@ -2801,48 +2801,78 @@ export default function DynamicForm() {
                                                             }
 
                                                             if (col.type === "dropdown") {
+                                                                const handleDropdownSelect = (newValue) => {
+                                                                    const updatedRow = { ...row, [col.name]: newValue };
+
+                                                                    field.columns.forEach(depCol => {
+                                                                        if (depCol.type === "dependentDropdown" && depCol.parentColumn === col.name) {
+                                                                            updatedRow[depCol.name] = "";
+                                                                        }
+                                                                    });
+
+                                                                    if (!(col.remarksOptions || []).includes(newValue)) {
+                                                                        updatedRow[`${col.name}_remarks`] = "";
+                                                                    }
+
+                                                                    handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
+                                                                };
+
+                                                                if (isRatingColumn(col)) {
+                                                                    return (
+                                                                        <div>
+                                                                            <div className="flex gap-1 justify-center">
+                                                                                {(col.options || []).map((option, optIdx) => {
+                                                                                    const selected = String(row[col.name]) === String(option);
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={optIdx}
+                                                                                            type="button"
+                                                                                            onClick={() => handleDropdownSelect(option)}
+                                                                                            disabled={isDisabled}
+                                                                                            title={`${option} — ${RATING_LABELS[option] || ""}`}
+                                                                                            className={`text-xl w-9 h-9 rounded-full border flex items-center justify-center transition
+                                    ${selected ? "border-blue-500 bg-blue-50 ring-2 ring-blue-300" : "border-gray-200 hover:bg-gray-50"}
+                                    ${isDisabled ? "opacity-60 cursor-not-allowed" : ""}`}
+                                                                                        >
+                                                                                            {RATING_EMOJI_MAP[String(option).trim()] || option}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+
+                                                                            {col.remarksOptions?.includes(row[col.name]) && (
+                                                                                <input
+                                                                                    type="text"
+                                                                                    required
+                                                                                    placeholder={`Enter remarks for ${row[col.name]}`}
+                                                                                    value={row[`${col.name}_remarks`] || ""}
+                                                                                    onChange={(e) => {
+                                                                                        const updatedRow = { ...row, [`${col.name}_remarks`]: e.target.value };
+                                                                                        handleGridChange(field.id, rowIndex, `${col.name}_remarks`, e.target.value, updatedRow);
+                                                                                    }}
+                                                                                    disabled={isDisabled}
+                                                                                    className={`border rounded px-2 py-1 w-full mt-2 ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                }
+
                                                                 return (
                                                                     <div>
                                                                         <select
                                                                             value={row[col.name] || ""}
-                                                                            onChange={(e) => {
-                                                                                const newValue = e.target.value;
-                                                                                const updatedRow = { ...row, [col.name]: newValue };
-
-                                                                                // Clear dependent fields
-                                                                                field.columns.forEach(depCol => {
-                                                                                    if (
-                                                                                        depCol.type === "dependentDropdown" &&
-                                                                                        depCol.parentColumn === col.name
-                                                                                    ) {
-                                                                                        updatedRow[depCol.name] = "";
-                                                                                    }
-                                                                                });
-
-                                                                                // If the new value is not in remarksOptions, clear remarks
-                                                                                if (!(col.remarksOptions || []).includes(newValue)) {
-                                                                                    updatedRow[`${col.name}_remarks`] = "";
-                                                                                }
-
-                                                                                handleGridChange(field.id, rowIndex, col.name, newValue, updatedRow);
-                                                                            }}
+                                                                            onChange={(e) => handleDropdownSelect(e.target.value)}
                                                                             disabled={isDisabled}
-                                                                            className={`border rounded px-2 py-1 w-full ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
-                                                                                }`}
-                                                                            style={{
-                                                                                color: col.textColor || "inherit",
-                                                                                backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit"),
-                                                                            }}
+                                                                            className={`border rounded px-2 py-1 w-full ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
+                                                                            style={{ color: col.textColor || "inherit", backgroundColor: isDisabled ? '#f3f4f6' : (col.backgroundColor || "inherit") }}
                                                                         >
                                                                             <option value="">Select {col.name}</option>
                                                                             {(col.options || []).map((opt, i) => (
-                                                                                <option key={i} value={opt}>
-                                                                                    {opt}
-                                                                                </option>
+                                                                                <option key={i} value={opt}>{opt}</option>
                                                                             ))}
                                                                         </select>
 
-                                                                        {/* Remarks field appears only if selected option requires it */}
                                                                         {col.remarksOptions?.includes(row[col.name]) && (
                                                                             <input
                                                                                 type="text"
@@ -2850,21 +2880,11 @@ export default function DynamicForm() {
                                                                                 placeholder={`Enter remarks for ${row[col.name]}`}
                                                                                 value={row[`${col.name}_remarks`] || ""}
                                                                                 onChange={(e) => {
-                                                                                    const updatedRow = {
-                                                                                        ...row,
-                                                                                        [`${col.name}_remarks`]: e.target.value,
-                                                                                    };
-                                                                                    handleGridChange(
-                                                                                        field.id,
-                                                                                        rowIndex,
-                                                                                        `${col.name}_remarks`,
-                                                                                        e.target.value,
-                                                                                        updatedRow
-                                                                                    );
+                                                                                    const updatedRow = { ...row, [`${col.name}_remarks`]: e.target.value };
+                                                                                    handleGridChange(field.id, rowIndex, `${col.name}_remarks`, e.target.value, updatedRow);
                                                                                 }}
                                                                                 disabled={isDisabled}
-                                                                                className={`border rounded px-2 py-1 w-full mt-2 ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''
-                                                                                    }`}
+                                                                                className={`border rounded px-2 py-1 w-full mt-2 ${isDisabled ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`}
                                                                             />
                                                                         )}
 
@@ -3298,21 +3318,21 @@ export default function DynamicForm() {
                                                     className="py-2 px-4 border-b border-gray-200"
                                                     style={{ width: col.width || "auto" }}
                                                 >
-                                                    {/* SERIAL NUMBER - Auto-generated */}
+                                                    {/* SERIAL NUMBER */}
                                                     {col.type === "serialNumber" && (
                                                         <div className="px-2 py-1 text-center font-medium text-gray-700 bg-gray-50 rounded">
                                                             {rowIndex + 1}
                                                         </div>
                                                     )}
 
-                                                    {/* FIXED VALUE - From row data or column default */}
+                                                    {/* FIXED VALUE */}
                                                     {col.type === "fixedValue" && (
                                                         <div className="px-2 py-1 font-medium text-gray-700 bg-blue-50 rounded border border-blue-200">
                                                             {row[col.name] || col.labelText || ""}
                                                         </div>
                                                     )}
 
-                                                    {/* QUESTION COLUMN - Use fixed:true OR name:"question" as fallback */}
+                                                    {/* QUESTION COLUMN */}
                                                     {(col.fixed === true || col.name === "question") && col.type === "textbox" && (
                                                         field.allowEditQuestions === false ? (
                                                             <div className="px-3 py-2 bg-yellow-50 rounded border border-yellow-300">
@@ -3330,7 +3350,7 @@ export default function DynamicForm() {
                                                         )
                                                     )}
 
-                                                    {/* TEXTBOX COLUMN - NOT the question column */}
+                                                    {/* PLAIN TEXTBOX (not the question) */}
                                                     {col.fixed !== true && col.name !== "question" && col.type === "textbox" && (
                                                         col.disable ? (
                                                             <div className="px-2 py-1 bg-gray-50 rounded border text-gray-700">
@@ -3349,7 +3369,7 @@ export default function DynamicForm() {
                                                         )
                                                     )}
 
-                                                    {/* NUMERIC COLUMN */}
+                                                    {/* NUMERIC */}
                                                     {col.type === "numeric" && (
                                                         <input
                                                             type="number"
@@ -3365,56 +3385,63 @@ export default function DynamicForm() {
                                                         />
                                                     )}
 
-                                                    {col.type === "signature" && (
-                                                        <div className="flex flex-col items-center gap-1">
+                                                    {/* CALCULATION — evaluated live, never shows the raw formula */}
+                                                    {col.type === "calculation" && (() => {
+                                                        const calculatedValue = evaluateRowFormula(col.formula, row);
+                                                        console.log(`[questionGrid calc] col=${col.name} formula="${col.formula}" row=`, row, `result=`, calculatedValue);
+                                                        if (row[col.name] !== calculatedValue) {
+                                                            row[col.name] = calculatedValue;
+                                                        }
+                                                        return (
+                                                            <input
+                                                                type="text"
+                                                                value={calculatedValue}
+                                                                readOnly
+                                                                className="border rounded px-2 py-1 w-full bg-gray-100 cursor-not-allowed"
+                                                            />
+                                                        );
+                                                    })()}
 
-                                                            {row[col.name] ? (
-                                                                <img
-                                                                    src={row[col.name]}
-                                                                    alt="signature"
-                                                                    className="h-16 border rounded"
-                                                                />
-                                                            ) : (
-                                                                <span className="text-gray-400 text-xs">No Signature</span>
-                                                            )}
-
-                                                            <button
-                                                                type="button"
-                                                                className="text-blue-600 text-xs underline"
-                                                                onClick={() => {
-                                                                    setActiveSignature({
-                                                                        fieldId: field.id,
-                                                                        rowIndex,
-                                                                        colName: col.name
-                                                                    });
-                                                                    setShowSignatureModal(true);
-                                                                }}
+                                                    {/* DROPDOWN — emoji rating OR plain select */}
+                                                    {col.type === "dropdown" && (() => {
+                                                        console.log(`[questionGrid dropdown] col=${col.name} ratingStyle=${col.ratingStyle} isRating=${isRatingColumn(col)}`);
+                                                        return isRatingColumn(col) ? (
+                                                            <div className="flex gap-1 justify-center">
+                                                                {(col.options || []).map((option, optIdx) => {
+                                                                    const selected = String(row[col.name]) === String(option);
+                                                                    return (
+                                                                        <button
+                                                                            key={optIdx}
+                                                                            type="button"
+                                                                            onClick={() => handleGridChange(field.id, rowIndex, col.name, option)}
+                                                                            disabled={col.disable}
+                                                                            title={`${option} — ${RATING_LABELS[option] || ""}`}
+                                                                            className={`text-xl w-9 h-9 rounded-full border flex items-center justify-center transition
+                                    ${selected ? "border-blue-500 bg-blue-50 ring-2 ring-blue-300" : "border-gray-200 hover:bg-gray-50"}
+                                    ${col.disable ? "opacity-60 cursor-not-allowed" : ""}`}
+                                                                        >
+                                                                            {RATING_EMOJI_MAP[String(option).trim()] || option}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        ) : (
+                                                            <select
+                                                                value={row[col.name] || ""}
+                                                                onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
+                                                                className="border rounded px-2 py-1 w-full text-sm"
+                                                                required={col.required}
+                                                                disabled={col.disable}
                                                             >
-                                                                {row[col.name] ? "Edit" : "Sign"}
-                                                            </button>
+                                                                <option value="">Select...</option>
+                                                                {(col.options || []).map((option, optIdx) => (
+                                                                    <option key={optIdx} value={option}>{option}</option>
+                                                                ))}
+                                                            </select>
+                                                        );
+                                                    })()}
 
-                                                        </div>
-                                                    )}
-
-
-
-                                                    {/* DROPDOWN COLUMN */}
-                                                    {col.type === "dropdown" && (
-                                                        <select
-                                                            value={row[col.name] || ""}
-                                                            onChange={(e) => handleGridChange(field.id, rowIndex, col.name, e.target.value)}
-                                                            className="border rounded px-2 py-1 w-full text-sm"
-                                                            required={col.required}
-                                                            disabled={col.disable}
-                                                        >
-                                                            <option value="">Select...</option>
-                                                            {(col.options || []).map((option, optIdx) => (
-                                                                <option key={optIdx} value={option}>{option}</option>
-                                                            ))}
-                                                        </select>
-                                                    )}
-
-                                                    {/* CHECKBOX COLUMN */}
+                                                    {/* CHECKBOX */}
                                                     {col.type === "checkbox" && (
                                                         <div className="flex justify-center">
                                                             <input
@@ -3427,7 +3454,7 @@ export default function DynamicForm() {
                                                         </div>
                                                     )}
 
-                                                    {/* DATE COLUMN */}
+                                                    {/* DATE */}
                                                     {col.type === "date" && (
                                                         <DatePicker
                                                             selected={row[col.name] ? new Date(row[col.name]) : null}
@@ -3440,7 +3467,7 @@ export default function DynamicForm() {
                                                         />
                                                     )}
 
-                                                    {/* TIME COLUMN */}
+                                                    {/* TIME */}
                                                     {col.type === "time" && (
                                                         <input
                                                             type="time"
@@ -3450,6 +3477,27 @@ export default function DynamicForm() {
                                                             required={col.required}
                                                             disabled={col.disable}
                                                         />
+                                                    )}
+
+                                                    {/* SIGNATURE */}
+                                                    {col.type === "signature" && (
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            {row[col.name] ? (
+                                                                <img src={row[col.name]} alt="signature" className="h-16 border rounded" />
+                                                            ) : (
+                                                                <span className="text-gray-400 text-xs">No Signature</span>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                className="text-blue-600 text-xs underline"
+                                                                onClick={() => {
+                                                                    setActiveSignature({ fieldId: field.id, rowIndex, colName: col.name });
+                                                                    setShowSignatureModal(true);
+                                                                }}
+                                                            >
+                                                                {row[col.name] ? "Edit" : "Sign"}
+                                                            </button>
+                                                        </div>
                                                     )}
                                                 </td>
                                             ))}
@@ -3576,7 +3624,14 @@ export default function DynamicForm() {
             alert("Error removing draft: " + err.message);
         }
     };
+    const RATING_EMOJI_MAP = {
+        "0": "🚫", "1": "😣", "2": "🙁", "3": "😐", "4": "🙂", "5": "🤩"
+    };
+    const RATING_LABELS = {
+        "0": "Not Applicable", "1": "Rarely demonstrates", "2": "Occasionally demonstrates", "3": "Often demonstrates", "4": "Almost always demonstrates", "5": "Always demonstrates"
+    };
 
+    const isRatingColumn = (col) => col.ratingStyle === "emoji";
 
     if (loading) return <LoadingDots />;
 

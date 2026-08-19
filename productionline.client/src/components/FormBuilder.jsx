@@ -247,16 +247,16 @@ const FormBuilder = () => {
         }
     }, [navigate]);
 
-    useEffect(() => {
-        const savedForm = localStorage.getItem("formBuilderFields");
-        if (savedForm) {
-            setFormFields(JSON.parse(savedForm));
-        }
-    }, []);
+    //useEffect(() => {
+    //    const savedForm = localStorage.getItem("formBuilderFields");
+    //    if (savedForm) {
+    //        setFormFields(JSON.parse(savedForm));
+    //    }
+    //}, []);
 
-    useEffect(() => {
-        localStorage.setItem("formBuilderFields", JSON.stringify(formFields));
-    }, [formFields]);
+    //useEffect(() => {
+    //    localStorage.setItem("formBuilderFields", JSON.stringify(formFields));
+    //}, [formFields]);
 
     useEffect(() => {
         if (searchTerm.length >= 3) {
@@ -1194,7 +1194,9 @@ const FormBuilder = () => {
                                 // TEXTBOX VALIDATION
                                 minLength: column.minLength || null,
                                 maxLength: column.maxLength || null,
-                                lengthValidationMessage: column.lengthValidationMessage || ''
+                                lengthValidationMessage: column.lengthValidationMessage || '',
+
+                                ratingStyle: column.ratingStyle || null,
                             };
 
                             // Handle linked textbox columns in grids
@@ -2814,6 +2816,11 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
     };
     const [tempDependentOptions, setTempDependentOptions] = useState({});
 
+    const RATING_PRESETS = {
+        "5-point (emoji)": ["1 😣 Poor", "2 🙁 Below Average", "3 😐 Average", "4 🙂 Good", "5 🤩 Excellent"],
+        "5-point (stars)": ["1 ⭐", "2 ⭐⭐", "3 ⭐⭐⭐", "4 ⭐⭐⭐⭐", "5 ⭐⭐⭐⭐⭐"],
+    };
+
     return (
         <div
             ref={ref}
@@ -3380,6 +3387,40 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             className="w-full px-2 py-1 border rounded"
                                             placeholder="Option 1, Option 2, Option 3"
                                         />
+
+                                        <div className="flex items-center gap-3 mt-2">
+                                            <label className="flex items-center gap-1 text-xs">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={column.ratingStyle === "emoji"}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[colIndex] = {
+                                                            ...updatedColumns[colIndex],
+                                                            ratingStyle: e.target.checked ? "emoji" : null
+                                                        };
+                                                        updateField({ columns: updatedColumns });
+                                                    }}
+                                                />
+                                                Show as emoji rating (1–5)
+                                            </label>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[colIndex] = {
+                                                        ...updatedColumns[colIndex],
+                                                        options: ["1", "2", "3", "4", "5"],
+                                                        ratingStyle: "emoji"
+                                                    };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="text-xs text-blue-500 hover:text-blue-600 underline"
+                                            >
+                                                Insert 1–5 rating preset
+                                            </button>
+                                        </div>
                                         <label className="block text-xs text-gray-500 mt-2">
                                             Remarks required for options:
                                         </label>
@@ -4462,6 +4503,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             <option value="time">Time</option>
                                             <option value="serialNumber">Serial Number</option>
                                             <option value="fixedValue">Fixed Value</option>
+                                            <option value="calculation">Calculation</option>
                                         </select>
                                     </div>
 
@@ -4496,6 +4538,29 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         />
                                         Required
                                     </label>
+
+                                    {col.type === "dropdown" && (
+                                        <label className="flex items-center text-xs whitespace-nowrap bg-purple-50 px-2 py-1 rounded">
+                                            <input
+                                                type="checkbox"
+                                                checked={col.ratingStyle === "emoji"}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                    updatedColumns[colIndex] = {
+                                                        ...col,
+                                                        ratingStyle: e.target.checked ? "emoji" : null,
+                                                        options: e.target.checked && (!col.options || col.options.length === 0)
+                                                            ? ["1", "2", "3", "4", "5"]
+                                                            : col.options
+                                                    };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="mr-1"
+                                            />
+                                            😊 Emoji rating
+                                        </label>
+                                    )}
 
                                     {/* Configure Button for Options/Validation */}
                                     {(col.type === "dropdown" || col.type === "checkbox" || col.type === "radio" || col.type === "numeric") && (
@@ -4548,6 +4613,21 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             }}
                                             placeholder="Fixed value text"
                                             className="w-32 px-2 py-1 border rounded text-sm bg-blue-50"
+                                        />
+                                    )}
+
+                                    {col.type === "calculation" && (
+                                        <input
+                                            type="text"
+                                            value={col.formula || ""}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                updatedColumns[colIndex] = { ...col, formula: e.target.value };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            placeholder="e.g. {required_rating} - {actual_rating}"
+                                            className="w-56 px-2 py-1 border rounded text-xs bg-yellow-50"
                                         />
                                     )}
 
@@ -4942,8 +5022,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             )}
 
 
-            {
-                (field.type === "dropdown" ||
+            {(field.type === "dropdown" ||
                     field.type === "checkbox" ||
                     field.type === "radio") && (
                     <div className="mt-4">

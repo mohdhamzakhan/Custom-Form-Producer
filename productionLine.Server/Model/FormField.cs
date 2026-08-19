@@ -313,5 +313,7 @@ namespace productionLine.Server.Model
 
         [JsonPropertyName("label")]
         public string? Label { get; set; }
+        [JsonPropertyName("ratingStyle")]
+        public string? RatingStyle { get; set; }
     }
 }
