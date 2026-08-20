@@ -49,6 +49,8 @@ export default function DynamicForm() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [originalSubmittedAt, setOriginalSubmittedAt] = useState(null);
 
+    const [dynamicOptions, setDynamicOptions] = useState({});
+
     const handleAdSearch = async (term) => {
         setAdSearchTerm(term);
         setSelectedUser(null);
@@ -466,6 +468,10 @@ export default function DynamicForm() {
                         let hasUpdates = false;
 
                         formData.fields
+                            .filter(f => (f.type === "grid" || f.type === "questionGrid") && f.linkedGridConfig?.sourceGridFieldId)
+                            .forEach(gridField => seedGridFromLinkedConfig(gridField, matchingSubmission, linkedSubmissions.gridColumnMappings));
+
+                        formData.fields
                             .filter(field => field.type === 'linkedTextbox')
                             .forEach(field => {
                                 let linkedFieldRef;
@@ -509,8 +515,8 @@ export default function DynamicForm() {
                 clearLinkedTextboxFields();
             }
         };
-
         loadLinkedDataAutomatically();
+        loadDynamicDropdownOptions(data.fields);
     }, [
         // Only depend on key field values, not all formValues
         keyFieldValuesString, // Stable string representation
@@ -2068,6 +2074,27 @@ export default function DynamicForm() {
         }
     };
 
+    const loadDynamicDropdownOptions = async (fields) => {
+        const dropdownFields = fields.filter(f => f.type === "dropdown" && f.optionsSource === "linkedForm" && f.linkedFormId);
+        for (const field of dropdownFields) {
+            try {
+                const res = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/approved-records/${field.linkedFormId}`);
+                const result = await res.json();
+                const values = new Set();
+
+                result.data.forEach(sub => {
+                    const val = extractLinkedFieldValue(sub, field.linkedFieldReference, {
+                        gridColumnMappings: result.gridColumnMappings
+                    });
+                    (Array.isArray(val) ? val : [val]).forEach(v => v && values.add(String(v)));
+                });
+
+                setDynamicOptions(prev => ({ ...prev, [field.id]: Array.from(values) }));
+            } catch (e) {
+                console.error(`Failed to load options for ${field.id}:`, e);
+            }
+        }
+    };
 
     // Render different field types
     const renderField = (field) => {
@@ -2204,8 +2231,8 @@ export default function DynamicForm() {
                             onChange={(e) => handleInputChange(field.id, e.target.value, field.type, field)}
                         >
                             <option value="">Select {field.label}</option>
-                            {field.options?.map((option) => (
-                                <option key={option} value={option}>{option}</option>
+                            {(dynamicOptions[field.id] || field.options || []).map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
                             ))}
                         </select>
                         {formErrors[field.id] && (
@@ -3632,6 +3659,48 @@ export default function DynamicForm() {
     };
 
     const isRatingColumn = (col) => col.ratingStyle === "emoji";
+
+    const FILTER_OPERATORS = {
+        gt: (a, b) => Number(a) > Number(b),
+        gte: (a, b) => Number(a) >= Number(b),
+        lt: (a, b) => Number(a) < Number(b),
+        lte: (a, b) => Number(a) <= Number(b),
+        eq: (a, b) => String(a) === String(b),
+        neq: (a, b) => String(a) !== String(b),
+        contains: (a, b) => String(a ?? "").toLowerCase().includes(String(b).toLowerCase()),
+    };
+
+    const rowPassesFilters = (row, filters = []) =>
+        filters.every(f => {
+            const fn = FILTER_OPERATORS[f.operator];
+            return fn ? fn(row[f.sourceColumnName], f.value) : true;
+        });
+
+    const seedGridFromLinkedConfig = (targetField, matchedSubmission, gridColumnMappings) => {
+        const config = targetField.linkedGridConfig;
+        if (!config?.sourceGridFieldId) return;
+
+        const sourceGridData = matchedSubmission.submissionData.find(
+            sd => sd.fieldLabel === config.sourceGridFieldId
+        );
+        if (!sourceGridData) return;
+
+        let sourceRows;
+        try { sourceRows = JSON.parse(sourceGridData.fieldValue); } catch { return; }
+
+        const matchingRows = sourceRows.filter(row => rowPassesFilters(row, config.filters));
+
+        const seededRows = matchingRows.map(sourceRow => {
+            const newRow = {};
+            targetField.columns.forEach(col => {
+                const map = config.columnMapping?.find(m => m.targetColumnId === col.id);
+                newRow[col.name] = map ? (sourceRow[map.sourceColumnName] ?? "") : "";
+            });
+            return newRow;
+        });
+
+        setFormValues(prev => ({ ...prev, [targetField.id]: seededRows }));
+    };
 
     if (loading) return <LoadingDots />;
 

@@ -2076,6 +2076,42 @@ namespace productionLine.Server.Controllers
             }
         }
 
+        [HttpGet("approved-records/{formId}")]
+        public async Task<IActionResult> GetApprovedLinkedRecords(int formId)
+        {
+            var submissions = await _context.FormSubmissions
+                .Where(s => s.FormId == formId)
+                .Include(s => s.SubmissionData)
+                .Include(s => s.Approvals)
+                .ToListAsync();
+
+            var approved = submissions.Where(s =>
+                s.Approvals.Count > 0 &&
+                (
+                    (s.Approvals.Count == 1 && s.Approvals.First().ApproverName == "System Approval") ||
+                    s.Approvals.All(a => a.Status == "Approved")
+                )
+            ).ToList();
+
+            var formFields = await _context.FormFields
+                .Where(f => f.FormId == formId && (f.Type == "grid" || f.Type == "questionGrid") && !string.IsNullOrEmpty(f.ColumnsJson))
+                .ToListAsync();
+
+            var gridColumnMappings = new Dictionary<string, Dictionary<string, string>>();
+            foreach (var field in formFields)
+            {
+                try
+                {
+                    var columns = JsonSerializer.Deserialize<List<GridColumn>>(field.ColumnsJson);
+                    if (columns != null)
+                        gridColumnMappings[field.Id.ToString()] = columns.ToDictionary(c => c.Id, c => c.Name);
+                }
+                catch { }
+            }
+
+            return Ok(new { data = approved, gridColumnMappings });
+        }
+
         // Shared pagination helper (add to your controller or a helper class)
         public class PagedResult<T>
         {

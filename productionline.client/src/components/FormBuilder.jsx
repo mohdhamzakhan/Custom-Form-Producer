@@ -4052,7 +4052,141 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             💡 <strong>Tip:</strong> Click and drag the grip icon (⋮⋮) or column header text to reorder columns. The entire header is draggable.
                         </div>
                     </div>
+                    {linkedForm && (
+                        <div className="mt-4 p-3 bg-purple-50 rounded border">
+                            <h4 className="text-sm font-semibold mb-2">Populate rows from {linkedForm.name}</h4>
+
+                            <select
+                                className="w-full px-2 py-1 border rounded text-sm mb-3"
+                                value={field.linkedGridConfig?.sourceGridFieldId || ""}
+                                onChange={(e) => {
+                                    const sourceGridFieldId = e.target.value;
+                                    updateField({
+                                        linkedGridConfig: {
+                                            ...(field.linkedGridConfig || {}),
+                                            sourceGridFieldId,
+                                            filters: field.linkedGridConfig?.filters || [],
+                                            columnMapping: field.linkedGridConfig?.columnMapping || []
+                                        }
+                                    });
+                                }}
+                            >
+                                <option value="">Don't auto-populate</option>
+                                {linkedFormFields
+                                    .filter(f => f.type === "grid" || f.type === "questionGrid")
+                                    .map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                            </select>
+
+                            {field.linkedGridConfig?.sourceGridFieldId && (() => {
+                                const sourceGrid = linkedFormFields.find(f => f.id === field.linkedGridConfig.sourceGridFieldId);
+                                const sourceCols = sourceGrid?.columns || [];
+
+                                return (
+                                    <>
+                                        <div className="mb-3">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-xs font-medium">Row filters (row is included only if ALL match)</label>
+                                                <button
+                                                    type="button"
+                                                    className="text-xs text-blue-600"
+                                                    onClick={() => updateField({
+                                                        linkedGridConfig: {
+                                                            ...field.linkedGridConfig,
+                                                            filters: [...(field.linkedGridConfig.filters || []),
+                                                            { sourceColumnId: "", sourceColumnName: "", operator: "eq", value: "" }]
+                                                        }
+                                                    })}
+                                                >+ Add filter</button>
+                                            </div>
+
+                                            {(field.linkedGridConfig.filters || []).map((filt, idx) => (
+                                                <div key={idx} className="flex gap-2 items-center mb-1">
+                                                    <select
+                                                        className="flex-1 px-1 py-1 border rounded text-xs"
+                                                        value={filt.sourceColumnId}
+                                                        onChange={(e) => {
+                                                            const col = sourceCols.find(c => c.id === e.target.value);
+                                                            const filters = [...field.linkedGridConfig.filters];
+                                                            filters[idx] = { ...filt, sourceColumnId: col?.id, sourceColumnName: col?.name };
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    >
+                                                        <option value="">Column...</option>
+                                                        {sourceCols.map(c => <option key={c.id} value={c.id}>{c.label || c.name}</option>)}
+                                                    </select>
+
+                                                    <select
+                                                        className="px-1 py-1 border rounded text-xs"
+                                                        value={filt.operator}
+                                                        onChange={(e) => {
+                                                            const filters = [...field.linkedGridConfig.filters];
+                                                            filters[idx] = { ...filt, operator: e.target.value };
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    >
+                                                        <option value="gt">&gt;</option>
+                                                        <option value="gte">&gt;=</option>
+                                                        <option value="lt">&lt;</option>
+                                                        <option value="lte">&lt;=</option>
+                                                        <option value="eq">=</option>
+                                                        <option value="neq">≠</option>
+                                                        <option value="contains">contains</option>
+                                                    </select>
+
+                                                    <input
+                                                        className="w-20 px-1 py-1 border rounded text-xs"
+                                                        value={filt.value}
+                                                        onChange={(e) => {
+                                                            const filters = [...field.linkedGridConfig.filters];
+                                                            filters[idx] = { ...filt, value: e.target.value };
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    />
+
+                                                    <button type="button" className="text-red-500 text-xs"
+                                                        onClick={() => {
+                                                            const filters = field.linkedGridConfig.filters.filter((_, i) => i !== idx);
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    >✕</button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-medium">Column mapping</label>
+                                            {(field.columns || []).map(targetCol => {
+                                                const mapping = (field.linkedGridConfig.columnMapping || []).find(m => m.targetColumnId === targetCol.id);
+                                                return (
+                                                    <div key={targetCol.id} className="flex gap-2 items-center mb-1">
+                                                        <span className="w-1/3 text-xs truncate">{targetCol.label || targetCol.name}</span>
+                                                        <select
+                                                            className="flex-1 px-1 py-1 border rounded text-xs"
+                                                            value={mapping?.sourceColumnId || ""}
+                                                            onChange={(e) => {
+                                                                const col = sourceCols.find(c => c.id === e.target.value);
+                                                                const existing = (field.linkedGridConfig.columnMapping || []).filter(m => m.targetColumnId !== targetCol.id);
+                                                                const columnMapping = col
+                                                                    ? [...existing, { targetColumnId: targetCol.id, targetColumnName: targetCol.name, sourceColumnId: col.id, sourceColumnName: col.name }]
+                                                                    : existing;
+                                                                updateField({ linkedGridConfig: { ...field.linkedGridConfig, columnMapping } });
+                                                            }}
+                                                        >
+                                                            <option value="">Leave blank (manual entry)</option>
+                                                            {sourceCols.map(c => <option key={c.id} value={c.id}>{c.label || c.name}</option>)}
+                                                        </select>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
+
                 </div>
+
             )}
 
             {field.type === "numeric" && (
@@ -5014,10 +5148,140 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             ))}
                         </div>
                     </div>
+                    {linkedForm && (
+                        <div className="mt-4 p-3 bg-purple-50 rounded border">
+                            <h4 className="text-sm font-semibold mb-2">Populate rows from {linkedForm.name}</h4>
 
+                            <select
+                                className="w-full px-2 py-1 border rounded text-sm mb-3"
+                                value={field.linkedGridConfig?.sourceGridFieldId || ""}
+                                onChange={(e) => {
+                                    const sourceGridFieldId = e.target.value;
+                                    updateField({
+                                        linkedGridConfig: {
+                                            ...(field.linkedGridConfig || {}),
+                                            sourceGridFieldId,
+                                            filters: field.linkedGridConfig?.filters || [],
+                                            columnMapping: field.linkedGridConfig?.columnMapping || []
+                                        }
+                                    });
+                                }}
+                            >
+                                <option value="">Don't auto-populate</option>
+                                {linkedFormFields
+                                    .filter(f => f.type === "grid" || f.type === "questionGrid")
+                                    .map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                            </select>
+
+                            {field.linkedGridConfig?.sourceGridFieldId && (() => {
+                                const sourceGrid = linkedFormFields.find(f => f.id === field.linkedGridConfig.sourceGridFieldId);
+                                const sourceCols = sourceGrid?.columns || [];
+
+                                return (
+                                    <>
+                                        <div className="mb-3">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-xs font-medium">Row filters (row is included only if ALL match)</label>
+                                                <button
+                                                    type="button"
+                                                    className="text-xs text-blue-600"
+                                                    onClick={() => updateField({
+                                                        linkedGridConfig: {
+                                                            ...field.linkedGridConfig,
+                                                            filters: [...(field.linkedGridConfig.filters || []),
+                                                            { sourceColumnId: "", sourceColumnName: "", operator: "eq", value: "" }]
+                                                        }
+                                                    })}
+                                                >+ Add filter</button>
+                                            </div>
+
+                                            {(field.linkedGridConfig.filters || []).map((filt, idx) => (
+                                                <div key={idx} className="flex gap-2 items-center mb-1">
+                                                    <select
+                                                        className="flex-1 px-1 py-1 border rounded text-xs"
+                                                        value={filt.sourceColumnId}
+                                                        onChange={(e) => {
+                                                            const col = sourceCols.find(c => c.id === e.target.value);
+                                                            const filters = [...field.linkedGridConfig.filters];
+                                                            filters[idx] = { ...filt, sourceColumnId: col?.id, sourceColumnName: col?.name };
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    >
+                                                        <option value="">Column...</option>
+                                                        {sourceCols.map(c => <option key={c.id} value={c.id}>{c.label || c.name}</option>)}
+                                                    </select>
+
+                                                    <select
+                                                        className="px-1 py-1 border rounded text-xs"
+                                                        value={filt.operator}
+                                                        onChange={(e) => {
+                                                            const filters = [...field.linkedGridConfig.filters];
+                                                            filters[idx] = { ...filt, operator: e.target.value };
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    >
+                                                        <option value="gt">&gt;</option>
+                                                        <option value="gte">&gt;=</option>
+                                                        <option value="lt">&lt;</option>
+                                                        <option value="lte">&lt;=</option>
+                                                        <option value="eq">=</option>
+                                                        <option value="neq">≠</option>
+                                                        <option value="contains">contains</option>
+                                                    </select>
+
+                                                    <input
+                                                        className="w-20 px-1 py-1 border rounded text-xs"
+                                                        value={filt.value}
+                                                        onChange={(e) => {
+                                                            const filters = [...field.linkedGridConfig.filters];
+                                                            filters[idx] = { ...filt, value: e.target.value };
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    />
+
+                                                    <button type="button" className="text-red-500 text-xs"
+                                                        onClick={() => {
+                                                            const filters = field.linkedGridConfig.filters.filter((_, i) => i !== idx);
+                                                            updateField({ linkedGridConfig: { ...field.linkedGridConfig, filters } });
+                                                        }}
+                                                    >✕</button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-medium">Column mapping</label>
+                                            {(field.columns || []).map(targetCol => {
+                                                const mapping = (field.linkedGridConfig.columnMapping || []).find(m => m.targetColumnId === targetCol.id);
+                                                return (
+                                                    <div key={targetCol.id} className="flex gap-2 items-center mb-1">
+                                                        <span className="w-1/3 text-xs truncate">{targetCol.label || targetCol.name}</span>
+                                                        <select
+                                                            className="flex-1 px-1 py-1 border rounded text-xs"
+                                                            value={mapping?.sourceColumnId || ""}
+                                                            onChange={(e) => {
+                                                                const col = sourceCols.find(c => c.id === e.target.value);
+                                                                const existing = (field.linkedGridConfig.columnMapping || []).filter(m => m.targetColumnId !== targetCol.id);
+                                                                const columnMapping = col
+                                                                    ? [...existing, { targetColumnId: targetCol.id, targetColumnName: targetCol.name, sourceColumnId: col.id, sourceColumnName: col.name }]
+                                                                    : existing;
+                                                                updateField({ linkedGridConfig: { ...field.linkedGridConfig, columnMapping } });
+                                                            }}
+                                                        >
+                                                            <option value="">Leave blank (manual entry)</option>
+                                                            {sourceCols.map(c => <option key={c.id} value={c.id}>{c.label || c.name}</option>)}
+                                                        </select>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
                 </div >
             )}
-
 
             {(field.type === "dropdown" ||
                     field.type === "checkbox" ||
@@ -5038,7 +5302,42 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 <Plus size={16} />
                             </button>
                         </div>
+                    {linkedForm && (
+                        <div className="mb-3 p-2 bg-yellow-50 rounded border">
+                            <label className="flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={field.optionsSource === "linkedForm"}
+                                    onChange={(e) => updateField({
+                                        optionsSource: e.target.checked ? "linkedForm" : null,
+                                        linkedFormId: e.target.checked ? linkedForm.id : field.linkedFormId
+                                    })}
+                                />
+                                Populate options from {linkedForm.name} (approved submissions only)
+                            </label>
 
+                            {field.optionsSource === "linkedForm" && (
+                                <select
+                                    className="w-full mt-2 px-2 py-1 border rounded text-sm"
+                                    value={field.linkedFieldReference || ""}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val.includes('.')) {
+                                            const [gridFieldId, columnId] = val.split('.');
+                                            updateField({ linkedFieldReference: val, linkedFieldType: "gridColumn", linkedGridFieldId: gridFieldId, linkedColumnId: columnId });
+                                        } else {
+                                            updateField({ linkedFieldReference: val, linkedFieldType: "field", linkedFieldId: val });
+                                        }
+                                    }}
+                                >
+                                    <option value="">Select source field...</option>
+                                    {linkedFormFields
+                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
+                                        .map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                                </select>
+                            )}
+                        </div>
+                    )}
                         <div className="mt-2">
                             <h4 className="text-sm font-medium mb-2">Options:</h4>
                             {(field.options || []).map((option, optionIndex) => (
