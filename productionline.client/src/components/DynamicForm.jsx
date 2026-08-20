@@ -36,7 +36,7 @@ export default function DynamicForm() {
     const [activeSignature, setActiveSignature] = useState(null);
     const signaturePadRef = useRef(null);// ── Replace the entire partial submission section ──────────────────────────
     let createdBy = "System";
-    
+
 
     // State
     const { searchResults, isSearching, searchAdDirectory } = useAdSearch();
@@ -415,9 +415,13 @@ export default function DynamicForm() {
             }
 
             try {
-                // Extract key values
+                // AFTER
                 const keyValues = {};
                 let hasAllKeyValues = true;
+
+                formData.keyFieldMappings.forEach(mapping => {
+                    keyValues[mapping.currentFormField] = formValues[mapping.currentFormField];
+                });
 
                 Object.values(keyValues).forEach(value => {
                     if (!value || value === '') {
@@ -457,19 +461,18 @@ export default function DynamicForm() {
                     config
                 );
 
+                // AFTER
                 if (matchingSubmission) {
-                    console.log('âœ… Found matching submission, populating fields');
-
-                    // Set flag to prevent triggering the effect
+                    console.log('✅ Found matching submission, populating fields');
                     updatingLinkedFields.current = true;
+
+                    formData.fields
+                        .filter(f => (f.type === "grid" || f.type === "questionGrid") && f.linkedGridConfig?.sourceGridFieldId)
+                        .forEach(gridField => seedGridFromLinkedConfig(gridField, matchingSubmission, linkedSubmissions.gridColumnMappings));
 
                     setFormValues(prevValues => {
                         const updatedValues = { ...prevValues };
                         let hasUpdates = false;
-
-                        formData.fields
-                            .filter(f => (f.type === "grid" || f.type === "questionGrid") && f.linkedGridConfig?.sourceGridFieldId)
-                            .forEach(gridField => seedGridFromLinkedConfig(gridField, matchingSubmission, linkedSubmissions.gridColumnMappings));
 
                         formData.fields
                             .filter(field => field.type === 'linkedTextbox')
@@ -515,13 +518,17 @@ export default function DynamicForm() {
                 clearLinkedTextboxFields();
             }
         };
+        // AFTER
         loadLinkedDataAutomatically();
-        loadDynamicDropdownOptions(data.fields);
+        if (formData?.fields) {
+            loadDynamicDropdownOptions(formData.fields);
+        }
     }, [
         // Only depend on key field values, not all formValues
-        keyFieldValuesString, // Stable string representation
+        keyFieldValuesString,
         formData?.linkedFormId,
-        formData?.keyFieldMappings?.length
+        formData?.keyFieldMappings?.length,
+        formData?.fields
     ]);
 
     useEffect(() => {
@@ -1745,7 +1752,8 @@ export default function DynamicForm() {
         try {
             setLinkedDataLoading(true); // Start loading
 
-            const url = `${APP_CONSTANTS.API_BASE_URL}/api/forms/linked-data/${formData.linkedFormId}?keyMappings=${encodeURIComponent(JSON.stringify(keyMappings))}`;
+            // AFTER
+            const url = `${APP_CONSTANTS.API_BASE_URL}/api/forms/approved-records/${formData.linkedFormId}`;
             console.log("API URL:", url);
 
             const response = await fetch(url);
@@ -4050,7 +4058,7 @@ export default function DynamicForm() {
                                         </tbody>
                                     </table>
                                 ) : (
-                                        <p className="text-gray-500 text-center">No rejected available.</p>
+                                    <p className="text-gray-500 text-center">No rejected available.</p>
                                 )
                             )}
 
@@ -4226,8 +4234,8 @@ export default function DynamicForm() {
                                         >
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${result.type === "group"
-                                                        ? "bg-blue-100 text-blue-700"
-                                                        : "bg-green-100 text-green-700"
+                                                    ? "bg-blue-100 text-blue-700"
+                                                    : "bg-green-100 text-green-700"
                                                     }`}>
                                                     {result.type === "group" ? "Group" : "User"}
                                                 </span>
@@ -4300,8 +4308,8 @@ export default function DynamicForm() {
                                 onClick={handleSendPartial}
                                 disabled={sendingPartial || !selectedUser}
                                 className={`px-5 py-2 rounded font-medium text-white flex items-center gap-2 ${sendingPartial || !selectedUser
-                                        ? "bg-purple-300 cursor-not-allowed"
-                                        : "bg-purple-600 hover:bg-purple-700"
+                                    ? "bg-purple-300 cursor-not-allowed"
+                                    : "bg-purple-600 hover:bg-purple-700"
                                     }`}
                             >
                                 {sendingPartial && (
