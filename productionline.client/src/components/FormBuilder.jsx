@@ -4465,7 +4465,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 updatedColumns[colIndex] = {
                                                     ...col,
                                                     label: e.target.value,
-                                                    name: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                                                    //name: e.target.value.toLowerCase().replace(/\s+/g, '_')
                                                 };
                                                 updateField({ columns: updatedColumns });
                                             }}
@@ -4692,26 +4692,22 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         <div className="flex gap-2">
                             <button
                                 onClick={() => {
+                                    const newId = generateGuid();
                                     const newColumn = {
-                                        id: generateGuid(),
-                                        name: `column_${field.columns.length}`,
-                                        label: `Column ${field.columns.filter(c => !c.fixed).length + 1}`,
+                                        id: newId,
+                                        name: `col_${newId}`,
+                                        label: "New Column",
                                         type: "textbox",
                                         width: "10%",
                                         required: false,
                                         fixed: false
                                     };
-
-                                    // Find the index of the fixed question column
                                     const questionIndex = field.columns.findIndex(col => col.fixed === true);
-
                                     if (questionIndex !== -1) {
-                                        // Insert BEFORE the question column
                                         const updatedColumns = [...field.columns];
                                         updatedColumns.splice(questionIndex, 0, newColumn);
                                         updateField({ columns: updatedColumns });
                                     } else {
-                                        // If no fixed column found, add at beginning
                                         updateField({ columns: [newColumn, ...field.columns] });
                                     }
                                 }}
@@ -4723,10 +4719,11 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             {/* Add Answer Column After Question Button */}
                             <button
                                 onClick={() => {
+                                    const newId = generateGuid();
                                     const newColumn = {
-                                        id: generateGuid(),
-                                        name: `answer_${field.columns.filter(c => !c.fixed).length}`,
-                                        label: `Answer ${field.columns.filter(c => !c.fixed).length}`,
+                                        id: newId,
+                                        name: `col_${newId}`,
+                                        label: "New Column",
                                         type: "textbox",
                                         width: "20%",
                                         required: false,

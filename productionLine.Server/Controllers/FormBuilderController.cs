@@ -357,7 +357,10 @@ namespace productionLine.Server.Controllers
                         maxLength = ct.maxLength,
                         minLength = ct.minLength,
                         disabled = ct.disable,
-                        visible = ct.visible
+                        visible = ct.visible,
+                        Label = ct.Label,
+                        Fixed = ct.Fixed,
+                        RatingStyle = ct.RatingStyle,
 
 
                     }).ToList() ?? new List<GridColumnDto>()),

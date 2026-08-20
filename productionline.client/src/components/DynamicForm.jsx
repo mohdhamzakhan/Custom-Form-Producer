@@ -2521,7 +2521,7 @@ export default function DynamicForm() {
                                                 className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`}
                                                 style={{ width: col.width || "auto" }}
                                             >
-                                                {col.name}
+                                                {col.label || col.name}
                                             </th>
                                         ))}
                                         {visibleColumns.length > 0 && (
