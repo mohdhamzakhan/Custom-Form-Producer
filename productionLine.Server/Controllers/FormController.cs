@@ -217,6 +217,8 @@ namespace productionLine.Server.Controllers
                     existingField.LinkedFieldType = field.LinkedFieldType;
                     existingField.LinkedGridFieldId = field.LinkedGridFieldId;
                     existingField.LinkedColumnId = field.LinkedColumnId;
+                    existingField.OptionsSource = field.OptionsSource;
+                    existingField.LinkedFieldReference = field.LinkedFieldReference;
                     existingField.DisplayMode = field.DisplayMode;
                     existingField.DisplayFormat = field.DisplayFormat;
                     existingField.AllowManualEntry = field.AllowManualEntry;
@@ -272,6 +274,8 @@ namespace productionLine.Server.Controllers
                     LinkedFieldType = field.LinkedFieldType,
                     LinkedGridFieldId = field.LinkedGridFieldId,
                     LinkedColumnId = field.LinkedColumnId,
+                    OptionsSource = field.OptionsSource,
+                    LinkedFieldReference = field.LinkedFieldReference,
                     DisplayMode = field.DisplayMode,
                     DisplayFormat = field.DisplayFormat,
                     AllowManualEntry = field.AllowManualEntry,
@@ -282,7 +286,7 @@ namespace productionLine.Server.Controllers
                     DefaultRowsJson = field.DefaultRowsJson,
                     AllowAddRows = field.AllowAddRows,
                     AllowEditQuestions = field.AllowEditQuestions,
-                    
+
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
                         Operator = rt.Operator,
@@ -475,7 +479,7 @@ namespace productionLine.Server.Controllers
                     AllowEditQuestions = f.AllowEditQuestions,
                     DefaultRowsJson = f.DefaultRowsJson,
                     DefaultRows = f.DefaultRows,
-                    FilledBy=f.FilledBy,
+                    FilledBy = f.FilledBy,
 
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
@@ -538,7 +542,7 @@ namespace productionLine.Server.Controllers
                     ResultDecimal = f.ResultDecimal,
                     FieldReferencesJson = f.FieldReferencesJson
                 }).ToList()
-                
+
             };
             return Ok(formDto);
         }
@@ -770,7 +774,7 @@ namespace productionLine.Server.Controllers
 
                         if (firstApprover != null && !string.IsNullOrWhiteSpace(firstApprover.Email))
                         {
-                            
+
                             string subject = $"Approval Required - {form.Name}";
                             string baseUrl = _configuration["AppSettings:BaseUrl"];
                             string approvalUrl = $"{baseUrl}/submissions/{formSubmission.Id}/approve";
@@ -1501,7 +1505,7 @@ namespace productionLine.Server.Controllers
 
         [HttpPost("submissions/{submissionId}/approve")]
         public async Task<IActionResult> ApproveSubmission(int submissionId, [FromBody] ApprovalActionDto approvalDto)
-         {
+        {
             try
             {
                 // Load submission once
@@ -1715,117 +1719,117 @@ namespace productionLine.Server.Controllers
         //                     select s).ToListAsync());
         //}
 
-//        [HttpPost("pending-submissions")]
-//        public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
-//        {
-//            try
-//            {
-//                if (userNames == null || userNames.Count == 0)
-//                    return Ok(Array.Empty<PendingSubmissionDto>());
+        //        [HttpPost("pending-submissions")]
+        //        public async Task<IActionResult> GetPendingSubmissions([FromBody] List<string> userNames)
+        //        {
+        //            try
+        //            {
+        //                if (userNames == null || userNames.Count == 0)
+        //                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-//                var normalizedUserNames = userNames
-//                    .Select(u => u.ToLower())
-//                    .ToList();
-
-
-//                var submissions = await _context.FormSubmissions
-//    .AsNoTracking()
-//    .Include(s => s.Form)
-//        .ThenInclude(f => f.Approvers)
-//    .Where(s =>
-//    s.Form.Approvers.Any(a =>
-//        normalizedUserNames.Contains(a.Name.ToLower()))
-//    &&
-//    s.Approvals.Any(a => a.Status == "Pending")
-//    &&
-//    !s.Approvals.Any(a => a.Status == "Rejected")
-//)
-//    .OrderByDescending(s => s.SubmittedAt)
-//    .Select(s => new PendingSubmissionDto
-//    {
-//        Id = s.Id,
-//        SubmittedAt = s.SubmittedAt,
-//        FormName = s.Form.Name,
-//        FormId = s.FormId,
-//        FormLink = s.Form.FormLink,
-
-//        Approvals = s.Approvals
-//            .Where(a => a.Status == "Pending")
-//            .OrderBy(a => a.ApprovalLevel)
-//            .Take(1)
-//            .Select(a => new ApprovalDto
-//            {
-//                ApprovalLevel = a.ApprovalLevel,
-//                ApproverName = a.ApproverName,
-//                Status = a.Status
-//            })
-//            .ToList()
-//    })
-//    .ToListAsync();
+        //                var normalizedUserNames = userNames
+        //                    .Select(u => u.ToLower())
+        //                    .ToList();
 
 
+        //                var submissions = await _context.FormSubmissions
+        //    .AsNoTracking()
+        //    .Include(s => s.Form)
+        //        .ThenInclude(f => f.Approvers)
+        //    .Where(s =>
+        //    s.Form.Approvers.Any(a =>
+        //        normalizedUserNames.Contains(a.Name.ToLower()))
+        //    &&
+        //    s.Approvals.Any(a => a.Status == "Pending")
+        //    &&
+        //    !s.Approvals.Any(a => a.Status == "Rejected")
+        //)
+        //    .OrderByDescending(s => s.SubmittedAt)
+        //    .Select(s => new PendingSubmissionDto
+        //    {
+        //        Id = s.Id,
+        //        SubmittedAt = s.SubmittedAt,
+        //        FormName = s.Form.Name,
+        //        FormId = s.FormId,
+        //        FormLink = s.Form.FormLink,
+
+        //        Approvals = s.Approvals
+        //            .Where(a => a.Status == "Pending")
+        //            .OrderBy(a => a.ApprovalLevel)
+        //            .Take(1)
+        //            .Select(a => new ApprovalDto
+        //            {
+        //                ApprovalLevel = a.ApprovalLevel,
+        //                ApproverName = a.ApproverName,
+        //                Status = a.Status
+        //            })
+        //            .ToList()
+        //    })
+        //    .ToListAsync();
 
 
 
-//                return Ok(submissions);
-//            }
-//            catch (Exception ex)
-//            {
-//                return BadRequest();
-//            }
-//        }
 
-//        [HttpPost("rejected-submissions")]
-//        public async Task<IActionResult> GetRejectedSubmissions([FromBody] List<string> userNames)
-//        {
-//            try
-//            {
-//                if (userNames == null || userNames.Count == 0)
-//                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-//                var normalizedUserNames = userNames
-//                    .Select(u => u.ToLower())
-//                    .ToList();
+        //                return Ok(submissions);
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                return BadRequest();
+        //            }
+        //        }
 
-//                var submissions = await _context.FormSubmissions
-//                    .AsNoTracking()
-//                    .Include(s => s.Form)
-//                        .ThenInclude(f => f.Approvers)
-//                    .Include(s => s.Approvals)
-//                    .Where(s =>
-//                        s.Form.Approvers.Any(a =>
-//                            normalizedUserNames.Contains(a.Name.ToLower()))
-//                        &&
-//                        s.Approvals.Any(a => a.Status == "Rejected")
-//                    )
-//                    .OrderByDescending(s => s.SubmittedAt)
-//                    .Select(s => new PendingSubmissionDto
-//                    {
-//                        Id = s.Id,
-//                        SubmittedAt = s.SubmittedAt,
-//                        FormName = s.Form.Name,
-//                        FormId = s.FormId,
-//                        FormLink = s.Form.FormLink,
+        //        [HttpPost("rejected-submissions")]
+        //        public async Task<IActionResult> GetRejectedSubmissions([FromBody] List<string> userNames)
+        //        {
+        //            try
+        //            {
+        //                if (userNames == null || userNames.Count == 0)
+        //                    return Ok(Array.Empty<PendingSubmissionDto>());
 
-//                        Approvals = s.Approvals
-//                            .OrderBy(a => a.ApprovalLevel)
-//                            .Select(a => new ApprovalDto
-//                            {
-//                                ApprovalLevel = a.ApprovalLevel,
-//                                ApproverName = a.ApproverName,
-//                                Status = a.Status
-//                            })
-//                            .ToList()
-//                    })
-//                    .ToListAsync();
+        //                var normalizedUserNames = userNames
+        //                    .Select(u => u.ToLower())
+        //                    .ToList();
 
-//                return Ok(submissions);
-//            }
-//            catch (Exception ex)
-//            {
-//                return BadRequest(ex.Message);
-//            }
-//        }
+        //                var submissions = await _context.FormSubmissions
+        //                    .AsNoTracking()
+        //                    .Include(s => s.Form)
+        //                        .ThenInclude(f => f.Approvers)
+        //                    .Include(s => s.Approvals)
+        //                    .Where(s =>
+        //                        s.Form.Approvers.Any(a =>
+        //                            normalizedUserNames.Contains(a.Name.ToLower()))
+        //                        &&
+        //                        s.Approvals.Any(a => a.Status == "Rejected")
+        //                    )
+        //                    .OrderByDescending(s => s.SubmittedAt)
+        //                    .Select(s => new PendingSubmissionDto
+        //                    {
+        //                        Id = s.Id,
+        //                        SubmittedAt = s.SubmittedAt,
+        //                        FormName = s.Form.Name,
+        //                        FormId = s.FormId,
+        //                        FormLink = s.Form.FormLink,
+
+        //                        Approvals = s.Approvals
+        //                            .OrderBy(a => a.ApprovalLevel)
+        //                            .Select(a => new ApprovalDto
+        //                            {
+        //                                ApprovalLevel = a.ApprovalLevel,
+        //                                ApproverName = a.ApproverName,
+        //                                Status = a.Status
+        //                            })
+        //                            .ToList()
+        //                    })
+        //                    .ToListAsync();
+
+        //                return Ok(submissions);
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                return BadRequest(ex.Message);
+        //            }
+        //        }
 
         [HttpGet("linked-data/{formId}")]
         public async Task<IActionResult> GetLinkedData(int formId, [FromQuery] string keyMappings)
@@ -1946,7 +1950,7 @@ namespace productionLine.Server.Controllers
                         f.Id,
                         f.Name,
                         f.FormLink,
-                        
+
                         f.CreatedBy,
                         f.CreatedAt,
                         f.LinkedFormId,
