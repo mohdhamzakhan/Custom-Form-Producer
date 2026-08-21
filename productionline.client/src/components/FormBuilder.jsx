@@ -995,7 +995,7 @@ const FormBuilder = () => {
                         // VISIBILITY PROPERTIES - Add these for all fields
                         visible: field.visible !== undefined ? field.visible : true,
                         disabled: field.disabled || false,
-                        
+
                         // CRITICAL: Provide form reference WITH rowVersion
                         form: {
                             id: baseForm.id,
@@ -1145,6 +1145,13 @@ const FormBuilder = () => {
 
                         cleanField.keyFieldMappings = mappings;
                         cleanField.keyFieldMappingsJson = JSON.stringify(mappings);
+                    }
+
+                    // Handle dropdown/checkbox/radio fields populated from a linked form
+                    if (field.optionsSource === "linkedForm") {
+                        cleanField.optionsSource = "linkedForm";
+                        cleanField.linkedFormId = field.linkedFormId || linkedForm?.id || null;
+                        cleanField.linkedFieldReference = field.linkedFieldReference || null;
                     }
 
                     if (field.type === "grid" || field.type === "questionGrid") {
@@ -2335,46 +2342,46 @@ const FormBuilder = () => {
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
-                                                {allowedUsers.map((user, index) => (
-                                                    <div
-                                                        key={user.id || index}
-                                                        className="flex items-center justify-between p-3 bg-white rounded border"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            {user.type === 'user'
-                                                                ? <User size={18} className="text-blue-600" />
-                                                                : <Users size={18} className="text-blue-600" />
-                                                            }
-                                                            <div>
-                                                                <div className="font-medium">{user.name}</div>
-                                                                <div className="text-xs text-gray-500">
-                                                                    {user.type === 'user' ? user.email : 'Group'}
-                                                                </div>
+                                            {allowedUsers.map((user, index) => (
+                                                <div
+                                                    key={user.id || index}
+                                                    className="flex items-center justify-between p-3 bg-white rounded border"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {user.type === 'user'
+                                                            ? <User size={18} className="text-blue-600" />
+                                                            : <Users size={18} className="text-blue-600" />
+                                                        }
+                                                        <div>
+                                                            <div className="font-medium">{user.name}</div>
+                                                            <div className="text-xs text-gray-500">
+                                                                {user.type === 'user' ? user.email : 'Group'}
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <select
-                                                                value={user.accessLevel || "Editor"}
-                                                                onChange={(e) => {
-                                                                    const updated = [...allowedUsers];
-                                                                    updated[index].accessLevel = e.target.value;
-                                                                    setAllowedUsers(updated);
-                                                                }}
-                                                                className="border rounded px-2 py-1 text-sm"
-                                                            >
-                                                                <option value="Editor">Editor</option>
-                                                                <option value="Viewer">Viewer</option>
-                                                            </select>
-
-                                                            <button
-                                                                onClick={() => removeAllowedUser(index)}
-                                                                className="text-red-500 hover:text-red-600"
-                                                            >
-                                                                <X size={18} />
-                                                            </button>
-                                                        </div>
                                                     </div>
-                                                ))}
+                                                    <div className="flex items-center gap-3">
+                                                        <select
+                                                            value={user.accessLevel || "Editor"}
+                                                            onChange={(e) => {
+                                                                const updated = [...allowedUsers];
+                                                                updated[index].accessLevel = e.target.value;
+                                                                setAllowedUsers(updated);
+                                                            }}
+                                                            className="border rounded px-2 py-1 text-sm"
+                                                        >
+                                                            <option value="Editor">Editor</option>
+                                                            <option value="Viewer">Viewer</option>
+                                                        </select>
+
+                                                        <button
+                                                            onClick={() => removeAllowedUser(index)}
+                                                            className="text-red-500 hover:text-red-600"
+                                                        >
+                                                            <X size={18} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
@@ -2480,7 +2487,7 @@ const FormBuilder = () => {
 
 
                     <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
-                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid","signature"].map(
+                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid", "signature"].map(
                             (type) => (
                                 <button
                                     key={type}
@@ -5284,8 +5291,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             )}
 
             {(field.type === "dropdown" ||
-                    field.type === "checkbox" ||
-                    field.type === "radio") && (
+                field.type === "checkbox" ||
+                field.type === "radio") && (
                     <div className="mt-4">
                         <div className="flex gap-2 mb-2">
                             <input
@@ -5302,42 +5309,42 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 <Plus size={16} />
                             </button>
                         </div>
-                    {linkedForm && (
-                        <div className="mb-3 p-2 bg-yellow-50 rounded border">
-                            <label className="flex items-center gap-2 text-sm">
-                                <input
-                                    type="checkbox"
-                                    checked={field.optionsSource === "linkedForm"}
-                                    onChange={(e) => updateField({
-                                        optionsSource: e.target.checked ? "linkedForm" : null,
-                                        linkedFormId: e.target.checked ? linkedForm.id : field.linkedFormId
-                                    })}
-                                />
-                                Populate options from {linkedForm.name} (approved submissions only)
-                            </label>
+                        {linkedForm && (
+                            <div className="mb-3 p-2 bg-yellow-50 rounded border">
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={field.optionsSource === "linkedForm"}
+                                        onChange={(e) => updateField({
+                                            optionsSource: e.target.checked ? "linkedForm" : null,
+                                            linkedFormId: e.target.checked ? linkedForm.id : field.linkedFormId
+                                        })}
+                                    />
+                                    Populate options from {linkedForm.name} (approved submissions only)
+                                </label>
 
-                            {field.optionsSource === "linkedForm" && (
-                                <select
-                                    className="w-full mt-2 px-2 py-1 border rounded text-sm"
-                                    value={field.linkedFieldReference || ""}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        if (val.includes('.')) {
-                                            const [gridFieldId, columnId] = val.split('.');
-                                            updateField({ linkedFieldReference: val, linkedFieldType: "gridColumn", linkedGridFieldId: gridFieldId, linkedColumnId: columnId });
-                                        } else {
-                                            updateField({ linkedFieldReference: val, linkedFieldType: "field", linkedFieldId: val });
-                                        }
-                                    }}
-                                >
-                                    <option value="">Select source field...</option>
-                                    {linkedFormFields
-                                        .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
-                                        .map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-                                </select>
-                            )}
-                        </div>
-                    )}
+                                {field.optionsSource === "linkedForm" && (
+                                    <select
+                                        className="w-full mt-2 px-2 py-1 border rounded text-sm"
+                                        value={field.linkedFieldReference || ""}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val.includes('.')) {
+                                                const [gridFieldId, columnId] = val.split('.');
+                                                updateField({ linkedFieldReference: val, linkedFieldType: "gridColumn", linkedGridFieldId: gridFieldId, linkedColumnId: columnId });
+                                            } else {
+                                                updateField({ linkedFieldReference: val, linkedFieldType: "field", linkedFieldId: val });
+                                            }
+                                        }}
+                                    >
+                                        <option value="">Select source field...</option>
+                                        {linkedFormFields
+                                            .filter(f => ["textbox", "numeric", "dropdown"].includes(f.type))
+                                            .map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                                    </select>
+                                )}
+                            </div>
+                        )}
                         <div className="mt-2">
                             <h4 className="text-sm font-medium mb-2">Options:</h4>
                             {(field.options || []).map((option, optionIndex) => (
