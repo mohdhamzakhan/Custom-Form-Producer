@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "productionLine.Server", "pr
 EndProject
 Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "productionline.client", "productionline.client\productionline.client.esproj", "{C4D79051-DBBE-416D-B399-688AE7942D40}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductionLineApp", "ProductionLineApp\ProductionLineApp.csproj", "{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -25,12 +23,6 @@ Global
 		{C4D79051-DBBE-416D-B399-688AE7942D40}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C4D79051-DBBE-416D-B399-688AE7942D40}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C4D79051-DBBE-416D-B399-688AE7942D40}.Release|Any CPU.Deploy.0 = Release|Any CPU
-		{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
-		{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{613ACD3F-B194-4F94-8E6B-145F41DCBDB7}.Release|Any CPU.Deploy.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

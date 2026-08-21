@@ -454,6 +454,8 @@ namespace productionLine.Server.Controllers
                     // Add these missing linked textbox properties:
                     LinkedFormId = f.LinkedFormId,
                     LinkedFieldId = f.LinkedFieldId,
+                    OptionsSource = f.OptionsSource,
+                    LinkedFieldReference = f.LinkedFieldReference,
                     LinkedFieldType = f.LinkedFieldType,
                     LinkedGridFieldId = f.LinkedGridFieldId,
                     LinkedColumnId = f.LinkedColumnId,  // This is the key - map from database

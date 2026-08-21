@@ -141,6 +141,11 @@ namespace productionLine.Server.Model
         [Column("LINKED_COLUMN_ID")]
         public string? LinkedColumnId { get; set; } // Column ID within grid
 
+        [Column("OPTIONS_SOURCE")]
+        public string? OptionsSource { get; set; } // "linkedForm" or null
+
+        [Column("LINKED_FIELD_REFERENCE")]
+        public string? LinkedFieldReference { get; set; } // fieldId, or "gridFieldId.columnId"
         [Column("KEY_FIELD_MAPPINGS", TypeName = "CLOB")]
         public string? KeyFieldMappingsJson { get; set; }
         [Column("DISPLAY_MODE")]
@@ -315,5 +320,6 @@ namespace productionLine.Server.Model
         public string? Label { get; set; }
         [JsonPropertyName("ratingStyle")]
         public string? RatingStyle { get; set; }
+
     }
 }

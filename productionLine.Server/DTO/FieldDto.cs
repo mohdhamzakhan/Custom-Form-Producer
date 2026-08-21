@@ -50,5 +50,7 @@ namespace productionLine.Server.DTO
         public bool? AllowAddRows { get; set; }
         public bool? AllowEditQuestions { get; set; }
         public List<DefaultRow>? DefaultRows { get; set; }
+        public string? OptionsSource { get; set; }
+        public string? LinkedFieldReference { get; set; }
     }
 }

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260821052127_AddOptionsSourceAndLinkedFieldReference")]
+    partial class AddOptionsSourceAndLinkedFieldReference
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -710,10 +713,6 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("RAW(16)")
                         .HasColumnName("LINKED_FIELD_ID");
 
-                    b.Property<string>("LinkedFieldReference")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("LINKED_FIELD_REFERENCE");
-
                     b.Property<string>("LinkedFieldType")
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasColumnName("LINKED_FIELD_TYPE");
@@ -748,10 +747,6 @@ namespace productionLine.Server.Migrations
                     b.Property<string>("OptionsJson")
                         .HasColumnType("CLOB")
                         .HasColumnName("OPTIONS");
-
-                    b.Property<string>("OptionsSource")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("OPTIONS_SOURCE");
 
                     b.Property<int>("Order")
                         .HasColumnType("NUMBER(10)")
@@ -1020,6 +1015,10 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("RAW(16)")
                         .HasAnnotation("Relational:JsonPropertyName", "linkedFieldId");
 
+                    b.Property<string>("LinkedFieldReference")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("LINKED_FIELD_REFERENCE");
+
                     b.Property<string>("LinkedFieldType")
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasAnnotation("Relational:JsonPropertyName", "linkedFieldType");
@@ -1048,6 +1047,10 @@ namespace productionLine.Server.Migrations
                     b.PrimitiveCollection<string>("Options")
                         .HasColumnType("NVARCHAR2(2000)")
                         .HasAnnotation("Relational:JsonPropertyName", "options");
+
+                    b.Property<string>("OptionsSource")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("OPTIONS_SOURCE");
 
                     b.Property<string>("ParentColumn")
                         .HasColumnType("NVARCHAR2(2000)")
