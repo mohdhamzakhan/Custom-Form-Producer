@@ -1769,7 +1769,7 @@ export default function DynamicForm() {
             const result = await response.json();
             console.log("API Response:", result);
 
-            return result.data || result;
+            return result;
         } catch (error) {
             console.error("Error fetching linked data:", error);
             return null;
