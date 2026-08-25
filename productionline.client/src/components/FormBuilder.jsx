@@ -20,6 +20,82 @@ const generateGuid = () => {
     });
 };
 
+// Turns a human-typed label into a safe, unique column "name" key
+// (used as the data key for the row, and inside {name} calculation formulas).
+const slugifyColumnName = (label) => {
+    return (label || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "") || "column";
+};
+
+// Collapsible wrapper for large per-field configuration panels (grid /
+// questionGrid config blocks especially) so the builder stays scannable —
+// each field's config starts collapsed with just a title + badge, and
+// expands on click.
+const CollapsibleSection = ({ title, badge, defaultCollapsed = true, accentColor = "blue", children }) => {
+    const [collapsed, setCollapsed] = useState(defaultCollapsed);
+    const headerClasses = accentColor === "purple"
+        ? "bg-purple-50 text-purple-800"
+        : "bg-blue-50 text-blue-800";
+    const borderClass = accentColor === "purple" ? "border-purple-300" : "border-blue-300";
+
+    return (
+        <div className={`mt-4 border-2 rounded-lg overflow-hidden ${borderClass}`}>
+            <button
+                type="button"
+                onClick={() => setCollapsed(c => !c)}
+                className={`w-full flex items-center justify-between px-4 py-2 text-left font-semibold text-sm ${headerClasses}`}
+            >
+                <span className="flex items-center gap-2">
+                    <ChevronDown size={16} className={`transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+                    {title}
+                </span>
+                {badge && <span className="text-xs font-normal opacity-70 whitespace-nowrap">{badge}</span>}
+            </button>
+            {!collapsed && (
+                <div className="p-4 bg-white">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// Given the full columns array, the index of the column being renamed, and its
+// new label, returns a new columns array with: (1) that column's name updated
+// to a name that's guaranteed unique among the other columns, and (2) any
+// {oldName} references inside other columns' "calculation" formulas rewritten
+// to {newName}. Operates by array INDEX rather than by `id` — some saved forms
+// contain columns that accidentally share an `id`, and id-based lookups would
+// wrongly touch every column with that id instead of just the one being edited.
+const renameColumnAndCascade = (columns, columnIndex, rawNewName) => {
+    const target = columns[columnIndex];
+    if (!target) return columns;
+    const oldName = target.name;
+
+    let newName = slugifyColumnName(rawNewName);
+    const takenNames = new Set(columns.filter((_, i) => i !== columnIndex).map(c => c.name));
+    if (takenNames.has(newName)) {
+        let suffix = 2;
+        while (takenNames.has(`${newName}_${suffix}`)) suffix++;
+        newName = `${newName}_${suffix}`;
+    }
+
+    return columns.map((c, i) => {
+        if (i === columnIndex) {
+            return { ...c, name: newName };
+        }
+        if (c.type === "calculation" && typeof c.formula === "string" && oldName) {
+            const pattern = new RegExp(`\\{\\s*${oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\}`, "g");
+            return { ...c, formula: c.formula.replace(pattern, `{${newName}}`) };
+        }
+        return c;
+    });
+};
+
 // Define the drag item type
 const ITEM_TYPE = "FORM_FIELD";
 const APPROVER_ITEM_TYPE = "APPROVER";
@@ -3107,9 +3183,11 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             )}
 
             {field.type === "grid" && (
-                <div className="mt-4">
-                    <h4 className="text-sm font-semibold mb-2">Grid Configuration</h4>
-
+                <CollapsibleSection
+                    title="Grid Configuration"
+                    badge={`${field.columns?.length || 0} columns`}
+                    accentColor="blue"
+                >
                     <div className="grid grid-cols-3 gap-4 mb-4">
                         <div>
                             <label className="block text-sm text-gray-600 mb-1">Initial Rows</label>
@@ -4192,7 +4270,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         </div>
                     )}
 
-                </div>
+                </CollapsibleSection>
 
             )}
 
@@ -4559,30 +4637,78 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             )}
 
             {field.type === "questionGrid" && (
-                <div className="mt-4 border rounded p-4 bg-gray-50">
-                    <h4 className="text-sm font-semibold mb-3">Question Grid Configuration</h4>
+                <CollapsibleSection
+                    title="Question Grid Configuration"
+                    badge={`${(field.columns || []).length} columns`}
+                    accentColor="purple"
+                >
 
                     {/* Question Column Setup */}
                     <div className="mb-4 bg-blue-50 p-3 rounded">
                         <label className="block text-sm font-medium mb-2">Question Column:</label>
-                        <input
-                            type="text"
-                            value={field.columns.find(c => c.fixed)?.label || "Question"}
-                            onChange={(e) => {
-                                const updatedColumns = [...field.columns];
-                                const questionColIndex = field.columns.findIndex(c => c.fixed);
-                                if (questionColIndex !== -1) {
-                                    updatedColumns[questionColIndex] = {
-                                        ...updatedColumns[questionColIndex],
-                                        label: e.target.value
-                                    };
-                                    updateField({ columns: updatedColumns });
-                                }
-                            }}
-                            placeholder="e.g., 'Question', 'Item', 'Parameter'"
-                            className="w-full px-3 py-2 border rounded text-sm"
-                        />
+                        {(() => {
+                            const questionCol = field.columns.find(c => c.fixed);
+                            const questionColIndex = field.columns.findIndex(c => c.fixed);
+                            if (!questionCol) return null;
 
+                            const updateQuestionCol = (patch) => {
+                                const updatedColumns = [...field.columns];
+                                updatedColumns[questionColIndex] = { ...updatedColumns[questionColIndex], ...patch };
+                                updateField({ columns: updatedColumns });
+                            };
+
+                            return (
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={questionCol.label || "Question"}
+                                        onChange={(e) => {
+                                            const renamedColumns = renameColumnAndCascade(field.columns, questionCol.id, e.target.value);
+                                            renamedColumns[questionColIndex] = { ...renamedColumns[questionColIndex], label: e.target.value };
+                                            updateField({ columns: renamedColumns });
+                                        }}
+                                        placeholder="e.g., 'Question', 'Item', 'Parameter'"
+                                        className="flex-1 px-3 py-2 border rounded text-sm"
+                                    />
+
+                                    {/* Question Column Type Selector */}
+                                    <select
+                                        value={questionCol.type || "textbox"}
+                                        onChange={(e) => {
+                                            const newType = e.target.value;
+                                            updateQuestionCol({
+                                                type: newType,
+                                                options: newType === "dropdown" ? (questionCol.options || []) : undefined,
+                                            });
+                                        }}
+                                        className="px-2 py-2 border rounded text-sm bg-white"
+                                    >
+                                        <option value="textbox">Text Input</option>
+                                        <option value="dropdown">Dropdown</option>
+                                    </select>
+
+                                    {/* Configure options — only relevant, and only shown, when the question column is a dropdown */}
+                                    {questionCol.type === "dropdown" && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const optionsStr = prompt(
+                                                    "Enter options separated by commas:",
+                                                    (questionCol.options || []).join(", ")
+                                                );
+                                                if (optionsStr !== null) {
+                                                    const options = optionsStr.split(",").map(o => o.trim()).filter(o => o);
+                                                    updateQuestionCol({ options });
+                                                }
+                                            }}
+                                            className="text-blue-500 hover:text-blue-700 text-xs px-2 py-2 border border-blue-300 rounded hover:bg-blue-50 whitespace-nowrap"
+                                        >
+                                            Configure Options ({(questionCol.options || []).length})
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     {/* Answer Columns Management */}
@@ -4591,241 +4717,231 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
 
                         {/* Display existing answer columns */}
                         <div className="space-y-2 mb-3">
-                            {field.columns.filter(col => !col.fixed).map((col, idx) => (
-                                <div key={col.id} className="flex items-center gap-2 bg-white p-3 rounded border">
-                                    <span className="text-gray-500 text-sm font-medium w-8">{idx + 1}.</span>
+                            {field.columns
+                                .map((col, originalIndex) => ({ col, originalIndex }))
+                                .filter(({ col }) => !col.fixed)
+                                .map(({ col, originalIndex }, idx) => (
+                                    <div key={originalIndex} className="flex items-center gap-2 bg-white p-3 rounded border">
+                                        <span className="text-gray-500 text-sm font-medium w-8">{idx + 1}.</span>
 
-                                    {/* Column Label */}
-                                    <div className="flex-1">
-                                        <input
-                                            type="text"
-                                            value={col.label}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                updatedColumns[colIndex] = {
-                                                    ...col,
-                                                    label: e.target.value,
-                                                    //name: e.target.value.toLowerCase().replace(/\s+/g, '_')
-                                                };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            placeholder="Column label (e.g., 'Answer', 'Value', 'Score')"
-                                            className="w-full px-3 py-1 border rounded text-sm mb-1"
-                                        />
-
-                                        {/* Column Type Selector */}
-                                        <select
-                                            value={col.type}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                const newType = e.target.value;
-
-                                                // Reset type-specific properties
-                                                updatedColumns[colIndex] = {
-                                                    ...col,
-                                                    type: newType,
-                                                    options: newType === "dropdown" || newType === "checkbox" || newType === "radio" ? (col.options || []) : undefined,
-                                                    min: newType === "numeric" ? (col.min !== undefined ? col.min : null) : undefined,
-                                                    max: newType === "numeric" ? (col.max !== undefined ? col.max : null) : undefined,
-                                                    decimal: newType === "numeric" ? (col.decimal !== undefined ? col.decimal : true) : undefined,
-                                                };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            className="w-full px-2 py-1 border rounded text-xs bg-gray-50"
-                                        >
-                                            <option value="textbox">Text Input</option>
-                                            <option value="numeric">Numeric</option>
-                                            <option value="dropdown">Dropdown</option>
-                                            <option value="checkbox">Checkbox</option>
-                                            <option value="radio">Radio</option>
-                                            <option value="date">Date</option>
-                                            <option value="time">Time</option>
-                                            <option value="serialNumber">Serial Number</option>
-                                            <option value="fixedValue">Fixed Value</option>
-                                            <option value="calculation">Calculation</option>
-                                        </select>
-                                    </div>
-
-                                    {/* Column Width */}
-                                    <input
-                                        type="text"
-                                        value={col.width}
-                                        onChange={(e) => {
-                                            const updatedColumns = [...field.columns];
-                                            const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                            updatedColumns[colIndex] = { ...col, width: e.target.value };
-                                            updateField({ columns: updatedColumns });
-                                        }}
-                                        placeholder="Width"
-                                        className="w-20 px-2 py-1 border rounded text-sm"
-                                    />
-
-
-
-                                    {/* Required Checkbox */}
-                                    <label className="flex items-center text-xs whitespace-nowrap">
-                                        <input
-                                            type="checkbox"
-                                            checked={col.required || false}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                updatedColumns[colIndex] = { ...col, required: e.target.checked };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            className="mr-1"
-                                        />
-                                        Required
-                                    </label>
-
-                                    {col.type === "dropdown" && (
-                                        <label className="flex items-center text-xs whitespace-nowrap bg-purple-50 px-2 py-1 rounded">
+                                        {/* Column Label */}
+                                        <div className="flex-1">
                                             <input
-                                                type="checkbox"
-                                                checked={col.ratingStyle === "emoji"}
+                                                type="text"
+                                                value={col.label}
+                                                onChange={(e) => {
+                                                    const renamedColumns = renameColumnAndCascade(field.columns, originalIndex, e.target.value);
+                                                    renamedColumns[originalIndex] = { ...renamedColumns[originalIndex], label: e.target.value };
+                                                    updateField({ columns: renamedColumns });
+                                                }}
+                                                placeholder="Column label (e.g., 'Answer', 'Value', 'Score')"
+                                                className="w-full px-3 py-1 border rounded text-sm mb-1"
+                                            />
+
+                                            {/* Column Type Selector */}
+                                            <select
+                                                value={col.type}
                                                 onChange={(e) => {
                                                     const updatedColumns = [...field.columns];
-                                                    const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                    updatedColumns[colIndex] = {
+                                                    const newType = e.target.value;
+
+                                                    // Reset type-specific properties
+                                                    updatedColumns[originalIndex] = {
                                                         ...col,
-                                                        ratingStyle: e.target.checked ? "emoji" : null,
-                                                        options: e.target.checked && (!col.options || col.options.length === 0)
-                                                            ? ["1", "2", "3", "4", "5"]
-                                                            : col.options
+                                                        type: newType,
+                                                        options: newType === "dropdown" || newType === "checkbox" || newType === "radio" ? (col.options || []) : undefined,
+                                                        min: newType === "numeric" ? (col.min !== undefined ? col.min : null) : undefined,
+                                                        max: newType === "numeric" ? (col.max !== undefined ? col.max : null) : undefined,
+                                                        decimal: newType === "numeric" ? (col.decimal !== undefined ? col.decimal : true) : undefined,
                                                     };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="w-full px-2 py-1 border rounded text-xs bg-gray-50"
+                                            >
+                                                <option value="textbox">Text Input</option>
+                                                <option value="numeric">Numeric</option>
+                                                <option value="dropdown">Dropdown</option>
+                                                <option value="checkbox">Checkbox</option>
+                                                <option value="radio">Radio</option>
+                                                <option value="date">Date</option>
+                                                <option value="time">Time</option>
+                                                <option value="serialNumber">Serial Number</option>
+                                                <option value="fixedValue">Fixed Value</option>
+                                                <option value="calculation">Calculation</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Column Width */}
+                                        <input
+                                            type="text"
+                                            value={col.width}
+                                            onChange={(e) => {
+                                                const updatedColumns = [...field.columns];
+                                                updatedColumns[originalIndex] = { ...col, width: e.target.value };
+                                                updateField({ columns: updatedColumns });
+                                            }}
+                                            placeholder="Width"
+                                            className="w-20 px-2 py-1 border rounded text-sm"
+                                        />
+
+
+
+                                        {/* Required Checkbox */}
+                                        <label className="flex items-center text-xs whitespace-nowrap">
+                                            <input
+                                                type="checkbox"
+                                                checked={col.required || false}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[originalIndex] = { ...col, required: e.target.checked };
                                                     updateField({ columns: updatedColumns });
                                                 }}
                                                 className="mr-1"
                                             />
-                                            😊 Emoji rating
+                                            Required
                                         </label>
-                                    )}
 
-                                    {/* Configure Button for Options/Validation */}
-                                    {(col.type === "dropdown" || col.type === "checkbox" || col.type === "radio" || col.type === "numeric") && (
+                                        {col.type === "dropdown" && (
+                                            <label className="flex items-center text-xs whitespace-nowrap bg-purple-50 px-2 py-1 rounded">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={col.ratingStyle === "emoji"}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[originalIndex] = {
+                                                            ...col,
+                                                            ratingStyle: e.target.checked ? "emoji" : null,
+                                                            options: e.target.checked && (!col.options || col.options.length === 0)
+                                                                ? ["1", "2", "3", "4", "5"]
+                                                                : col.options
+                                                        };
+                                                        updateField({ columns: updatedColumns });
+                                                    }}
+                                                    className="mr-1"
+                                                />
+                                                😊 Emoji rating
+                                            </label>
+                                        )}
+
+                                        {/* Configure Button for Options/Validation */}
+                                        {(col.type === "dropdown" || col.type === "checkbox" || col.type === "radio" || col.type === "numeric") && (
+                                            <button
+                                                onClick={() => {
+                                                    if (col.type === "numeric") {
+                                                        const min = prompt("Minimum value (leave empty for none):", col.min || "");
+                                                        const max = prompt("Maximum value (leave empty for none):", col.max || "");
+                                                        const decimal = confirm("Allow decimal values?");
+
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[originalIndex] = {
+                                                            ...col,
+                                                            min: min ? parseFloat(min) : null,
+                                                            max: max ? parseFloat(max) : null,
+                                                            decimal: decimal
+                                                        };
+                                                        updateField({ columns: updatedColumns });
+                                                    } else {
+                                                        // For dropdown/checkbox/radio
+                                                        const optionsStr = prompt(
+                                                            "Enter options separated by commas:",
+                                                            (col.options || []).join(", ")
+                                                        );
+                                                        if (optionsStr !== null) {
+                                                            const options = optionsStr.split(",").map(o => o.trim()).filter(o => o);
+                                                            const updatedColumns = [...field.columns];
+                                                            updatedColumns[originalIndex] = { ...col, options };
+                                                            updateField({ columns: updatedColumns });
+                                                        }
+                                                    }
+                                                }}
+                                                className="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 border border-blue-300 rounded hover:bg-blue-50"
+                                            >
+                                                Configure
+                                            </button>
+                                        )}
+
+                                        {col.type === "fixedValue" && (
+                                            <input
+                                                type="text"
+                                                value={col.labelText || ""}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[originalIndex] = { ...col, labelText: e.target.value };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                placeholder="Fixed value text"
+                                                className="w-32 px-2 py-1 border rounded text-sm bg-blue-50"
+                                            />
+                                        )}
+
+                                        {col.type === "calculation" && (
+                                            <input
+                                                type="text"
+                                                value={col.formula || ""}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[originalIndex] = { ...col, formula: e.target.value };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                placeholder="e.g. {required_rating} - {actual_rating}"
+                                                className="w-56 px-2 py-1 border rounded text-xs bg-yellow-50"
+                                            />
+                                        )}
+
+
+                                        <label className="flex items-center text-xs whitespace-nowrap bg-yellow-50 px-2 py-1 rounded">
+                                            <input
+                                                type="checkbox"
+                                                checked={col.fixed || false}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    // Uncheck all other columns' fixed property first
+                                                    updatedColumns.forEach((c, i) => {
+                                                        if (i !== originalIndex) {
+                                                            c.fixed = false;
+                                                        }
+                                                    });
+                                                    // Set current column's fixed property
+                                                    updatedColumns[originalIndex] = { ...col, fixed: e.target.checked };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="mr-1"
+                                            />
+                                            Question
+                                        </label>
+
+                                        <label className="flex items-center text-xs">
+                                            <input
+                                                type="checkbox"
+                                                checked={col.disable || false}
+                                                onChange={(e) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[originalIndex] = { ...col, disable: e.target.checked };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                className="mr-1"
+                                            />
+                                            Read-only
+                                        </label>
+
+                                        {/* Remove Button */}
                                         <button
                                             onClick={() => {
-                                                if (col.type === "numeric") {
-                                                    const min = prompt("Minimum value (leave empty for none):", col.min || "");
-                                                    const max = prompt("Maximum value (leave empty for none):", col.max || "");
-                                                    const decimal = confirm("Allow decimal values?");
-
-                                                    const updatedColumns = [...field.columns];
-                                                    const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                    updatedColumns[colIndex] = {
-                                                        ...col,
-                                                        min: min ? parseFloat(min) : null,
-                                                        max: max ? parseFloat(max) : null,
-                                                        decimal: decimal
-                                                    };
-                                                    updateField({ columns: updatedColumns });
-                                                } else {
-                                                    // For dropdown/checkbox/radio
-                                                    const optionsStr = prompt(
-                                                        "Enter options separated by commas:",
-                                                        (col.options || []).join(", ")
-                                                    );
-                                                    if (optionsStr !== null) {
-                                                        const options = optionsStr.split(",").map(o => o.trim()).filter(o => o);
-                                                        const updatedColumns = [...field.columns];
-                                                        const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                        updatedColumns[colIndex] = { ...col, options };
-                                                        updateField({ columns: updatedColumns });
-                                                    }
-                                                }
+                                                const updatedColumns = field.columns.filter((_, i) => i !== originalIndex);
+                                                updateField({ columns: updatedColumns });
                                             }}
-                                            className="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 border border-blue-300 rounded hover:bg-blue-50"
+                                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                                            title="Remove column"
                                         >
-                                            Configure
+                                            <X size={16} />
                                         </button>
-                                    )}
 
-                                    {col.type === "fixedValue" && (
-                                        <input
-                                            type="text"
-                                            value={col.labelText || ""}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                const colIndex = field.columns.findIndex(c => c.id === col.id);  // CORRECT - use actual index
-                                                updatedColumns[colIndex] = { ...col, labelText: e.target.value };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            placeholder="Fixed value text"
-                                            className="w-32 px-2 py-1 border rounded text-sm bg-blue-50"
-                                        />
-                                    )}
-
-                                    {col.type === "calculation" && (
-                                        <input
-                                            type="text"
-                                            value={col.formula || ""}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                const colIndex = field.columns.findIndex(c => c.id === col.id);
-                                                updatedColumns[colIndex] = { ...col, formula: e.target.value };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            placeholder="e.g. {required_rating} - {actual_rating}"
-                                            className="w-56 px-2 py-1 border rounded text-xs bg-yellow-50"
-                                        />
-                                    )}
-
-
-                                    <label className="flex items-center text-xs whitespace-nowrap bg-yellow-50 px-2 py-1 rounded">
-                                        <input
-                                            type="checkbox"
-                                            checked={col.fixed || false}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                // Uncheck all other columns' fixed property first
-                                                updatedColumns.forEach((c, i) => {
-                                                    if (i !== idx) {
-                                                        c.fixed = false;
-                                                    }
-                                                });
-                                                // Set current column's fixed property
-                                                updatedColumns[idx] = { ...col, fixed: e.target.checked };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            className="mr-1"
-                                        />
-                                        Question
-                                    </label>
-
-                                    <label className="flex items-center text-xs">
-                                        <input
-                                            type="checkbox"
-                                            checked={col.disable || false}
-                                            onChange={(e) => {
-                                                const updatedColumns = [...field.columns];
-                                                updatedColumns[idx] = { ...col, disable: e.target.checked };
-                                                updateField({ columns: updatedColumns });
-                                            }}
-                                            className="mr-1"
-                                        />
-                                        Read-only
-                                    </label>
-
-                                    {/* Remove Button */}
-                                    <button
-                                        onClick={() => {
-                                            const updatedColumns = field.columns.filter(c => c.id !== col.id);
-                                            updateField({ columns: updatedColumns });
-                                        }}
-                                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded"
-                                        title="Remove column"
-                                    >
-                                        <X size={16} />
-                                    </button>
-
-                                    {/* Drag Handle */}
-                                    <button className="text-gray-400 hover:text-gray-600 cursor-move">
-                                        <GripVertical size={16} />
-                                    </button>
-                                </div>
-                            ))}
+                                        {/* Drag Handle */}
+                                        <button className="text-gray-400 hover:text-gray-600 cursor-move">
+                                            <GripVertical size={16} />
+                                        </button>
+                                    </div>
+                                ))}
                         </div>
 
                         {/* Add New Answer Column Button */}
@@ -5287,7 +5403,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             })()}
                         </div>
                     )}
-                </div >
+                </CollapsibleSection>
             )}
 
             {(field.type === "dropdown" ||
