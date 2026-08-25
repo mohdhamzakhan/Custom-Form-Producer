@@ -101,6 +101,189 @@ const ITEM_TYPE = "FORM_FIELD";
 const APPROVER_ITEM_TYPE = "APPROVER";
 const COLUMNITEMTYPE = 'COLUMN'
 
+// Reusable chip-style editor for dropdown/checkbox/radio option lists.
+// Replaces brittle comma-separated text inputs and window.prompt() dialogs
+// with add-one-at-a-time chips that can be removed or reordered individually.
+// Reusable chip-style editor for dropdown/checkbox/radio option lists.
+// Reusable chip-style editor for dropdown/checkbox/radio option lists.
+const DropdownOptionsEditor = ({ options = [], onChange }) => {
+    const [draft, setDraft] = useState("");
+    const [editingIndex, setEditingIndex] = useState(null);
+    const [editDraft, setEditDraft] = useState("");
+
+    const addOption = () => {
+        if (!draft.trim()) return;
+
+        // 1. Split by newlines first (perfect for pasting from Excel/Word lists)
+        // 2. Then split by commas, but IGNORE commas that are inside double quotes.
+        // Regex explanation: Matches a comma only if it's followed by an even number of quotes.
+        const rawValues = draft.split(/[\n\r]+/).flatMap(line =>
+            line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+        );
+
+        const newOptions = [];
+
+        rawValues.forEach(val => {
+            let cleanVal = val.trim();
+
+            // If the user wrapped the value in quotes to protect a comma, remove the outer quotes
+            if (cleanVal.startsWith('"') && cleanVal.endsWith('"') && cleanVal.length > 1) {
+                cleanVal = cleanVal.slice(1, -1).trim();
+            }
+
+            // Only add if it's not empty, not already in the existing options, and not already in our new batch
+            if (
+                cleanVal &&
+                !options.some(o => o.toLowerCase() === cleanVal.toLowerCase()) &&
+                !newOptions.some(o => o.toLowerCase() === cleanVal.toLowerCase())
+            ) {
+                newOptions.push(cleanVal);
+            }
+        });
+
+        if (newOptions.length > 0) {
+            onChange([...options, ...newOptions]);
+        }
+
+        setDraft("");
+    };
+
+    const removeOption = (index) => {
+        onChange(options.filter((_, i) => i !== index));
+        if (editingIndex === index) setEditingIndex(null);
+    };
+
+    const moveOption = (index, direction) => {
+        const target = index + direction;
+        if (target < 0 || target >= options.length) return;
+        const reordered = [...options];
+        [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+        onChange(reordered);
+
+        if (editingIndex === index) setEditingIndex(target);
+        else if (editingIndex === target) setEditingIndex(index);
+    };
+
+    const startEditing = (index, currentValue) => {
+        setEditingIndex(index);
+        setEditDraft(currentValue);
+    };
+
+    const saveEdit = (index) => {
+        const value = editDraft.trim();
+        if (!value) {
+            setEditingIndex(null);
+            return;
+        }
+        if (options.some((o, i) => i !== index && o.toLowerCase() === value.toLowerCase())) {
+            setEditingIndex(null);
+            return;
+        }
+
+        const updated = [...options];
+        updated[index] = value;
+        onChange(updated);
+        setEditingIndex(null);
+    };
+
+    return (
+        <div className="w-full">
+            <div className="flex flex-wrap gap-2 mb-2 min-h-[1.75rem]">
+                {options.length === 0 && (
+                    <span className="text-xs text-gray-400 italic">No options yet — add one below</span>
+                )}
+                {options.map((opt, i) => (
+                    <span
+                        key={`${opt}-${i}`}
+                        className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-800 text-xs pl-1 pr-2 py-1 rounded-full overflow-hidden"
+                    >
+                        <button
+                            type="button"
+                            onClick={() => moveOption(i, -1)}
+                            disabled={i === 0}
+                            className="text-blue-400 hover:text-blue-600 disabled:opacity-30 leading-none px-0.5"
+                            title="Move up"
+                        >
+                            ↑
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => moveOption(i, 1)}
+                            disabled={i === options.length - 1}
+                            className="text-blue-400 hover:text-blue-600 disabled:opacity-30 leading-none px-0.5"
+                            title="Move down"
+                        >
+                            ↓
+                        </button>
+
+                        {editingIndex === i ? (
+                            <input
+                                type="text"
+                                value={editDraft}
+                                onChange={(e) => setEditDraft(e.target.value)}
+                                onBlur={() => saveEdit(i)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        saveEdit(i);
+                                    }
+                                    if (e.key === "Escape") setEditingIndex(null);
+                                }}
+                                className="bg-white border border-blue-300 rounded px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-blue-400 min-w-[60px]"
+                                autoFocus
+                            />
+                        ) : (
+                            <span
+                                className="cursor-pointer hover:underline mx-1 py-0.5"
+                                onClick={() => startEditing(i, opt)}
+                                title="Click to edit"
+                            >
+                                {opt}
+                            </span>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={() => removeOption(i)}
+                            className="text-blue-500 hover:text-red-600 font-bold leading-none px-0.5 ml-1"
+                            title="Remove option"
+                        >
+                            ×
+                        </button>
+                    </span>
+                ))}
+            </div>
+
+            <div className="flex flex-col gap-1">
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                addOption();
+                            }
+                        }}
+                        placeholder="Type option(s) and press Enter"
+                        className="flex-1 px-2 py-1 border rounded text-sm"
+                    />
+                    <button
+                        type="button"
+                        onClick={addOption}
+                        className="bg-blue-500 text-white text-xs px-3 py-1 rounded hover:bg-blue-600 whitespace-nowrap"
+                    >
+                        + Add
+                    </button>
+                </div>
+                <span className="text-[10px] text-gray-500 ml-1">
+                    Tip: Paste multiple options using commas. To include a literal comma, wrap the option in quotes (e.g., <code className="bg-gray-100 px-1 rounded">"City, State"</code>).
+                </span>
+            </div>
+        </div>
+    );
+};
 
 const FormBuilder = () => {
     const [formFields, setFormFields] = useState([]);
@@ -2667,6 +2850,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
     const [previewParentValue, setPreviewParentValue] = useState("");
     const [previewChildOptions, setPreviewChildOptions] = useState([]);
 
+    const [optionsEditorColId, setOptionsEditorColId] = useState(null);
+
     useEffect(() => {
         const dependentDropdownCol = field.columns?.find(col => col.type === "dependentDropdown");
 
@@ -4658,53 +4843,48 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                             };
 
                             return (
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={questionCol.label || "Question"}
-                                        onChange={(e) => {
-                                            const renamedColumns = renameColumnAndCascade(field.columns, questionCol.id, e.target.value);
-                                            renamedColumns[questionColIndex] = { ...renamedColumns[questionColIndex], label: e.target.value };
-                                            updateField({ columns: renamedColumns });
-                                        }}
-                                        placeholder="e.g., 'Question', 'Item', 'Parameter'"
-                                        className="flex-1 px-3 py-2 border rounded text-sm"
-                                    />
-
-                                    {/* Question Column Type Selector */}
-                                    <select
-                                        value={questionCol.type || "textbox"}
-                                        onChange={(e) => {
-                                            const newType = e.target.value;
-                                            updateQuestionCol({
-                                                type: newType,
-                                                options: newType === "dropdown" ? (questionCol.options || []) : undefined,
-                                            });
-                                        }}
-                                        className="px-2 py-2 border rounded text-sm bg-white"
-                                    >
-                                        <option value="textbox">Text Input</option>
-                                        <option value="dropdown">Dropdown</option>
-                                    </select>
-
-                                    {/* Configure options — only relevant, and only shown, when the question column is a dropdown */}
-                                    {questionCol.type === "dropdown" && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const optionsStr = prompt(
-                                                    "Enter options separated by commas:",
-                                                    (questionCol.options || []).join(", ")
-                                                );
-                                                if (optionsStr !== null) {
-                                                    const options = optionsStr.split(",").map(o => o.trim()).filter(o => o);
-                                                    updateQuestionCol({ options });
-                                                }
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={questionCol.label || "Question"}
+                                            onChange={(e) => {
+                                                const renamedColumns = renameColumnAndCascade(field.columns, questionCol.id, e.target.value);
+                                                renamedColumns[questionColIndex] = { ...renamedColumns[questionColIndex], label: e.target.value };
+                                                updateField({ columns: renamedColumns });
                                             }}
-                                            className="text-blue-500 hover:text-blue-700 text-xs px-2 py-2 border border-blue-300 rounded hover:bg-blue-50 whitespace-nowrap"
+                                            placeholder="e.g., 'Question', 'Item', 'Parameter'"
+                                            className="flex-1 px-3 py-2 border rounded text-sm"
+                                        />
+
+                                        {/* Question Column Type Selector */}
+                                        <select
+                                            value={questionCol.type || "textbox"}
+                                            onChange={(e) => {
+                                                const newType = e.target.value;
+                                                updateQuestionCol({
+                                                    type: newType,
+                                                    options: newType === "dropdown" ? (questionCol.options || []) : undefined,
+                                                });
+                                            }}
+                                            className="px-2 py-2 border rounded text-sm bg-white"
                                         >
-                                            Configure Options ({(questionCol.options || []).length})
-                                        </button>
+                                            <option value="textbox">Text Input</option>
+                                            <option value="dropdown">Dropdown</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Configure options — cleanly rendered below the inputs */}
+                                    {questionCol.type === "dropdown" && (
+                                        <div className="bg-white p-3 border border-blue-200 rounded shadow-sm mt-1">
+                                            <label className="block text-xs font-semibold text-gray-700 mb-2">
+                                                Question Dropdown Options
+                                            </label>
+                                            <DropdownOptionsEditor
+                                                options={questionCol.options || []}
+                                                onChange={(options) => updateQuestionCol({ options })}
+                                            />
+                                        </div>
                                     )}
                                 </div>
                             );
@@ -4822,42 +5002,83 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 😊 Emoji rating
                                             </label>
                                         )}
-
                                         {/* Configure Button for Options/Validation */}
                                         {(col.type === "dropdown" || col.type === "checkbox" || col.type === "radio" || col.type === "numeric") && (
-                                            <button
-                                                onClick={() => {
-                                                    if (col.type === "numeric") {
-                                                        const min = prompt("Minimum value (leave empty for none):", col.min || "");
-                                                        const max = prompt("Maximum value (leave empty for none):", col.max || "");
-                                                        const decimal = confirm("Allow decimal values?");
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() => setOptionsEditorColId(prev => (prev === col.id ? null : col.id))}
+                                                    className="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 border border-blue-300 rounded hover:bg-blue-50"
+                                                >
+                                                    Configure
+                                                </button>
 
-                                                        const updatedColumns = [...field.columns];
-                                                        updatedColumns[originalIndex] = {
-                                                            ...col,
-                                                            min: min ? parseFloat(min) : null,
-                                                            max: max ? parseFloat(max) : null,
-                                                            decimal: decimal
-                                                        };
-                                                        updateField({ columns: updatedColumns });
-                                                    } else {
-                                                        // For dropdown/checkbox/radio
-                                                        const optionsStr = prompt(
-                                                            "Enter options separated by commas:",
-                                                            (col.options || []).join(", ")
-                                                        );
-                                                        if (optionsStr !== null) {
-                                                            const options = optionsStr.split(",").map(o => o.trim()).filter(o => o);
-                                                            const updatedColumns = [...field.columns];
-                                                            updatedColumns[originalIndex] = { ...col, options };
-                                                            updateField({ columns: updatedColumns });
-                                                        }
-                                                    }
-                                                }}
-                                                className="text-blue-500 hover:text-blue-700 text-xs px-2 py-1 border border-blue-300 rounded hover:bg-blue-50"
-                                            >
-                                                Configure
-                                            </button>
+                                                {optionsEditorColId === col.id && (
+                                                    <div className="absolute z-20 top-full right-0 mt-1 w-64 bg-white border rounded shadow-lg p-3">
+                                                        {col.type === "numeric" ? (
+                                                            <div className="space-y-3">
+                                                                <label className="block text-xs font-semibold text-gray-700">Numeric Configuration</label>
+                                                                <div className="flex gap-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        placeholder="Min"
+                                                                        value={col.min !== null ? col.min : ''}
+                                                                        onChange={e => {
+                                                                            const updatedColumns = [...field.columns];
+                                                                            const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                                            updatedColumns[colIndex] = { ...col, min: e.target.value ? parseFloat(e.target.value) : null };
+                                                                            updateField({ columns: updatedColumns });
+                                                                        }}
+                                                                        className="w-1/2 px-2 py-1 border rounded text-xs"
+                                                                    />
+                                                                    <input
+                                                                        type="number"
+                                                                        placeholder="Max"
+                                                                        value={col.max !== null ? col.max : ''}
+                                                                        onChange={e => {
+                                                                            const updatedColumns = [...field.columns];
+                                                                            const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                                            updatedColumns[colIndex] = { ...col, max: e.target.value ? parseFloat(e.target.value) : null };
+                                                                            updateField({ columns: updatedColumns });
+                                                                        }}
+                                                                        className="w-1/2 px-2 py-1 border rounded text-xs"
+                                                                    />
+                                                                </div>
+                                                                <label className="flex items-center gap-2 text-xs text-gray-600">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={col.decimal !== false}
+                                                                        onChange={e => {
+                                                                            const updatedColumns = [...field.columns];
+                                                                            const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                                            updatedColumns[colIndex] = { ...col, decimal: e.target.checked };
+                                                                            updateField({ columns: updatedColumns });
+                                                                        }}
+                                                                        className="h-3 w-3"
+                                                                    />
+                                                                    Allow Decimal
+                                                                </label>
+                                                            </div>
+                                                        ) : (
+                                                            <DropdownOptionsEditor
+                                                                options={col.options || []}
+                                                                onChange={(options) => {
+                                                                    const updatedColumns = [...field.columns];
+                                                                    const colIndex = field.columns.findIndex(c => c.id === col.id);
+                                                                    updatedColumns[colIndex] = { ...col, options };
+                                                                    updateField({ columns: updatedColumns });
+                                                                }}
+                                                            />
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setOptionsEditorColId(null)}
+                                                            className="mt-3 text-xs text-blue-500 hover:text-blue-700 underline block"
+                                                        >
+                                                            Done
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
 
                                         {col.type === "fixedValue" && (
