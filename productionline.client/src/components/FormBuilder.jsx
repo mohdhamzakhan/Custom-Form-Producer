@@ -3552,12 +3552,37 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 updatedColumns[colIndex].formula = e.target.value;
                                                 updateField({ ...field, columns: updatedColumns });
                                             }}
-                                            className="w-full px-2 py-1 border rounded"
-                                            placeholder="col1 + col2"
+                                            className="w-full px-2 py-1 border rounded font-mono text-sm bg-yellow-50"
+                                            placeholder="e.g. {col1} + {col2}"
                                         />
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Use column IDs to create calculations (e.g., col1 * col2)
-                                        </p>
+
+                                        {/* Available Columns Helper for Grid */}
+                                        <div className="mt-2 bg-white p-2 rounded border border-gray-200">
+                                            <span className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Available Columns for Formula</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {field.columns
+                                                    .filter(c => c.id !== column.id && ["numeric", "textbox", "calculation", "dropdown"].includes(c.type))
+                                                    .map(c => (
+                                                        <div
+                                                            key={c.id}
+                                                            onClick={() => {
+                                                                const currentFormula = column.formula || "";
+                                                                // Add a space before the tag if the formula doesn't end with one
+                                                                const appendText = currentFormula && !currentFormula.endsWith(' ') ? ` {${c.name}}` : `{${c.name}}`;
+                                                                const updatedColumns = [...(field.columns || [])];
+                                                                updatedColumns[colIndex].formula = currentFormula + appendText;
+                                                                updateField({ ...field, columns: updatedColumns });
+                                                            }}
+                                                            className="text-[10px] bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
+                                                            title="Click to add to formula"
+                                                        >
+                                                            <span className="text-gray-600 truncate max-w-[120px]">{c.label || c.name}:</span>
+                                                            <code className="text-blue-700 font-bold">{`{${c.name}}`}</code>
+                                                        </div>
+                                                    ))
+                                                }
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 
@@ -4222,8 +4247,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 onDragEnter={(e) => handleHeaderDragEnter(e, i)}
                                                 onDragLeave={handleHeaderDragLeave}
                                                 onDrop={(e) => handleHeaderDrop(e, i)}
-                                                onMouseDown={(e) => e.stopPropagation()} // Prevent grid drag on mouse down
-                                                onClick={(e) => e.stopPropagation()} // Prevent any parent click handlers
+                                                onMouseDown={(e) => e.stopPropagation()}
+                                                onClick={(e) => e.stopPropagation()}
                                                 className={`border border-gray-300 bg-gray-100 p-2 text-sm text-left cursor-move select-none transition-all duration-200 relative ${col.disabled ? 'opacity-60 bg-gray-200' : ''
                                                     } ${draggedColumnIndex === i ? 'opacity-50 scale-95' : ''}`}
                                                 style={{
@@ -4231,7 +4256,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     color: col.textColor,
                                                     backgroundColor: col.disabled ? '#f3f4f6' : (dragOverColumnIndex === i && draggedColumnIndex !== i ? '#dbeafe' : col.backgroundColor)
                                                 }}
-                                                title="Drag to reorder columns"
+                                                title={`Column ID: ${col.name}\n(Drag to reorder)`}
                                             >
                                                 <div className="flex items-center gap-2 pointer-events-none">
                                                     <GripVertical size={12} className="text-gray-500" />
@@ -4905,7 +4930,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <span className="text-gray-500 text-sm font-medium w-8">{idx + 1}.</span>
 
                                         {/* Column Label */}
-                                        <div className="flex-1">
+                                        <div className="flex-1 min-w-[200px]">
                                             <input
                                                 type="text"
                                                 value={col.label}
@@ -5096,17 +5121,51 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         )}
 
                                         {col.type === "calculation" && (
-                                            <input
-                                                type="text"
-                                                value={col.formula || ""}
-                                                onChange={(e) => {
-                                                    const updatedColumns = [...field.columns];
-                                                    updatedColumns[originalIndex] = { ...col, formula: e.target.value };
-                                                    updateField({ columns: updatedColumns });
-                                                }}
-                                                placeholder="e.g. {required_rating} - {actual_rating}"
-                                                className="w-56 px-2 py-1 border rounded text-xs bg-yellow-50"
-                                            />
+                                            <div className="w-full mt-2">
+                                                <input
+                                                    type="text"
+                                                    value={col.formula || ""}
+                                                    onChange={(e) => {
+                                                        const updatedColumns = [...field.columns];
+                                                        updatedColumns[originalIndex] = { ...col, formula: e.target.value };
+                                                        updateField({ columns: updatedColumns });
+                                                    }}
+                                                    placeholder="e.g. {required_rating} - {actual_rating}"
+                                                    className="w-full px-2 py-1 border rounded text-xs bg-yellow-50 font-mono mb-2"
+                                                />
+
+                                                {/* Available Columns Helper for Question Grid */}
+                                                <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                                                    <span className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Available Columns</span>
+                                                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                                                        {field.columns
+                                                            .filter(c => c.id !== col.id && ["numeric", "textbox", "calculation", "dropdown"].includes(c.type))
+                                                            .map(c => (
+                                                                <div
+                                                                    key={c.id}
+                                                                    onClick={() => {
+                                                                        const currentFormula = col.formula || "";
+                                                                        // Add a space before the tag if the formula doesn't end with one
+                                                                        const appendText = currentFormula && !currentFormula.endsWith(' ') ? ` {${c.name}}` : `{${c.name}}`;
+                                                                        const updatedColumns = [...field.columns];
+                                                                        updatedColumns[originalIndex] = { ...col, formula: currentFormula + appendText };
+                                                                        updateField({ columns: updatedColumns });
+                                                                    }}
+                                                                    className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
+                                                                    title="Click to add to formula"
+                                                                >
+                                                                    <span className="text-gray-600 truncate max-w-[120px]">
+                                                                        {c.label || c.name}:
+                                                                    </span>
+                                                                    <code className="text-blue-700 font-bold">
+                                                                        {`{${c.name}}`}
+                                                                    </code>
+                                                                </div>
+                                                            ))
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
                                         )}
 
 
