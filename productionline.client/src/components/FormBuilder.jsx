@@ -96,10 +96,88 @@ const renameColumnAndCascade = (columns, columnIndex, rawNewName) => {
     });
 };
 
-// Define the drag item type
-const ITEM_TYPE = "FORM_FIELD";
+// Text input for calculation formulas with a token-insertion dropdown and
+// live validation: any {reference} in the formula that doesn't match a known
+// token is flagged immediately, instead of silently evaluating to 0 later.
+const FormulaInput = ({ value, onChange, tokens = [], placeholder, className }) => {
+    const inputRef = useRef(null);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    const insertToken = (token) => {
+        const input = inputRef.current;
+        const current = value || "";
+        if (input && typeof input.selectionStart === "number") {
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const next = current.slice(0, start) + `{${token}}` + current.slice(end);
+            onChange(next);
+            requestAnimationFrame(() => {
+                input.focus();
+                const pos = start + token.length + 2;
+                input.setSelectionRange(pos, pos);
+            });
+        } else {
+            onChange(current + `{${token}}`);
+        }
+        setShowSuggestions(false);
+    };
+
+    const knownTokens = new Set(tokens.map(tk => tk.token));
+    const unknownRefs = [...new Set(
+        (value || "").match(/\{[^}]+\}/g)?.map(m => m.slice(1, -1)).filter(t => !knownTokens.has(t)) || []
+    )];
+
+    return (
+        <div className="relative">
+            <div className="flex gap-1">
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={value || ""}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={placeholder}
+                    className={className}
+                />
+                <button
+                    type="button"
+                    onClick={() => setShowSuggestions(s => !s)}
+                    className="px-2 border rounded text-xs bg-gray-50 hover:bg-gray-100 whitespace-nowrap shrink-0"
+                    title="Insert a field reference"
+                >
+                    {"{ }"} ▾
+                </button>
+            </div>
+            {showSuggestions && (
+                <div className="absolute z-20 mt-1 w-72 max-h-56 overflow-y-auto bg-white border rounded shadow-lg text-xs">
+                    {tokens.length === 0 && (
+                        <div className="px-2 py-1.5 text-gray-400">No other fields available yet</div>
+                    )}
+                    {tokens.map(tk => (
+                        <button
+                            key={tk.token}
+                            type="button"
+                            onClick={() => insertToken(tk.token)}
+                            className="w-full text-left px-2 py-1.5 hover:bg-blue-50 flex items-center justify-between gap-2"
+                        >
+                            <span className="truncate">{tk.label}</span>
+                            <code className="text-gray-400 shrink-0">{`{${tk.token}}`}</code>
+                        </button>
+                    ))}
+                </div>
+            )}
+            {unknownRefs.length > 0 && (
+                <p className="text-xs text-red-500 mt-1">
+                    ⚠ Unknown reference{unknownRefs.length > 1 ? "s" : ""}: {unknownRefs.map(r => `{${r}}`).join(", ")} — this will evaluate to 0.
+                </p>
+            )}
+        </div>
+    );
+};
+
+
 const APPROVER_ITEM_TYPE = "APPROVER";
 const COLUMNITEMTYPE = 'COLUMN'
+const ITEM_TYPE = "FORM_FIELD";
 
 // Reusable chip-style editor for dropdown/checkbox/radio option lists.
 // Replaces brittle comma-separated text inputs and window.prompt() dialogs
@@ -285,8 +363,412 @@ const DropdownOptionsEditor = ({ options = [], onChange }) => {
     );
 };
 
+// Emoji-rating map, matching DynamicForm.jsx's rendering, so the builder's
+// live preview looks the same as what an end user will actually see.
+const PREVIEW_RATING_EMOJI_MAP = { "0": "🚫", "1": "😣", "2": "🙁", "3": "😐", "4": "🙂", "5": "🤩" };
+const isPreviewRatingColumn = (col) => col.ratingStyle === "emoji";
+
+// Same visibility-condition evaluator as DynamicForm.jsx's isFieldVisible,
+// duplicated here (rather than imported) since FormBuilder and DynamicForm
+// are otherwise independent components with no shared module.
+const isPreviewFieldVisible = (field, values) => {
+    const cond = field.visibilityCondition;
+    if (!cond || !cond.enabled || !cond.fieldId) return true;
+    const raw = values[cond.fieldId];
+    const val = Array.isArray(raw) ? raw.join(",") : (raw ?? "");
+    const target = cond.value ?? "";
+    switch (cond.operator) {
+        case "equals": return String(val).trim() === String(target).trim();
+        case "notEquals": return String(val).trim() !== String(target).trim();
+        case "contains": return String(val).toLowerCase().includes(String(target).toLowerCase());
+        case "greaterThan": return parseFloat(val) > parseFloat(target);
+        case "lessThan": return parseFloat(val) < parseFloat(target);
+        case "isEmpty": return val === "" || val === null || val === undefined;
+        case "isNotEmpty": return !(val === "" || val === null || val === undefined);
+        default: return true;
+    }
+};
+
+// Evaluates a top-level calculation field's formula against current preview values.
+const evaluatePreviewFormula = (formula, fields, values) => {
+    if (!formula) return "";
+    try {
+        let expression = formula;
+        fields.forEach((f) => {
+            const raw = values[f.id];
+            const parsed = parseFloat(raw);
+            const value = raw !== null && raw !== undefined && raw !== "" && !isNaN(parsed) ? parsed : 0;
+            expression = expression.replaceAll(`{${f.id}}`, value);
+            expression = expression.replaceAll(`{${f.label}}`, value);
+        });
+        // eslint-disable-next-line no-eval
+        const result = eval(expression);
+        return isNaN(result) ? "" : result;
+    } catch {
+        return "";
+    }
+};
+
+// Evaluates a grid/questionGrid calculation column's formula against one row.
+const evaluatePreviewRowFormula = (formula, row) => {
+    if (!formula) return "";
+    try {
+        let expression = formula;
+        const placeholders = formula.match(/\{[^}]+\}/g) || [];
+        placeholders.forEach((placeholder) => {
+            const columnName = placeholder.slice(1, -1);
+            const raw = row[columnName];
+            const parsed = parseFloat(raw);
+            const value = raw !== null && raw !== undefined && raw !== "" && !isNaN(parsed) ? parsed : 0;
+            expression = expression.replaceAll(placeholder, value);
+        });
+        // eslint-disable-next-line no-eval
+        const result = eval(expression);
+        return isNaN(result) ? "" : result;
+    } catch {
+        return "";
+    }
+};
+
+// Renders one grid/questionGrid field roughly as DynamicForm.jsx would, using
+// local in-memory rows so the builder's preview reflects width, columns, and
+// formulas without needing a saved form or a backend round-trip.
+const PreviewGridField = ({ field }) => {
+    const initialRows = field.type === "questionGrid"
+        ? [{}] // a single sample row is enough to demonstrate a questionGrid
+        : Array.from({ length: field.initialRows || 1 }, () => ({}));
+    const [rows, setRows] = useState(initialRows);
+
+    const updateCell = (rowIndex, colName, value) => {
+        setRows(prev => {
+            const next = [...prev];
+            next[rowIndex] = { ...next[rowIndex], [colName]: value };
+            return next;
+        });
+    };
+
+    const addRow = () => setRows(prev => [...prev, {}]);
+    const removeRow = (idx) => setRows(prev => prev.filter((_, i) => i !== idx));
+
+    const renderCell = (col, row, rowIndex) => {
+        if (col.type === "calculation") {
+            const val = evaluatePreviewRowFormula(col.formula, row);
+            return <input type="text" value={val} readOnly className="w-full bg-gray-100 border rounded px-2 py-1 text-sm" />;
+        }
+        if (col.type === "dropdown" && isPreviewRatingColumn(col)) {
+            return (
+                <div className="flex flex-wrap gap-1 justify-center">
+                    {(col.options || []).map((opt, i) => (
+                        <button
+                            key={i}
+                            type="button"
+                            onClick={() => updateCell(rowIndex, col.name, opt)}
+                            className={`text-lg w-8 h-8 rounded-full border ${String(row[col.name]) === String(opt) ? "bg-blue-100 border-blue-400" : "border-gray-200"}`}
+                            title={opt}
+                        >
+                            {PREVIEW_RATING_EMOJI_MAP[String(opt).trim()] || opt}
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+        if (col.type === "dropdown") {
+            return (
+                <select
+                    value={row[col.name] || ""}
+                    onChange={(e) => updateCell(rowIndex, col.name, e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                >
+                    <option value="">Select…</option>
+                    {(col.options || []).map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
+                </select>
+            );
+        }
+        if (col.type === "numeric") {
+            return (
+                <input
+                    type="number"
+                    value={row[col.name] ?? ""}
+                    onChange={(e) => updateCell(rowIndex, col.name, e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                />
+            );
+        }
+        if (col.type === "date") {
+            return (
+                <input
+                    type="date"
+                    value={row[col.name] || ""}
+                    onChange={(e) => updateCell(rowIndex, col.name, e.target.value)}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                />
+            );
+        }
+        if (col.type === "checkbox") {
+            return (
+                <input
+                    type="checkbox"
+                    checked={!!row[col.name]}
+                    onChange={(e) => updateCell(rowIndex, col.name, e.target.checked)}
+                    className="h-4 w-4"
+                />
+            );
+        }
+        if (col.type === "fixedValue") {
+            return <span className="text-sm text-gray-700">{col.labelText}</span>;
+        }
+        // textbox and anything else not specially handled
+        return (
+            <input
+                type="text"
+                value={row[col.name] || ""}
+                onChange={(e) => updateCell(rowIndex, col.name, e.target.value)}
+                className="w-full border rounded px-2 py-1 text-sm"
+            />
+        );
+    };
+
+    return (
+        <div className="mb-4 w-full">
+            <div className="overflow-x-auto border-2 border-gray-300 rounded-lg">
+                <table className="min-w-full bg-white" style={{ tableLayout: "fixed" }}>
+                    <colgroup>
+                        {(field.columns || []).map((col, idx) => (
+                            <col key={idx} style={{ width: col.width || `${100 / (field.columns.length || 1)}%` }} />
+                        ))}
+                        {field.allowAddRows === true && <col style={{ width: "72px" }} />}
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <td colSpan={(field.columns || []).length + (field.allowAddRows === true ? 1 : 0)} className="bg-gray-100 py-2 px-4 border-b">
+                                <span className="text-sm font-bold text-gray-700">
+                                    {field.label}{field.required && <span className="text-red-500 ml-1">*</span>}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr className="bg-gray-50">
+                            {(field.columns || []).map((col, idx) => (
+                                <th key={idx} className="py-2 px-3 border-b text-left text-xs font-bold text-gray-600 whitespace-nowrap overflow-hidden text-ellipsis">
+                                    {col.label || col.name}{col.required && <span className="text-red-500 ml-1">*</span>}
+                                </th>
+                            ))}
+                            {field.allowAddRows === true && <th className="py-2 px-3 border-b text-xs font-bold text-gray-600">Actions</th>}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row, rowIndex) => (
+                            <tr key={rowIndex} className="border-b border-gray-100">
+                                {(field.columns || []).map((col, colIdx) => (
+                                    <td key={colIdx} className="py-1.5 px-3 border-b border-gray-100 overflow-hidden">
+                                        {renderCell(col, row, rowIndex)}
+                                    </td>
+                                ))}
+                                {field.allowAddRows === true && (
+                                    <td className="py-1.5 px-3 border-b border-gray-100 text-center">
+                                        <button type="button" onClick={() => removeRow(rowIndex)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                                    </td>
+                                )}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {field.allowAddRows === true && (
+                <button type="button" onClick={addRow} className="mt-2 text-xs text-blue-600 hover:text-blue-800">+ Add row</button>
+            )}
+        </div>
+    );
+};
+
+// Renders the current in-progress form roughly the way DynamicForm.jsx would
+// for an end user — same field widths, same conditional-visibility rules,
+// same formula evaluation — using purely local, in-memory state. Nothing here
+// is saved or submitted; it exists so builder changes (widths, formulas,
+// visibility rules) can be sanity-checked without leaving the page.
+const FormPreview = ({ fields }) => {
+    const [values, setValues] = useState({});
+
+    const setValue = (fieldId, val) => setValues(prev => ({ ...prev, [fieldId]: val }));
+
+    const renderPreviewField = (field) => {
+        switch (field.type) {
+            case "textbox":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <input
+                            type="text"
+                            value={values[field.id] || ""}
+                            onChange={(e) => setValue(field.id, e.target.value)}
+                            className="w-full border rounded px-3 py-2"
+                        />
+                    </div>
+                );
+            case "numeric":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <input
+                            type="number"
+                            value={values[field.id] ?? ""}
+                            onChange={(e) => setValue(field.id, e.target.value)}
+                            className="w-full border rounded px-3 py-2"
+                        />
+                    </div>
+                );
+            case "dropdown":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <select
+                            value={values[field.id] || ""}
+                            onChange={(e) => setValue(field.id, e.target.value)}
+                            className="w-full border rounded px-3 py-2"
+                        >
+                            <option value="">Select…</option>
+                            {(field.options || []).map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
+                        </select>
+                    </div>
+                );
+            case "checkbox":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        {(field.options || []).map((opt, i) => {
+                            const arr = Array.isArray(values[field.id]) ? values[field.id] : [];
+                            return (
+                                <label key={i} className="flex items-center gap-2 text-sm mb-1">
+                                    <input
+                                        type="checkbox"
+                                        checked={arr.includes(opt)}
+                                        onChange={(e) => {
+                                            const next = e.target.checked ? [...arr, opt] : arr.filter(o => o !== opt);
+                                            setValue(field.id, next);
+                                        }}
+                                    />
+                                    {opt}
+                                </label>
+                            );
+                        })}
+                    </div>
+                );
+            case "radio":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        {(field.options || []).map((opt, i) => (
+                            <label key={i} className="flex items-center gap-2 text-sm mb-1">
+                                <input
+                                    type="radio"
+                                    name={`preview-${field.id}`}
+                                    checked={values[field.id] === opt}
+                                    onChange={() => setValue(field.id, opt)}
+                                />
+                                {opt}
+                            </label>
+                        ))}
+                    </div>
+                );
+            case "date":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <input
+                            type="date"
+                            value={values[field.id] || ""}
+                            onChange={(e) => setValue(field.id, e.target.value)}
+                            className="w-full border rounded px-3 py-2"
+                        />
+                    </div>
+                );
+            case "time":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <input
+                            type="time"
+                            value={values[field.id] || ""}
+                            onChange={(e) => setValue(field.id, e.target.value)}
+                            className="w-full border rounded px-3 py-2"
+                        />
+                    </div>
+                );
+            case "calculation":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}</label>
+                        <input
+                            type="text"
+                            readOnly
+                            value={evaluatePreviewFormula(field.formula, fields, values)}
+                            className="w-full border rounded px-3 py-2 bg-gray-100"
+                        />
+                    </div>
+                );
+            case "grid":
+            case "questionGrid":
+                return <PreviewGridField field={field} />;
+            case "signature":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <div className="w-full h-24 border-2 border-dashed rounded flex items-center justify-center text-xs text-gray-400">
+                            Signature pad (not interactive in preview)
+                        </div>
+                    </div>
+                );
+            case "image":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <div className="w-full h-24 border-2 border-dashed rounded flex items-center justify-center text-xs text-gray-400">
+                            Image upload (not interactive in preview)
+                        </div>
+                    </div>
+                );
+            case "linkedTextbox":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}</label>
+                        <div className="w-full border rounded px-3 py-2 bg-gray-50 text-xs text-gray-400">
+                            Value pulled from linked form (not available in preview)
+                        </div>
+                    </div>
+                );
+            default:
+                return (
+                    <div className="text-xs text-gray-400 italic">
+                        "{field.type}" fields aren't supported in preview yet — check this one after saving.
+                    </div>
+                );
+        }
+    };
+
+    return (
+        <div className="bg-white border rounded p-6">
+            <div className="flex items-center gap-2 mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                ⚠ This is a live, in-memory preview — nothing here is saved or submitted. Conditional visibility, widths, and formulas behave as they will for an end user.
+            </div>
+            <div className="flex flex-wrap -mx-2">
+                {fields.map((field) => {
+                    if (!isPreviewFieldVisible(field, values)) return null;
+                    return (
+                        <div key={field.id} className={`px-2 mb-4 ${field.width || "w-full"}`}>
+                            {renderPreviewField(field)}
+                        </div>
+                    );
+                })}
+                {fields.length === 0 && (
+                    <p className="text-sm text-gray-400 italic px-2">Add some fields to see them here.</p>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const FormBuilder = () => {
     const [formFields, setFormFields] = useState([]);
+    const [showPreview, setShowPreview] = useState(false);
     const [formName, setFormName] = useState("");
     const [loading, setLoading] = useState(true);
     const [approvers, setApprovers] = useState([]);
@@ -649,6 +1131,14 @@ const FormBuilder = () => {
                     resultDecimal: field.resultDecimal || false,
                     fieldReferences: field.fieldReferencesJson ?
                         JSON.parse(field.fieldReferencesJson) : (field.fieldReferences || []),
+
+                    // Copy conditional visibility — the referenced fieldId belongs to the
+                    // source form and won't match any field in this new copy (every field
+                    // gets a fresh id below), so bring the rule over disabled rather than
+                    // leave a rule that silently never fires.
+                    visibilityCondition: field.visibilityCondition
+                        ? { ...field.visibilityCondition, enabled: false }
+                        : null,
 
                     // Copy remark triggers
                     remarkTriggers: Array.isArray(field.remarkTriggers) ?
@@ -1304,6 +1794,12 @@ const FormBuilder = () => {
                         formula: field.formula || "",
                         resultDecimal: field.resultDecimal ?? false,
                         //filledBy: field.filledBy || "creator",
+
+                        // Conditional visibility — only sent when fully configured,
+                        // so a half-filled rule never accidentally hides a field.
+                        visibilityCondition: (field.visibilityCondition?.enabled && field.visibilityCondition?.fieldId)
+                            ? field.visibilityCondition
+                            : null,
 
                         // Handle field references - set to null to avoid circular reference issues
                         fieldReferences: null,
@@ -2361,6 +2857,12 @@ const FormBuilder = () => {
                         {/* Action Buttons */}
                         <div className="flex items-center gap-4">
                             <button
+                                onClick={() => setShowPreview(p => !p)}
+                                className={`flex items-center gap-2 px-4 py-2 rounded text-white ${showPreview ? "bg-gray-600 hover:bg-gray-700" : "bg-indigo-500 hover:bg-indigo-600"}`}
+                            >
+                                {showPreview ? "Back to Editing" : "Preview"}
+                            </button>
+                            <button
                                 onClick={() => setShowCopyFormat(!showCopyFormat)}
                                 className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
                             >
@@ -2745,46 +3247,52 @@ const FormBuilder = () => {
                     </div>
 
 
-                    <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
-                        {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid", "signature"].map(
-                            (type) => (
-                                <button
-                                    key={type}
-                                    onClick={() => addField(type)}
-                                    className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200"
-                                >
-                                    Add {type.charAt(0).toUpperCase() + type.slice(1)}
-                                </button>
-                            )
-                        )}
-                        {linkedForm && (
-                            <button
-                                onClick={() => addField("linkedTextbox")}
-                                className="bg-purple-100 px-4 py-2 rounded hover:bg-purple-200 text-purple-800"
-                            >
-                                Add Linked Field
-                            </button>
-                        )}
-                    </div>
-
-
-                    <div className="flex flex-wrap -mx-2">
-                        {formFields.map((field, index) => (
-                            <div key={field.id} className={`p-2 ${field.width}`}>
-                                <FormField
-                                    field={field}
-                                    index={index}
-                                    allFields={formFields} // Pass all fields as a prop
-                                    moveField={moveField}
-                                    updateField={(updates) => updateField(index, updates)}
-                                    removeField={() => removeField(index)}
-                                    linkedForm={linkedForm}
-                                    linkedFormFields={linkedFormFields}
-                                    allowPartialFill={allowPartialFill}
-                                />
+                    {showPreview ? (
+                        <FormPreview fields={formFields} />
+                    ) : (
+                        <>
+                            <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
+                                {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid", "signature"].map(
+                                    (type) => (
+                                        <button
+                                            key={type}
+                                            onClick={() => addField(type)}
+                                            className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200"
+                                        >
+                                            Add {type.charAt(0).toUpperCase() + type.slice(1)}
+                                        </button>
+                                    )
+                                )}
+                                {linkedForm && (
+                                    <button
+                                        onClick={() => addField("linkedTextbox")}
+                                        className="bg-purple-100 px-4 py-2 rounded hover:bg-purple-200 text-purple-800"
+                                    >
+                                        Add Linked Field
+                                    </button>
+                                )}
                             </div>
-                        ))}
-                    </div>
+
+
+                            <div className="flex flex-wrap -mx-2">
+                                {formFields.map((field, index) => (
+                                    <div key={field.id} className={`p-2 ${field.width}`}>
+                                        <FormField
+                                            field={field}
+                                            index={index}
+                                            allFields={formFields} // Pass all fields as a prop
+                                            moveField={moveField}
+                                            updateField={(updates) => updateField(index, updates)}
+                                            removeField={() => removeField(index)}
+                                            linkedForm={linkedForm}
+                                            linkedFormFields={linkedFormFields}
+                                            allowPartialFill={allowPartialFill}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
             </DndProvider>
         </Layout>
@@ -3142,6 +3650,84 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                 <label className="text-sm text-gray-600">Required</label>
             </div>
 
+            {/* Conditional Visibility */}
+            <div className="mb-4 border-t pt-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input
+                        type="checkbox"
+                        checked={field.visibilityCondition?.enabled || false}
+                        onChange={(e) => updateField({
+                            visibilityCondition: {
+                                fieldId: "",
+                                operator: "equals",
+                                value: "",
+                                ...field.visibilityCondition,
+                                enabled: e.target.checked,
+                            }
+                        })}
+                        className="h-4 w-4"
+                    />
+                    Show this field conditionally
+                </label>
+
+                {field.visibilityCondition?.enabled && (() => {
+                    const candidateFields = allFields
+                        .filter(f => f.id !== field.id)
+                        .filter(f => allFields.findIndex(af => af.id === f.id) < index)
+                        .filter(f => ["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation"].includes(f.type));
+                    const cond = field.visibilityCondition;
+                    const updateCondition = (patch) => updateField({ visibilityCondition: { ...cond, ...patch } });
+                    const needsValue = !["isEmpty", "isNotEmpty"].includes(cond.operator);
+
+                    return (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 bg-gray-50 p-2 rounded text-sm">
+                            <span className="text-xs text-gray-500 whitespace-nowrap">Show when</span>
+
+                            <select
+                                value={cond.fieldId || ""}
+                                onChange={(e) => updateCondition({ fieldId: e.target.value })}
+                                className="px-2 py-1 border rounded text-sm"
+                            >
+                                <option value="">Select a field…</option>
+                                {candidateFields.map(f => (
+                                    <option key={f.id} value={f.id}>{f.label}</option>
+                                ))}
+                            </select>
+
+                            <select
+                                value={cond.operator || "equals"}
+                                onChange={(e) => updateCondition({ operator: e.target.value })}
+                                className="px-2 py-1 border rounded text-sm"
+                            >
+                                <option value="equals">equals</option>
+                                <option value="notEquals">does not equal</option>
+                                <option value="contains">contains</option>
+                                <option value="greaterThan">is greater than</option>
+                                <option value="lessThan">is less than</option>
+                                <option value="isEmpty">is empty</option>
+                                <option value="isNotEmpty">is not empty</option>
+                            </select>
+
+                            {needsValue && (
+                                <input
+                                    type="text"
+                                    value={cond.value || ""}
+                                    onChange={(e) => updateCondition({ value: e.target.value })}
+                                    placeholder="value"
+                                    className="px-2 py-1 border rounded text-sm w-32"
+                                />
+                            )}
+
+                            {candidateFields.length === 0 && (
+                                <p className="text-xs text-amber-600 w-full">
+                                    No eligible fields above this one yet — add a text, number, dropdown, checkbox, radio, date, or calculation field first.
+                                </p>
+                            )}
+                        </div>
+                    );
+                })()}
+            </div>
+
             {/* Filled By — only shown when form has allowPartialFill */}
             {/* NOTE: pass allowPartialFill as a prop to FormField */}
             {allowPartialFill && (
@@ -3331,10 +3917,10 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
             {field.type === "calculation" && (
                 <div className="mb-4">
                     <label className="block text-sm font-medium mb-1">Formula</label>
-                    <input
-                        type="text"
+                    <FormulaInput
                         value={field.formula || ""}
-                        onChange={(e) => updateField({ formula: e.target.value })}
+                        onChange={(val) => updateField({ formula: val })}
+                        tokens={availableFields.map(f => ({ token: f.id, label: f.label }))}
                         placeholder="Example: {field1} + {field2} * 2"
                         className="w-full px-2 py-1 border rounded"
                     />
@@ -3544,45 +4130,22 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                 {column.type === "calculation" && (
                                     <div className="w-full mt-2">
                                         <label className="block text-xs text-gray-500 mb-1">Formula</label>
-                                        <input
-                                            type="text"
+                                        <FormulaInput
                                             value={column.formula || ""}
-                                            onChange={(e) => {
+                                            onChange={(val) => {
                                                 const updatedColumns = [...(field.columns || [])];
-                                                updatedColumns[colIndex].formula = e.target.value;
+                                                updatedColumns[colIndex].formula = val;
                                                 updateField({ ...field, columns: updatedColumns });
                                             }}
-                                            className="w-full px-2 py-1 border rounded font-mono text-sm bg-yellow-50"
-                                            placeholder="e.g. {col1} + {col2}"
+                                            tokens={(field.columns || [])
+                                                .filter((c, i) => i !== colIndex)
+                                                .map(c => ({ token: c.name, label: c.label || c.name }))}
+                                            className="w-full px-2 py-1 border rounded"
+                                            placeholder="col1 + col2"
                                         />
-
-                                        {/* Available Columns Helper for Grid */}
-                                        <div className="mt-2 bg-white p-2 rounded border border-gray-200">
-                                            <span className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Available Columns for Formula</span>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {field.columns
-                                                    .filter(c => c.id !== column.id && ["numeric", "textbox", "calculation", "dropdown"].includes(c.type))
-                                                    .map(c => (
-                                                        <div
-                                                            key={c.id}
-                                                            onClick={() => {
-                                                                const currentFormula = column.formula || "";
-                                                                // Add a space before the tag if the formula doesn't end with one
-                                                                const appendText = currentFormula && !currentFormula.endsWith(' ') ? ` {${c.name}}` : `{${c.name}}`;
-                                                                const updatedColumns = [...(field.columns || [])];
-                                                                updatedColumns[colIndex].formula = currentFormula + appendText;
-                                                                updateField({ ...field, columns: updatedColumns });
-                                                            }}
-                                                            className="text-[10px] bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
-                                                            title="Click to add to formula"
-                                                        >
-                                                            <span className="text-gray-600 truncate max-w-[120px]">{c.label || c.name}:</span>
-                                                            <code className="text-blue-700 font-bold">{`{${c.name}}`}</code>
-                                                        </div>
-                                                    ))
-                                                }
-                                            </div>
-                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Use column names to create calculations (e.g., {"{col1} * {col2}"})
+                                        </p>
                                     </div>
                                 )}
 
@@ -4247,8 +4810,8 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 onDragEnter={(e) => handleHeaderDragEnter(e, i)}
                                                 onDragLeave={handleHeaderDragLeave}
                                                 onDrop={(e) => handleHeaderDrop(e, i)}
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                                onClick={(e) => e.stopPropagation()}
+                                                onMouseDown={(e) => e.stopPropagation()} // Prevent grid drag on mouse down
+                                                onClick={(e) => e.stopPropagation()} // Prevent any parent click handlers
                                                 className={`border border-gray-300 bg-gray-100 p-2 text-sm text-left cursor-move select-none transition-all duration-200 relative ${col.disabled ? 'opacity-60 bg-gray-200' : ''
                                                     } ${draggedColumnIndex === i ? 'opacity-50 scale-95' : ''}`}
                                                 style={{
@@ -4256,7 +4819,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                     color: col.textColor,
                                                     backgroundColor: col.disabled ? '#f3f4f6' : (dragOverColumnIndex === i && draggedColumnIndex !== i ? '#dbeafe' : col.backgroundColor)
                                                 }}
-                                                title={`Column ID: ${col.name}\n(Drag to reorder)`}
+                                                title="Drag to reorder columns"
                                             >
                                                 <div className="flex items-center gap-2 pointer-events-none">
                                                     <GripVertical size={12} className="text-gray-500" />
@@ -4930,7 +5493,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         <span className="text-gray-500 text-sm font-medium w-8">{idx + 1}.</span>
 
                                         {/* Column Label */}
-                                        <div className="flex-1 min-w-[200px]">
+                                        <div className="flex-1">
                                             <input
                                                 type="text"
                                                 value={col.label}
@@ -5121,51 +5684,19 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                         )}
 
                                         {col.type === "calculation" && (
-                                            <div className="w-full mt-2">
-                                                <input
-                                                    type="text"
-                                                    value={col.formula || ""}
-                                                    onChange={(e) => {
-                                                        const updatedColumns = [...field.columns];
-                                                        updatedColumns[originalIndex] = { ...col, formula: e.target.value };
-                                                        updateField({ columns: updatedColumns });
-                                                    }}
-                                                    placeholder="e.g. {required_rating} - {actual_rating}"
-                                                    className="w-full px-2 py-1 border rounded text-xs bg-yellow-50 font-mono mb-2"
-                                                />
-
-                                                {/* Available Columns Helper for Question Grid */}
-                                                <div className="bg-gray-50 p-2 rounded border border-gray-200">
-                                                    <span className="block text-[10px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">Available Columns</span>
-                                                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                                                        {field.columns
-                                                            .filter(c => c.id !== col.id && ["numeric", "textbox", "calculation", "dropdown"].includes(c.type))
-                                                            .map(c => (
-                                                                <div
-                                                                    key={c.id}
-                                                                    onClick={() => {
-                                                                        const currentFormula = col.formula || "";
-                                                                        // Add a space before the tag if the formula doesn't end with one
-                                                                        const appendText = currentFormula && !currentFormula.endsWith(' ') ? ` {${c.name}}` : `{${c.name}}`;
-                                                                        const updatedColumns = [...field.columns];
-                                                                        updatedColumns[originalIndex] = { ...col, formula: currentFormula + appendText };
-                                                                        updateField({ columns: updatedColumns });
-                                                                    }}
-                                                                    className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
-                                                                    title="Click to add to formula"
-                                                                >
-                                                                    <span className="text-gray-600 truncate max-w-[120px]">
-                                                                        {c.label || c.name}:
-                                                                    </span>
-                                                                    <code className="text-blue-700 font-bold">
-                                                                        {`{${c.name}}`}
-                                                                    </code>
-                                                                </div>
-                                                            ))
-                                                        }
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            <FormulaInput
+                                                value={col.formula || ""}
+                                                onChange={(val) => {
+                                                    const updatedColumns = [...field.columns];
+                                                    updatedColumns[originalIndex] = { ...col, formula: val };
+                                                    updateField({ columns: updatedColumns });
+                                                }}
+                                                tokens={field.columns
+                                                    .filter((c, i) => i !== originalIndex)
+                                                    .map(c => ({ token: c.name, label: c.label || c.name }))}
+                                                placeholder="e.g. {required_rating} - {actual_rating}"
+                                                className="w-56 px-2 py-1 border rounded text-xs bg-yellow-50"
+                                            />
                                         )}
 
 

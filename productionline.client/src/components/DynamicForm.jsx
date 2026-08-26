@@ -121,7 +121,20 @@ export default function DynamicForm() {
             );
 
             if (!res.ok) throw new Error("Failed to send.");
-            alert(`Sent to ${selectedUser.name} (${selectedUser.email})!`);
+            const result = await res.json();
+            if (result.emailSent) {
+                alert(`Sent to ${selectedUser.name} (${selectedUser.email})!`);
+            } else {
+                // The submission was saved, but the notification email failed —
+                // give the creator the link so they can share it manually instead
+                // of leaving them thinking the recipient was notified.
+                const copied = await navigator.clipboard?.writeText(result.completionLink).then(() => true).catch(() => false);
+                alert(
+                    `The form was saved, but the notification email to ${selectedUser.name} failed to send.\n\n` +
+                    `Share this link with them manually:\n${result.completionLink}` +
+                    (copied ? "\n\n(Copied to clipboard)" : "")
+                );
+            }
             setShowPartialModal(false);
             setAdSearchTerm("");
             setSelectedUser(null);
@@ -1334,11 +1347,35 @@ export default function DynamicForm() {
     };
 
     // Validate the form
+    // Evaluates a field's conditional-visibility rule (if any) against the
+    // current form values. A field with no rule, or a rule that isn't fully
+    // configured yet, is always visible.
+    const isFieldVisible = (field, values) => {
+        const cond = field.visibilityCondition;
+        if (!cond || !cond.enabled || !cond.fieldId) return true;
+
+        const raw = values[cond.fieldId];
+        const val = Array.isArray(raw) ? raw.join(",") : (raw ?? "");
+        const target = cond.value ?? "";
+
+        switch (cond.operator) {
+            case "equals": return String(val).trim() === String(target).trim();
+            case "notEquals": return String(val).trim() !== String(target).trim();
+            case "contains": return String(val).toLowerCase().includes(String(target).toLowerCase());
+            case "greaterThan": return parseFloat(val) > parseFloat(target);
+            case "lessThan": return parseFloat(val) < parseFloat(target);
+            case "isEmpty": return val === "" || val === null || val === undefined;
+            case "isNotEmpty": return !(val === "" || val === null || val === undefined);
+            default: return true;
+        }
+    };
+
     const validateForm = () => {
         const errors = {};
         if (!formData) return errors;
 
         formData.fields.forEach((field) => {
+            if (!isFieldVisible(field, formValues)) return; // hidden fields aren't validated
             const value = formValues[field.id];
 
             // General required field validation
@@ -3302,11 +3339,24 @@ export default function DynamicForm() {
                 return (
                     <div
                         key={field.id}
-                        className={`mb-4 ${field.width || "w-full"}`}
+                        className="mb-4 w-full"
                         style={{ fontSize: `${fontSize}px` }}
                     >
                         <div className={`overflow-x-auto border-2 ${colorScheme.border} rounded-lg`}>
-                            <table className="min-w-full bg-white">
+                            <table className="min-w-full bg-white" style={{ tableLayout: "fixed" }}>
+                                {/* Colgroup locks each column to one shared width across
+                                    the title row, header row, and every data row so they
+                                    can never drift out of alignment with each other. */}
+                                <colgroup>
+                                    {field.columns.map((col, idx) => (
+                                        <col
+                                            key={idx}
+                                            style={{ width: col.width || `${100 / (field.columns.length + (field.allowAddRows === true ? 1 : 0))}%` }}
+                                        />
+                                    ))}
+                                    {field.allowAddRows === true && <col style={{ width: "96px" }} />}
+                                </colgroup>
+
                                 {/* Title Row */}
                                 <thead>
                                     <tr>
@@ -3328,15 +3378,14 @@ export default function DynamicForm() {
                                         {field.columns.map((col, idx) => (
                                             <th
                                                 key={idx}
-                                                className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm`}
-                                                style={{ width: col.width || "auto" }}
+                                                className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm whitespace-nowrap overflow-hidden text-ellipsis`}
                                             >
                                                 {col.label || col.name}
                                                 {col.required && <span className="text-red-500 ml-1">*</span>}
                                             </th>
                                         ))}
                                         {field.allowAddRows === true && (
-                                            <th className={`py-3 px-4 border-b ${colorScheme.border} text-center font-bold text-gray-700 text-sm w-24`}>
+                                            <th className={`py-3 px-4 border-b ${colorScheme.border} text-center font-bold text-gray-700 text-sm`}>
                                                 Actions
                                             </th>
                                         )}
@@ -3350,8 +3399,7 @@ export default function DynamicForm() {
                                             {field.columns.map((col, colIdx) => (
                                                 <td
                                                     key={colIdx}
-                                                    className="py-2 px-4 border-b border-gray-200"
-                                                    style={{ width: col.width || "auto" }}
+                                                    className="py-2 px-4 border-b border-gray-200 overflow-hidden"
                                                 >
                                                     {/* SERIAL NUMBER */}
                                                     {col.type === "serialNumber" && (
@@ -3441,7 +3489,7 @@ export default function DynamicForm() {
                                                     {col.type === "dropdown" && (() => {
                                                         console.log(`[questionGrid dropdown] col=${col.name} ratingStyle=${col.ratingStyle} isRating=${isRatingColumn(col)}`);
                                                         return isRatingColumn(col) ? (
-                                                            <div className="flex gap-1 justify-center">
+                                                            <div className="flex flex-wrap gap-1 justify-center">
                                                                 {(col.options || []).map((option, optIdx) => {
                                                                     const selected = String(row[col.name]) === String(option);
                                                                     return (
@@ -3772,11 +3820,14 @@ export default function DynamicForm() {
                 )}
                 <div style={{ fontSize: `${fontSize}px` }}>
                     <div className="flex flex-wrap -mx-2">
-                        {formData.fields.map((field) => (
-                            <div key={field.id} className={`px-2 ${field.width}`}>
-                                {renderField(field)}
-                            </div>
-                        ))}
+                        {formData.fields.map((field) => {
+                            if (!isFieldVisible(field, formValues)) return null;
+                            return (
+                                <div key={field.id} className={`px-2 ${field.width}`}>
+                                    {renderField(field)}
+                                </div>
+                            );
+                        })}
                     </div>
 
 
