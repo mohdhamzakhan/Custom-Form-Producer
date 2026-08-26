@@ -2026,7 +2026,7 @@ export default function DynamicForm() {
 
     const handleLinkedData = async (field, formData, formValues, apiConfig = {}) => {
         const {
-            apiBaseUrl = `{APP_CONSTANTS.API_BASE_URL}/api/forms`,
+            apiBaseUrl = `${APP_CONSTANTS.API_BASE_URL}/api/forms`,
             gridColumnMappings = null,
             fallbackMappings = {},
             searchFormats = [],
@@ -3375,15 +3375,21 @@ export default function DynamicForm() {
                                 {/* Column Headers */}
                                 <thead className={colorScheme.bg}>
                                     <tr>
-                                        {field.columns.map((col, idx) => (
-                                            <th
-                                                key={idx}
-                                                className={`py-3 px-4 border-b ${colorScheme.border} text-left font-bold text-gray-700 text-sm whitespace-nowrap overflow-hidden text-ellipsis`}
-                                            >
-                                                {col.label || col.name}
-                                                {col.required && <span className="text-red-500 ml-1">*</span>}
-                                            </th>
-                                        ))}
+                                        {field.columns.map((col, idx) => {
+                                            // Rating columns render their emoji buttons centered in the
+                                            // body cell — center the header label too, or it visually
+                                            // drifts to the left of the emoji row underneath it.
+                                            const headerAlign = isRatingColumn(col) ? "text-center" : "text-left";
+                                            return (
+                                                <th
+                                                    key={idx}
+                                                    className={`py-3 px-4 border-b ${colorScheme.border} ${headerAlign} font-bold text-gray-700 text-sm whitespace-nowrap overflow-hidden text-ellipsis`}
+                                                >
+                                                    {col.label || col.name}
+                                                    {col.required && <span className="text-red-500 ml-1">*</span>}
+                                                </th>
+                                            );
+                                        })}
                                         {field.allowAddRows === true && (
                                             <th className={`py-3 px-4 border-b ${colorScheme.border} text-center font-bold text-gray-700 text-sm`}>
                                                 Actions

@@ -233,6 +233,7 @@ namespace productionLine.Server.Controllers
                     existingField.AllowAddRows = field.AllowAddRows;
                     existingField.AllowEditQuestions = field.AllowEditQuestions;
                     existingField.FilledBy = field.FilledBy;
+                    existingField.VisibilityConditionJson = field.VisibilityConditionJson;
 
                     existingField.RemarkTriggers = field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -286,6 +287,8 @@ namespace productionLine.Server.Controllers
                     DefaultRowsJson = field.DefaultRowsJson,
                     AllowAddRows = field.AllowAddRows,
                     AllowEditQuestions = field.AllowEditQuestions,
+                    FilledBy = field.FilledBy,
+                    VisibilityConditionJson = field.VisibilityConditionJson,
 
                     RemarkTriggers = (field.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTrigger
                     {
@@ -1847,13 +1850,26 @@ namespace productionLine.Server.Controllers
                     return Ok(new { data = (object)null });
                 }
 
-                // Get submissions with form field definitions for grid column resolution
+                // Get submissions with form field definitions for grid column resolution.
+                // Only approved (or system auto-approved) submissions are eligible sources —
+                // matching the /approved-records endpoint used for linked dropdowns, so a
+                // linked textbox can't silently pull its value from a still-pending or
+                // rejected submission that a linked dropdown would never have offered.
                 var submissions = await _context.FormSubmissions
                     .Where(s => s.FormId == formId)
                     .Include(s => s.SubmissionData)
+                    .Include(s => s.Approvals)
                     .Include(s => s.Form)
                     .ThenInclude(f => f.Fields)
                     .ToListAsync();
+
+                submissions = submissions.Where(s =>
+                    s.Approvals.Count > 0 &&
+                    (
+                        (s.Approvals.Count == 1 && s.Approvals.First().ApproverName == "System Approval") ||
+                        s.Approvals.All(a => a.Status == "Approved")
+                    )
+                ).ToList();
 
                 // Build comprehensive grid column mappings
                 var formFields = await _context.FormFields

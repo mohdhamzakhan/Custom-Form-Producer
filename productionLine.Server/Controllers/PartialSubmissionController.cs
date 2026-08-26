@@ -51,8 +51,12 @@ namespace productionLine.Server.Controllers
             _context.PartialSubmissions.Add(partial);
             await _context.SaveChangesAsync();
 
-            // Send email to second filler
-            await SendPartialFormEmail(
+            // Send email to second filler. This can fail (bad SMTP config, bounced
+            // address, etc.) without the partial submission itself being invalid —
+            // the token is already saved, so we report the outcome honestly instead
+            // of always claiming success, and hand back the completion link either
+            // way so the caller can share it manually if the email didn't go out.
+            var (emailSent, completionLink) = await SendPartialFormEmail(
                 dto.AssignedToEmail,
                 dto.AssignedToName ?? dto.AssignedToEmail,
                 form.Name,
@@ -62,7 +66,11 @@ namespace productionLine.Server.Controllers
 
             return Ok(new
             {
-                message = "Partial submission created. Email sent to second filler.",
+                message = emailSent
+                    ? "Partial submission created. Email sent to second filler."
+                    : "Partial submission created, but the notification email failed to send. Share the completion link with the recipient manually.",
+                emailSent,
+                completionLink,
                 token = token,
                 id = partial.Id
             });
@@ -217,30 +225,24 @@ namespace productionLine.Server.Controllers
         }
 
         // ─────────────────────────────────────────────
-        // Private: Send email via SMTP
+        // Private: Send email via SMTP. Returns (success, link) so the caller
+        // can report the real outcome and always has the link to fall back on.
         // ─────────────────────────────────────────────
-        private async Task SendPartialFormEmail(
+        private async Task<(bool success, string link)> SendPartialFormEmail(
             string toEmail, string toName,
             string formName, string token, string filledBy)
         {
+            var appUrl = _config["AppUrl"] ?? "http://localhost:55866";
+            var link = $"{appUrl}/form/complete/{token}";
+
             try
             {
                 var smtpHost = _config["SmtpSettings:Host"] ?? "smtp.gmail.com";
                 var smtpPort = int.Parse(_config["SmtpSettings:Port"] ?? "587");
                 var smtpUser = _config["SmtpSettings:Username"];
                 var smtpPass = _config["SmtpSettings:Password"];
-                var appUrl = _config["AppUrl"] ?? "http://localhost:55866";
                 var fromEmail = _config["SmtpSettings:FromEmail"] ?? "logs@meai-india.com";
                 var smtpEnableSSL = _config["SmtpSettings:EnableSsl"] ?? "false";
-
-                // Link for second filler — add this route in your React Router
-                var link = $"{appUrl}/form/complete/{token}";
-
-                //using var client = new SmtpClient(smtpHost, smtpPort)
-                //{
-                //    Credentials = new NetworkCredential(smtpUser, smtpPass),
-                //    EnableSsl = false
-                //};
 
                 using var client = new SmtpClient(smtpHost, smtpPort)
                 {
@@ -277,11 +279,15 @@ namespace productionLine.Server.Controllers
                 mail.To.Add(toEmail);
 
                 await client.SendMailAsync(mail);
+                return (true, link);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Email failed: {ex.Message}");
-                // Don't throw — form was saved, email is best-effort
+                // The partial submission itself was already saved — only the
+                // notification failed — so we return the link rather than throw,
+                // letting the caller surface it to the creator as a fallback.
+                return (false, link);
             }
         }
 

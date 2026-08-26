@@ -161,11 +161,11 @@ namespace productionLine.Server.Model
         public bool? ShowLookupButton { get; set; }
 
         [Column("MINLENGTH")]
-        public int? minLength{get;set;}
+        public int? minLength { get; set; }
         [Column("MAXLENGTH")]
-        public int? maxLength { get;set;}
+        public int? maxLength { get; set; }
         [Column("MESSAGE")]
-        public string? lengthValidationMessage { get;set;}
+        public string? lengthValidationMessage { get; set; }
 
         [NotMapped]
         public List<KeyFieldMapping>? KeyFieldMappings
@@ -192,6 +192,33 @@ namespace productionLine.Server.Model
 
         [Column("FILLEDBY")]
         public string? FilledBy { get; set; }
+
+        // CONDITIONAL VISIBILITY
+        // Requires a DB migration: ALTER TABLE FF_FORMFIELD ADD VISIBILITY_CONDITION CLOB;
+        [Column("VISIBILITY_CONDITION", TypeName = "CLOB")]
+        public string? VisibilityConditionJson { get; set; }
+
+        [NotMapped]
+        public VisibilityCondition? VisibilityCondition
+        {
+            get => string.IsNullOrEmpty(VisibilityConditionJson) ? null : JsonSerializer.Deserialize<VisibilityCondition>(VisibilityConditionJson);
+            set => VisibilityConditionJson = value == null ? null : JsonSerializer.Serialize(value);
+        }
+    }
+
+    public class VisibilityCondition
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; }
+
+        [JsonPropertyName("fieldId")]
+        public string? FieldId { get; set; }
+
+        [JsonPropertyName("operator")]
+        public string? Operator { get; set; }
+
+        [JsonPropertyName("value")]
+        public string? Value { get; set; }
     }
     public class DefaultRow
     {
