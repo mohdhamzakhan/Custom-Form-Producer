@@ -52,5 +52,6 @@ namespace productionLine.Server.DTO
         public List<DefaultRow>? DefaultRows { get; set; }
         public string? OptionsSource { get; set; }
         public string? LinkedFieldReference { get; set; }
+        public VisibilityCondition? VisibilityCondition { get; set; }
     }
 }

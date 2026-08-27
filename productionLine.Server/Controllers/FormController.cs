@@ -269,6 +269,10 @@ namespace productionLine.Server.Controllers
                     RemarkTriggersJson = field.RemarkTriggersJson,
                     RequireRemarksOutOfRange = field.RequireRemarksOutOfRange,
                     RequiresRemarksJson = field.RequiresRemarksJson,
+                    ImageValue = field.ImageValue,
+                    minLength = field.minLength,
+                    maxLength = field.maxLength,
+                    lengthValidationMessage = field.lengthValidationMessage,
                     // Fix: Add ALL linked textbox properties
                     LinkedFormId = field.LinkedFormId,
                     LinkedFieldId = field.LinkedFieldId,
@@ -483,6 +487,7 @@ namespace productionLine.Server.Controllers
                     DefaultRowsJson = f.DefaultRowsJson,
                     DefaultRows = f.DefaultRows,
                     FilledBy = f.FilledBy,
+                    VisibilityCondition = f.VisibilityCondition,
 
 
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
