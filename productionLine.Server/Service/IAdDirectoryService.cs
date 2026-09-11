@@ -32,5 +32,9 @@ namespace productionLine.Server.Service
     {
         public string Name { get; set; }
         public string Email { get; set; }
+        // SamAccountName is what users actually log in with (and what's stored as
+        // the username claim / localStorage "user.username" on the client) — DisplayName
+        // often differs from it, so membership checks should match on this, not Name.
+        public string SamAccountName { get; set; }
     }
 }

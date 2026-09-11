@@ -21,13 +21,15 @@ namespace productionLine.Server.Controllers
         private readonly FormDbContext _context;
         private readonly IEmailService _emailService;
         private readonly IConfiguration _configuration;
+        private readonly IAdDirectoryService _adService;
 
-        public FormController(FormDbContext context, IMemoryCache cache, IEmailService emailService, IConfiguration configuration)
+        public FormController(FormDbContext context, IMemoryCache cache, IEmailService emailService, IConfiguration configuration, IAdDirectoryService adService)
         {
             _context = context;
             _cache = cache;
             _emailService = emailService;
             _configuration = configuration;
+            _adService = adService;
         }
 
         [HttpGet]
@@ -1527,18 +1529,61 @@ namespace productionLine.Server.Controllers
                     return NotFound("Submission not found");
                 }
 
-                // Normalize approver name
-                var approverName = approvalDto.ApproverName.ToLower();
+                // Normalize the acting user's identity (username, e.g. "jsmith")
+                var actingUser = (approvalDto.ApproverName ?? "").Trim().ToLowerInvariant();
 
+                if (string.IsNullOrEmpty(actingUser))
+                    return BadRequest("Approver name is required.");
+
+                // The approver *configured* for this level (could be an individual user
+                // or an AD group — anyone in the group should be allowed to act on it).
+                var approverConfig = submission.Form.Approvers
+                    .FirstOrDefault(a => a.Level == approvalDto.Level);
+
+                if (approverConfig == null)
+                    return BadRequest($"No approver is configured at level {approvalDto.Level}.");
+
+                bool isEligible;
+
+                if (string.Equals(approverConfig.Type, "group", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Group approver: check AD group membership (recursive, so it also
+                    // covers users who are only members via a nested sub-group) rather
+                    // than comparing the group's own name to the person's name — that
+                    // comparison could never succeed for any individual member.
+                    var members = await _adService.GetGroupMembersAsync(approverConfig.AdObjectId);
+                    isEligible = members.Any(m =>
+                        string.Equals(m.SamAccountName, actingUser, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(m.Email, approvalDto.ApproverName, StringComparison.OrdinalIgnoreCase));
+                }
+                else
+                {
+                    // Individual user approver: straightforward name match.
+                    isEligible = string.Equals(approverConfig.Name, actingUser, StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (!isEligible)
+                {
+                    return StatusCode(403, new
+                    {
+                        message = $"You are not an authorized approver at level {approvalDto.Level}."
+                    });
+                }
+
+                // Look up the pending approval row for this submission + level directly —
+                // NOT by matching ApproverName, since for a group-type approver that column
+                // holds the *group's* name, not the name of whoever actually clicks Approve.
                 var existingApproval = await _context.FormApprovals
                     .FirstOrDefaultAsync(a =>
                         a.FormSubmissionId == submissionId &&
                         a.ApprovalLevel == approvalDto.Level &&
-                        a.ApproverName.ToLower() == approverName &&
                         a.Status == "Pending");
 
                 if (existingApproval != null)
                 {
+                    // Record who *actually* approved it (useful for audit trail and for
+                    // display), rather than leaving the group's name on the record.
+                    existingApproval.ApproverName = approvalDto.ApproverName;
                     existingApproval.Status = approvalDto.Status;
                     existingApproval.ApprovedAt = DateTime.Now;
                     existingApproval.Comments = approvalDto.Comments;

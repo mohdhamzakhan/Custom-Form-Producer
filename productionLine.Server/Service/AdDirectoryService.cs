@@ -118,13 +118,17 @@ namespace productionLine.Server.Service
                     return Task.FromResult(members);
                 }
 
-                members = group.Members
+                // GetMembers(true) walks nested groups recursively, so a user who's only
+                // a member via a sub-group (e.g. "QA Managers" contains "Team Leads", and
+                // the approving user is only in "Team Leads") is still picked up. The old
+                // code used group.Members, which only returns *direct* members.
+                members = group.GetMembers(true)
                     .OfType<UserPrincipal>()
-                    .Where(m => !string.IsNullOrEmpty(m.EmailAddress))
                     .Select(m => new AdMember
                     {
                         Name = m.DisplayName ?? m.SamAccountName ?? string.Empty,
-                        Email = m.EmailAddress!
+                        Email = m.EmailAddress ?? string.Empty,
+                        SamAccountName = m.SamAccountName ?? string.Empty
                     })
                     .ToList();
             }

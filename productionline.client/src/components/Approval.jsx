@@ -62,15 +62,23 @@ export default function ApprovalPage() {
         try {
             if (!user) return alert("User not found!");
 
-            // Find the user's approval level
+            // Find the user's approval level.
+            // `user` is [username, ...groupNames] (see the login effect above) — for a
+            // "group" type approver we can't match on username at all, we need to check
+            // whether any of the current user's AD groups is the configured approver.
             let approvalLevel = 1; // Default to level 1
 
             if (submission?.form?.approvers?.length) {
-                const currentUser = (user?.[0] || "").toLowerCase();
+                const currentUsername = (user?.[0] || "").toLowerCase();
+                const currentUserGroups = (user || []).slice(1).map(g => (g || "").toLowerCase());
 
-                const userApprover = submission.form.approvers.find(
-                    a => (a.name || "").toLowerCase() === currentUser
-                );
+                const userApprover = submission.form.approvers.find(a => {
+                    const approverName = (a.name || "").toLowerCase();
+                    if ((a.type || "").toLowerCase() === "group") {
+                        return currentUserGroups.includes(approverName);
+                    }
+                    return approverName === currentUsername;
+                });
 
                 if (userApprover) {
                     approvalLevel = userApprover.level;
