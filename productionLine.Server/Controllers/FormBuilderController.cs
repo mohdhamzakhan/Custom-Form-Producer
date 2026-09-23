@@ -309,8 +309,9 @@ namespace productionLine.Server.Controllers
                     AllowEditQuestions = f.AllowEditQuestions,
                     DefaultRowsJson = f.DefaultRowsJson,
                     DefaultRows = f.DefaultRows,
-
-
+                    LinkedFieldReference=f.LinkedFieldReference,
+                    OptionsSource=f.OptionsSource,
+                    VisibilityCondition=f.VisibilityCondition,
                     RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
                     {
                         Id = rt.Id,
