@@ -719,6 +719,7 @@ export default function EnhancedReportViewer() {
     const multiPageEnabled = template?.isMultiForm && template?.outputMode === 'multipage';
     const [visibleFormIds, setVisibleFormIds] = useState(null); // null = not yet initialized
     const [activeFormTab, setActiveFormTab] = useState(null);
+    const [showFormTabManager, setShowFormTabManager] = useState(false);
 
     useEffect(() => {
         if (!multiPageEnabled || reportForms.length === 0) return;
@@ -849,7 +850,12 @@ export default function EnhancedReportViewer() {
         if (!value || value === "-" || value === "") return "—";
 
         try {
-            const parsed = JSON.parse(value);
+            let parsed = JSON.parse(value);
+            // Defensive: some grid values arrive double-encoded (a JSON string
+            // containing another JSON string). Unwrap one more level if so.
+            if (typeof parsed === "string") {
+                try { parsed = JSON.parse(parsed); } catch { }
+            }
             if (Array.isArray(parsed) && typeof parsed[0] === "object") {
                 if (gridDisplayMode === 'form' && template?.enableGridFormView !== false) {
                     return renderGridAsFormLayout(parsed, field);
@@ -862,7 +868,7 @@ export default function EnhancedReportViewer() {
                         <tbody>
                             {parsed.map((row, ri) => (
                                 <tr key={ri}>
-                                    {Object.values(row).map((cell, ci) => <td key={ci}>{cell || "—"}</td>)}
+                                    {Object.values(row).map((cell, ci) => <td key={ci}>{typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : (cell ?? "—")}</td>)}
                                 </tr>
                             ))}
                         </tbody>
@@ -995,7 +1001,14 @@ export default function EnhancedReportViewer() {
 
         console.log(`✅ Total rows from API: ${reportData.length}`);
 
-        let rows = [...reportData];
+        // In multi-page (tabbed) output mode, scope the table to whichever
+        // form tab is active — everything else (charts, dashboard) already
+        // reads from formTabReportData, so keep the table in sync with it.
+        const baseRows = (multiPageEnabled && activeFormTab !== null)
+            ? reportData.filter(row => String(row.formId) === String(activeFormTab))
+            : reportData;
+
+        let rows = [...baseRows];
 
         if (!showBlankRows) {
             rows = rows.filter(row => {
@@ -1016,7 +1029,7 @@ export default function EnhancedReportViewer() {
         );
 
         return rows;
-    }, [reportData, showBlankRows]);
+    }, [reportData, showBlankRows, multiPageEnabled, activeFormTab]);
 
     const exportToExcel = async () => {
         try {
@@ -4932,6 +4945,82 @@ html.dark-mode,
                 {renderActiveFilters()}
                 {renderSummaryStats()}
                 {renderViewControls()}
+
+                {multiPageEnabled && reportForms.length > 1 && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        margin: '12px 0',
+                        paddingBottom: '8px',
+                        borderBottom: '2px solid #e5e7eb'
+                    }}>
+                        {visibleReportForms.map(f => (
+                            <button
+                                key={f.id}
+                                onClick={() => setActiveFormTab(f.id)}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: '8px 8px 0 0',
+                                    border: 'none',
+                                    borderBottom: String(activeFormTab) === String(f.id) ? '3px solid #2563eb' : '3px solid transparent',
+                                    background: String(activeFormTab) === String(f.id) ? '#eff6ff' : '#f3f4f6',
+                                    color: String(activeFormTab) === String(f.id) ? '#1d4ed8' : '#374151',
+                                    fontWeight: String(activeFormTab) === String(f.id) ? 600 : 500,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                {f.name}
+                            </button>
+                        ))}
+
+                        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                            <button
+                                onClick={() => setShowFormTabManager(v => !v)}
+                                title="Choose which forms have a tab"
+                                style={{
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #d1d5db',
+                                    background: '#fff',
+                                    cursor: 'pointer',
+                                    fontSize: '13px'
+                                }}
+                            >
+                                ⚙️ Forms
+                            </button>
+                            {showFormTabManager && (
+                                <div style={{
+                                    position: 'absolute',
+                                    right: 0,
+                                    top: '110%',
+                                    background: '#fff',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                    padding: '10px',
+                                    zIndex: 20,
+                                    minWidth: '180px'
+                                }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: '#6b7280' }}>
+                                        Show tabs for
+                                    </div>
+                                    {reportForms.map(f => (
+                                        <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0', fontSize: '13px', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={(visibleFormIds || reportForms.map(rf => rf.id)).includes(f.id)}
+                                                onChange={() => toggleFormVisibility(f.id)}
+                                            />
+                                            {f.name}
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 <div className="main-content">
                     {displayMode === "table" ? (
