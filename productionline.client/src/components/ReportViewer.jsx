@@ -52,6 +52,10 @@ export default function EnhancedReportViewer() {
     const [forms, setForms] = useState([]);
     const retryTimeoutRef = useRef(null);
     const [groupBySubmission, setGroupBySubmission] = useState(true);
+    // How grid-type answers are rendered in this report: 'compact' = the existing
+    // mini data table; 'form' = each grid row rendered as its own labeled block,
+    // matching how the grid looks when someone fills out the form.
+    const [gridDisplayMode, setGridDisplayMode] = useState('compact');
     const [retryNotice, setRetryNotice] = useState(null);
     // Add this function to detect current shift
     const getCurrentShift = () => {
@@ -327,7 +331,7 @@ export default function EnhancedReportViewer() {
             intervalId = setInterval(() => {
                 console.log('🔄 Auto-refreshing shift chart data...');
                 fetchFilteredReport(true);
-            }, 100000); 
+            }, 100000);
 
             return () => {
                 console.log('🛑 Clearing auto-refresh interval');
@@ -577,18 +581,20 @@ export default function EnhancedReportViewer() {
         }
     };
 
-    const chartData = useMemo(() => {
-        if (!reportData || reportData.length === 0) return [];
+    // Extracted so it can be run over either the full reportData (Charts tab)
+    // or a form-filtered subset (Dashboard tab's per-form filter).
+    const computeChartData = (sourceRows) => {
+        if (!sourceRows || sourceRows.length === 0) return [];
         console.log('=== CHART DATA TRANSFORMATION DEBUG ===');
-        console.log('reportData:', reportData)
+        console.log('reportData:', sourceRows)
 
         const hasShiftChart = chartConfigs.some(chart => chart.type === 'shift');
 
-        if (hasShiftChart && reportData[0]?.Count !== undefined && reportData[0]?.Date !== undefined) {
+        if (hasShiftChart && sourceRows[0]?.Count !== undefined && sourceRows[0]?.Date !== undefined) {
             console.log('✅ Processing shift chart data');
 
             // For shift charts, use the data directly with Count and Date
-            const transformedData = reportData.map((row, index) => ({
+            const transformedData = sourceRows.map((row, index) => ({
                 submissionId: row.submissionId || index,
                 Date: row.Date,
                 Count: row.Count,
@@ -602,7 +608,7 @@ export default function EnhancedReportViewer() {
             return transformedData;
         }
 
-        const transformedData = reportData.map((row, index) => {
+        const transformedData = sourceRows.map((row, index) => {
             const chartPoint = { submissionId: row.submissionId || index };
 
             (row.data || []).forEach(cell => {
@@ -688,13 +694,44 @@ export default function EnhancedReportViewer() {
         console.log('Date field value:', transformedData[0]?.Date);
 
         return transformedData;
-    }, [
-        reportData.length,
-        calculatedFields.length,
-        chartConfigs.length,
-        // Track the actual last data point changes
-        reportData.length > 0 ? `${reportData[reportData.length - 1]?.submissionId}_${JSON.stringify(reportData[reportData.length - 1]?.data)}` : null
-    ]);
+    };
+
+    const chartData = useMemo(
+        () => computeChartData(reportData),
+        [
+            reportData.length,
+            calculatedFields.length,
+            chartConfigs.length,
+            // Track the actual last data point changes
+            reportData.length > 0 ? `${reportData[reportData.length - 1]?.submissionId}_${JSON.stringify(reportData[reportData.length - 1]?.data)}` : null
+        ]
+    );
+
+    // ── Dashboard-only "Form" filter ────────────────────────────────────────
+    // Multi-form reports pool every form's submissions together; the dashboard
+    // gets its own filter so charts/summary can be scoped to one form at a time
+    // without touching the Table/Charts tabs.
+    const [dashboardFormFilter, setDashboardFormFilter] = useState('all');
+
+    const reportForms = useMemo(() => {
+        const map = new Map();
+        reportData.forEach(row => {
+            if (row.formId !== undefined && row.formId !== null) {
+                map.set(row.formId, row.formName || `Form ${row.formId}`);
+            }
+        });
+        return Array.from(map, ([id, name]) => ({ id, name }));
+    }, [reportData]);
+
+    const dashboardReportData = useMemo(() => {
+        if (dashboardFormFilter === 'all') return reportData;
+        return reportData.filter(row => String(row.formId) === String(dashboardFormFilter));
+    }, [reportData, dashboardFormFilter]);
+
+    const dashboardChartData = useMemo(
+        () => computeChartData(dashboardReportData),
+        [dashboardReportData, calculatedFields.length, chartConfigs.length]
+    );
 
     useEffect(() => {
         // Auto-switch to charts view if shift charts are detected
@@ -703,6 +740,59 @@ export default function EnhancedReportViewer() {
             setDisplayMode('charts');
         }
     }, [chartConfigs]);
+
+    // Given whatever "field-ish" object a call site has (a full field def, or
+    // just a report cell like {fieldLabel, value}), resolve the real grid field
+    // definition (with .columns) from the loaded form(s) so we know column
+    // order/type/colors — not just whatever keys happen to be on the JSON blob.
+    const resolveGridFieldDef = (field) => {
+        if (field?.columns) return field; // already a full field definition
+        const label = field?.label || field?.fieldLabel;
+        if (!label) return null;
+        return fields.find(f => f.label === label && (f.type === 'grid' || f.type === 'questionGrid')) || null;
+    };
+
+    const normalizeColor = (color) => {
+        if (!color) return undefined;
+        return color.startsWith('#') ? color : `#${color}`;
+    };
+
+    // "Form layout" grid rendering: each grid row becomes its own block, with
+    // every column shown as label-over-value, the way the row looks when
+    // someone is actually filling the form (as opposed to a compact table).
+    const renderGridAsFormLayout = (parsed, field) => {
+        const gridFieldDef = resolveGridFieldDef(field);
+        const columns = gridFieldDef?.columns?.length
+            ? gridFieldDef.columns
+            : Object.keys(parsed[0] || {}).map(name => ({ name }));
+
+        return (
+            <div className="grid-form-layout">
+                {parsed.map((row, ri) => (
+                    <div key={ri} className="grid-form-layout-row">
+                        <div className="grid-form-layout-row-title">Row {ri + 1}</div>
+                        {columns.map((col, ci) => (
+                            <div key={ci} className="grid-form-layout-field">
+                                <label
+                                    style={{
+                                        backgroundColor: normalizeColor(col.backgroundColor),
+                                        color: normalizeColor(col.textColor)
+                                    }}
+                                >
+                                    {col.name}
+                                </label>
+                                <div className="grid-form-layout-value">
+                                    {row[col.name] === undefined || row[col.name] === null || row[col.name] === ''
+                                        ? '—'
+                                        : String(row[col.name])}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
     const formatCellValue = (value, field) => {
         // ✅ handle accidental arrays safely
@@ -715,6 +805,9 @@ export default function EnhancedReportViewer() {
         try {
             const parsed = JSON.parse(value);
             if (Array.isArray(parsed) && typeof parsed[0] === "object") {
+                if (gridDisplayMode === 'form') {
+                    return renderGridAsFormLayout(parsed, field);
+                }
                 return (
                     <table className="mini-grid-table">
                         <thead>
@@ -1211,6 +1304,14 @@ export default function EnhancedReportViewer() {
                 >
                     🎯 Dashboard
                 </button>
+                {displayMode === 'table' && (
+                    <button
+                        onClick={() => setGridDisplayMode(gridDisplayMode === 'compact' ? 'form' : 'compact')}
+                        title="Switch how grid answers are displayed"
+                    >
+                        {gridDisplayMode === 'compact' ? '🧾 Grid: Compact' : '📋 Grid: Form Layout'}
+                    </button>
+                )}
                 {/*{groupingConfig.length > 0 && (*/}
                 {/*    <button*/}
                 {/*        onClick={() => setIsGrouped(!isGrouped)}*/}
@@ -1758,7 +1859,7 @@ export default function EnhancedReportViewer() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                     </svg>
-                                    
+
                                 </button>
 
                                 {/* Exit Maximized Button */}
@@ -1770,7 +1871,7 @@ export default function EnhancedReportViewer() {
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
-                                    
+
                                 </button>
                             </div>
                         </div>
@@ -2192,10 +2293,25 @@ export default function EnhancedReportViewer() {
 
         return (
             <div className="dashboard-container">
+                {reportForms.length > 1 && (
+                    <div className="mb-4 flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700">Form:</label>
+                        <select
+                            value={dashboardFormFilter}
+                            onChange={(e) => setDashboardFormFilter(e.target.value)}
+                            className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                        >
+                            <option value="all">All Forms</option>
+                            {reportForms.map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
                 <div className="mb-6">
                     {renderSummaryStats()}
                 </div>
-                <DataInspector data={chartData} title="Chart Data" />
+                <DataInspector data={dashboardChartData} title="Chart Data" />
 
                 <div className="grid grid-cols-12 gap-4 auto-rows-min">
                     {chartConfigs.map((chart, index) => (
@@ -2208,7 +2324,7 @@ export default function EnhancedReportViewer() {
                             }}
                         >
                             <ReportCharts
-                                data={chartData}
+                                data={dashboardChartData}
                                 metrics={chart.metrics}
                                 type={chart.type}
                                 xField={chart.xField || "Date"} // Ensure date field is passed
@@ -2226,7 +2342,7 @@ export default function EnhancedReportViewer() {
                     ))}
                 </div>
 
-                {reportData.length > 0 && (
+                {dashboardReportData.length > 0 && (
                     <div className="mt-6">
                         <h3 className="text-lg font-semibold mb-3">📋 Data Summary</h3>
                         <div className="overflow-x-auto">
@@ -2241,7 +2357,7 @@ export default function EnhancedReportViewer() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {reportData.slice(0, 10).map((row, i) => (
+                                    {dashboardReportData.slice(0, 10).map((row, i) => (
                                         <tr key={i}>
                                             {selectedFields.slice(0, 5).map((field, j) => {
                                                 const fLabel = typeof field === 'object' ? field.label : field;
@@ -2253,9 +2369,9 @@ export default function EnhancedReportViewer() {
                                     ))}
                                 </tbody>
                             </table>
-                            {reportData.length > 10 && (
+                            {dashboardReportData.length > 10 && (
                                 <div className="text-center py-2 text-gray-500 text-sm">
-                                    ... and {reportData.length - 10} more rows
+                                    ... and {dashboardReportData.length - 10} more rows
                                 </div>
                             )}
                         </div>
@@ -4096,6 +4212,20 @@ html.dark-mode,
 .dark-mode .mini-grid-table td {
     color: #d1d5db !important;
     border-color: #4b5563 !important;
+}
+
+/* Grid form-layout view */
+.dark-mode .grid-form-layout-row {
+    background-color: #374151 !important;
+    border-color: #4b5563 !important;
+}
+
+.dark-mode .grid-form-layout-row-title {
+    color: #9ca3af !important;
+}
+
+.dark-mode .grid-form-layout-value {
+    color: #f3f4f6 !important;
 }
 
 /* Shift period selector buttons */

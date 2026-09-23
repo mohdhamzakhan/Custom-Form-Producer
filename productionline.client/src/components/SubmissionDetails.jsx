@@ -171,6 +171,43 @@ export default function SubmissionDetails() {
         return Array.from(columnSet);
     };
 
+    // Normalize a stored color value: builder sometimes saves "#ffffff",
+    // sometimes just "ffffff". Make sure whatever we render always has a "#".
+    const normalizeColor = (color) => {
+        if (!color) return undefined;
+        return color.startsWith('#') ? color : `#${color}`;
+    };
+
+    // Look up the grid field definition (by label) in the form so we can pull
+    // each column's configured header/cell colors, same as the Form Builder.
+    const getGridColumnStyles = (gridLabel) => {
+        const styleMap = {};
+        if (!formDefinition || !formDefinition.fields) return styleMap;
+
+        const gridField = formDefinition.fields.find(
+            f => f.label === gridLabel && (f.type === 'grid' || f.type === 'questionGrid')
+        );
+        if (!gridField) return styleMap;
+
+        let columns = gridField.columns;
+        if ((!columns || !columns.length) && gridField.columnsJson) {
+            try {
+                columns = JSON.parse(gridField.columnsJson);
+            } catch {
+                columns = [];
+            }
+        }
+
+        (columns || []).forEach(col => {
+            styleMap[col.name] = {
+                backgroundColor: normalizeColor(col.backgroundColor),
+                color: normalizeColor(col.textColor)
+            };
+        });
+
+        return styleMap;
+    };
+
 
     const processedData = processSubmissionData();
 
@@ -240,6 +277,7 @@ export default function SubmissionDetails() {
                                             try {
                                                 const gridData = JSON.parse(item.value);
                                                 const columns = getGridColumns(gridData);
+                                                const columnStyles = getGridColumnStyles(item.label);
                                                 console.log('📊 Grid columns found:', columns);
                                                 console.log('📊 Grid rows:', gridData.length);
 
@@ -251,7 +289,11 @@ export default function SubmissionDetails() {
                                                                     {columns.map((col, idx) => (
                                                                         <th
                                                                             key={idx}
-                                                                            className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0"
+                                                                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-r border-gray-200 last:border-r-0"
+                                                                            style={{
+                                                                                backgroundColor: columnStyles[col]?.backgroundColor,
+                                                                                color: columnStyles[col]?.color
+                                                                            }}
                                                                         >
                                                                             {col}
                                                                         </th>
@@ -291,7 +333,14 @@ export default function SubmissionDetails() {
 
                                                                             // Regular cell
                                                                             return (
-                                                                                <td key={cIdx} className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200 last:border-r-0 whitespace-nowrap">
+                                                                                <td
+                                                                                    key={cIdx}
+                                                                                    className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200 last:border-r-0 whitespace-nowrap"
+                                                                                    style={{
+                                                                                        backgroundColor: columnStyles[col]?.backgroundColor,
+                                                                                        color: columnStyles[col]?.color || undefined
+                                                                                    }}
+                                                                                >
                                                                                     {cellValue !== undefined && cellValue !== null && cellValue !== '' ? (
                                                                                         typeof cellValue === 'boolean' ? (
                                                                                             <span className="font-semibold">{String(cellValue)}</span>

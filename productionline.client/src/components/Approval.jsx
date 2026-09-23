@@ -225,6 +225,43 @@ export default function ApprovalPage() {
         return Array.from(columnSet);
     };
 
+    // Normalize a stored color value: builder sometimes saves "#ffffff",
+    // sometimes just "ffffff". Make sure whatever we render always has a "#".
+    const normalizeColor = (color) => {
+        if (!color) return undefined;
+        return color.startsWith('#') ? color : `#${color}`;
+    };
+
+    // Look up the grid field definition (by label) in the form so we can pull
+    // each column's configured header/cell colors, same as the Form Builder.
+    const getGridColumnStyles = (gridLabel) => {
+        const styleMap = {};
+        if (!formDefinition || !formDefinition.fields) return styleMap;
+
+        const gridField = formDefinition.fields.find(
+            f => f.label === gridLabel && (f.type === 'grid' || f.type === 'questionGrid')
+        );
+        if (!gridField) return styleMap;
+
+        let columns = gridField.columns;
+        if ((!columns || !columns.length) && gridField.columnsJson) {
+            try {
+                columns = JSON.parse(gridField.columnsJson);
+            } catch {
+                columns = [];
+            }
+        }
+
+        (columns || []).forEach(col => {
+            styleMap[col.name] = {
+                backgroundColor: normalizeColor(col.backgroundColor),
+                color: normalizeColor(col.textColor)
+            };
+        });
+
+        return styleMap;
+    };
+
     const getStatusBadge = status => {
         switch (status) {
             case "Approved":
@@ -299,13 +336,21 @@ export default function ApprovalPage() {
                                             {(() => {
                                                 const gridData = JSON.parse(item.value);
                                                 const columns = getGridColumns(gridData);
+                                                const columnStyles = getGridColumnStyles(item.label);
 
                                                 return (
                                                     <table className="w-full text-sm text-left">
                                                         <thead className="bg-gray-100">
                                                             <tr>
                                                                 {columns.map((col, idx) => (
-                                                                    <th key={idx} className="px-2 py-1 border-b border-r whitespace-nowrap font-medium">
+                                                                    <th
+                                                                        key={idx}
+                                                                        className="px-2 py-1 border-b border-r whitespace-nowrap font-medium"
+                                                                        style={{
+                                                                            backgroundColor: columnStyles[col]?.backgroundColor,
+                                                                            color: columnStyles[col]?.color
+                                                                        }}
+                                                                    >
                                                                         {col}
                                                                     </th>
                                                                 ))}
@@ -317,7 +362,14 @@ export default function ApprovalPage() {
                                                                     {columns.map((col, cIdx) => {
                                                                         const cellValue = row[col];
                                                                         return (
-                                                                            <td key={cIdx} className="px-2 py-1 border-r whitespace-nowrap">
+                                                                            <td
+                                                                                key={cIdx}
+                                                                                className="px-2 py-1 border-r whitespace-nowrap"
+                                                                                style={{
+                                                                                    backgroundColor: columnStyles[col]?.backgroundColor,
+                                                                                    color: columnStyles[col]?.color
+                                                                                }}
+                                                                            >
                                                                                 {cellValue !== undefined && cellValue !== null
                                                                                     ? (typeof cellValue === 'boolean' ? String(cellValue) : String(cellValue))
                                                                                     : ''}
