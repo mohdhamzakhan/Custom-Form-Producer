@@ -1403,6 +1403,8 @@ namespace productionLine.Server.Controllers
                     template.IncludeRemarks = dto.IncludeRemarks;
                     template.SharedWithRole = dto.SharedWithRole;
                     template.LayoutMode = dto.LayoutMode;
+                    template.OutputMode = string.IsNullOrWhiteSpace(dto.OutputMode) ? "single" : dto.OutputMode;
+                    template.EnableGridFormView = dto.EnableGridFormView;
 
                     // ✅ NEW: Save submitted viewers
                     template.SubmittedViewers = dto.SubmittedViewers?.Any() == true
@@ -1461,6 +1463,8 @@ namespace productionLine.Server.Controllers
                         IncludeRemarks = dto.IncludeRemarks,
                         SharedWithRole = dto.SharedWithRole,
                         LayoutMode = dto.LayoutMode,
+                        OutputMode = string.IsNullOrWhiteSpace(dto.OutputMode) ? "single" : dto.OutputMode,
+                        EnableGridFormView = dto.EnableGridFormView,
 
                         // ✅ NEW: Save submitted viewers
                         SubmittedViewers = dto.SubmittedViewers?.Any() == true
@@ -1766,9 +1770,9 @@ namespace productionLine.Server.Controllers
                                              if (matchingKey == null) return null;
                                              var cell = r[matchingKey];
                                              if (cell is JsonElement je)
-                                                return je.ValueKind == JsonValueKind.Null ? null : je.ToString();
-                                            return cell?.ToString();
-                                        })
+                                                 return je.ValueKind == JsonValueKind.Null ? null : je.ToString();
+                                             return cell?.ToString();
+                                         })
                                         .Where(v => !string.IsNullOrWhiteSpace(v) && v != "-")
                                         .ToList();
 
@@ -1970,6 +1974,15 @@ namespace productionLine.Server.Controllers
         {
             var result = new List<object>();
 
+            // Needed so multi-form reports can tag each row with which form it
+            // came from (used by the Report Viewer's per-form filter/tabs).
+            var formNames = new Dictionary<int, string>();
+            foreach (var formId in formFieldMappings.Keys)
+            {
+                var form = _context.Forms.FirstOrDefault(f => f.Id == formId);
+                if (form != null) formNames[formId] = form.Name;
+            }
+
             foreach (var sub in submissions)
             {
                 var formFields = formFieldMappings.ContainsKey(sub.FormId)
@@ -1982,14 +1995,16 @@ namespace productionLine.Server.Controllers
 
                 var hasGridFields = relevantFields.Any(f => f.FieldLabel.Contains("→"));
 
+                var subFormName = formNames.ContainsKey(sub.FormId) ? formNames[sub.FormId] : $"Form {sub.FormId}";
+
                 if (hasGridFields)
                 {
-                    var gridData = GetExpandedGridData(sub, relevantFields, formFields);
+                    var gridData = GetExpandedGridData(sub, relevantFields, formFields, sub.FormId, subFormName);
                     result.AddRange(gridData);
                 }
                 else
                 {
-                    var singleRow = CreateSingleRow(sub, relevantFields, formFields);
+                    var singleRow = CreateSingleRow(sub, relevantFields, formFields, sub.FormId, subFormName);
                     result.Add(singleRow);
                 }
             }
@@ -2000,7 +2015,9 @@ namespace productionLine.Server.Controllers
         private List<object> GetExpandedGridData(
             FormSubmission sub,
             ICollection<ReportField> reportFields,
-            List<FormField> formFields)
+            List<FormField> formFields,
+            int? formId = null,
+            string formName = null)
         {
             var result = new List<object>();
 
@@ -2126,12 +2143,16 @@ namespace productionLine.Server.Controllers
         private object CreateSingleRow(
             FormSubmission sub,
             ICollection<ReportField> reportFields,
-            List<FormField> formFields)
+            List<FormField> formFields,
+            int? formId = null,
+            string formName = null)
         {
             return new
             {
                 submissionId = sub.Id,
                 submittedAt = sub.SubmittedAt,
+                formId = formId ?? sub.FormId,
+                formName = formName,
                 data = reportFields.Select(reportField =>
                 {
                     string value = "-";
@@ -2330,6 +2351,8 @@ namespace productionLine.Server.Controllers
                     name = template.Name,
                     formId = template.FormId,
                     layoutMode = template.LayoutMode,
+                    outputMode = string.IsNullOrEmpty(template.OutputMode) ? "single" : template.OutputMode,
+                    enableGridFormView = template.EnableGridFormView,
                     formIds = formIds,
                     isMultiForm = template.IsMultiForm,
                     fields = template.Fields.Select(f => new

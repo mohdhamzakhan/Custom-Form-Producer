@@ -13,6 +13,8 @@ public class ReportTemplateDto
     public bool IncludeRemarks { get; set; }
     public string? SharedWithRole { get; set; }
     public string? LayoutMode { get; set; }
+    public string? OutputMode { get; set; } // "single" | "multipage"
+    public bool EnableGridFormView { get; set; } = true;
     public List<ReportFieldDto> Fields { get; set; }
     public List<ReportFilterDto> Filters { get; set; }
     public List<CalculatedField> CalculatedFields { get; set; }     // ✅ NEW
@@ -30,7 +32,7 @@ public class FormRelationship
     public string SourceFieldId { get; set; }
     public int TargetFormId { get; set; }
     public string TargetFieldId { get; set; }
-    public string Type { get; set; } 
+    public string Type { get; set; }
 }
 
 
@@ -215,4 +217,3 @@ public class DowntimeConfig
 //    public string label { get; set; } // "row" or "column"
 //    public string[] sourceFields { get; set; } // "row" or "column"
 //}
-

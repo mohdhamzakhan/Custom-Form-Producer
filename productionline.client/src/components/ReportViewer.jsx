@@ -696,17 +696,6 @@ export default function EnhancedReportViewer() {
         return transformedData;
     };
 
-    const chartData = useMemo(
-        () => computeChartData(reportData),
-        [
-            reportData.length,
-            calculatedFields.length,
-            chartConfigs.length,
-            // Track the actual last data point changes
-            reportData.length > 0 ? `${reportData[reportData.length - 1]?.submissionId}_${JSON.stringify(reportData[reportData.length - 1]?.data)}` : null
-        ]
-    );
-
     // ── Dashboard-only "Form" filter ────────────────────────────────────────
     // Multi-form reports pool every form's submissions together; the dashboard
     // gets its own filter so charts/summary can be scoped to one form at a time
@@ -723,10 +712,67 @@ export default function EnhancedReportViewer() {
         return Array.from(map, ([id, name]) => ({ id, name }));
     }, [reportData]);
 
+    // ── Multi-page output (one tab per form) ────────────────────────────────
+    // Only active when the report was built with Output Mode = "Multi Page".
+    // The checkbox list controls which of the report's forms get a tab at
+    // all; the tab bar itself switches which form's rows are shown.
+    const multiPageEnabled = template?.isMultiForm && template?.outputMode === 'multipage';
+    const [visibleFormIds, setVisibleFormIds] = useState(null); // null = not yet initialized
+    const [activeFormTab, setActiveFormTab] = useState(null);
+
+    useEffect(() => {
+        if (!multiPageEnabled || reportForms.length === 0) return;
+        if (visibleFormIds === null) {
+            setVisibleFormIds(reportForms.map(f => f.id));
+            setActiveFormTab(reportForms[0].id);
+        }
+    }, [multiPageEnabled, reportForms, visibleFormIds]);
+
+    const toggleFormVisibility = (formId) => {
+        const current = visibleFormIds || reportForms.map(f => f.id);
+        const isVisible = current.includes(formId);
+        const next = isVisible
+            ? current.filter(id => id !== formId)
+            : [...current, formId];
+
+        setVisibleFormIds(next);
+
+        // If we just hid the active tab, jump to the first form still visible.
+        if (isVisible && String(activeFormTab) === String(formId)) {
+            setActiveFormTab(next.length > 0 ? next[0] : null);
+        }
+        // If we just showed a form and nothing was active (all were hidden), activate it.
+        if (!isVisible && activeFormTab === null) {
+            setActiveFormTab(formId);
+        }
+    };
+
+    const visibleReportForms = useMemo(() => {
+        if (!visibleFormIds) return reportForms;
+        return reportForms.filter(f => visibleFormIds.includes(f.id));
+    }, [reportForms, visibleFormIds]);
+
+    // Rows scoped to whichever form tab is active. Everything downstream
+    // (table, charts, dashboard) reads from this instead of raw reportData
+    // once multi-page mode is on, so the whole viewer follows the tab.
+    const formTabReportData = useMemo(() => {
+        if (!multiPageEnabled || activeFormTab === null) return reportData;
+        return reportData.filter(row => String(row.formId) === String(activeFormTab));
+    }, [reportData, multiPageEnabled, activeFormTab]);
+
     const dashboardReportData = useMemo(() => {
-        if (dashboardFormFilter === 'all') return reportData;
-        return reportData.filter(row => String(row.formId) === String(dashboardFormFilter));
-    }, [reportData, dashboardFormFilter]);
+        if (dashboardFormFilter === 'all') return formTabReportData;
+        return formTabReportData.filter(row => String(row.formId) === String(dashboardFormFilter));
+    }, [formTabReportData, dashboardFormFilter]);
+
+    const chartData = useMemo(
+        () => computeChartData(formTabReportData),
+        [
+            formTabReportData,
+            calculatedFields.length,
+            chartConfigs.length
+        ]
+    );
 
     const dashboardChartData = useMemo(
         () => computeChartData(dashboardReportData),
@@ -805,7 +851,7 @@ export default function EnhancedReportViewer() {
         try {
             const parsed = JSON.parse(value);
             if (Array.isArray(parsed) && typeof parsed[0] === "object") {
-                if (gridDisplayMode === 'form') {
+                if (gridDisplayMode === 'form' && template?.enableGridFormView !== false) {
                     return renderGridAsFormLayout(parsed, field);
                 }
                 return (
@@ -1304,7 +1350,7 @@ export default function EnhancedReportViewer() {
                 >
                     🎯 Dashboard
                 </button>
-                {displayMode === 'table' && (
+                {displayMode === 'table' && (template?.enableGridFormView !== false) && (
                     <button
                         onClick={() => setGridDisplayMode(gridDisplayMode === 'compact' ? 'form' : 'compact')}
                         title="Switch how grid answers are displayed"

@@ -68,6 +68,18 @@ namespace productionLine.Server.Model
         [Column("SUBMITTEDVIEWERS")]
         public string? SubmittedViewers { get; set; }
 
+        // "single" = all forms' data combined into one report (existing behaviour).
+        // "multipage" = one tab per form in the Report Viewer, with a checkbox
+        // filter to choose which form tabs are shown.
+        [MaxLength(20)]
+        [Column("OUTPUTMODE")]
+        public string? OutputMode { get; set; } = "single";
+
+        // Whether the Report Viewer is allowed to offer the "Grid: Compact / Grid: Form Layout"
+        // toggle for grid-type answers. Set from the Report Builder.
+        [Column("ENABLEGRIDFORMVIEW", TypeName = "NUMBER(1)")]
+        public bool EnableGridFormView { get; set; } = true;
+
     }
 
     [Table("FF_REPORTFIELD")]
