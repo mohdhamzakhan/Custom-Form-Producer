@@ -2083,29 +2083,30 @@ namespace productionLine.Server.Controllers
                     .Split(',', StringSplitOptions.RemoveEmptyEntries)
                     .Select(g => g.Trim().ToLower())
                     .Where(g => g.Length > 0)
-                    .ToHashSet();
+                    .ToList(); // Changed to List for better Entity Framework translation
 
-                var forms = await _context.Forms
+                // 1. Build the query (does NOT hit the database yet)
+                var query = _context.Forms
                     .Include(f => f.AllowedtoAccess)
-                    .OrderByDescending(f => f.Id)
-                    .ToListAsync();
-
-                var accessible = forms
                     .Where(f =>
-                        f.AllowedtoAccess == null || f.AllowedtoAccess.Count == 0 ||
+                        f.AllowedtoAccess == null ||
+                        f.AllowedtoAccess.Count == 0 ||
                         f.AllowedtoAccess.Any(a =>
-                            (a.Type == "user" && (a.Name ?? "").Trim().ToLower() == usernameLower) ||
-                            (a.Type == "group" && userGroups.Contains((a.Name ?? "").Trim().ToLower()))
+                            (a.Type == "user" && a.Name.Trim().ToLower() == usernameLower) ||
+                            (a.Type == "group" && userGroups.Contains(a.Name.Trim().ToLower()))
                         )
                     )
+                    .OrderByDescending(f => f.Id)
                     .Select(f => new
                     {
                         f.Id,
                         f.Name,
                         f.FormLink,
                         f.CreatedAt
-                    })
-                    .ToList();
+                    });
+
+                // 2. Execute the query on the database (Highly Optimized!)
+                var accessible = await query.ToListAsync();
 
                 return Ok(accessible);
             }

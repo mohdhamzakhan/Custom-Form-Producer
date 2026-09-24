@@ -13,9 +13,9 @@ const DASHBOARD_FORM_NAMES = ["Competency", "Gap Analysis"];
 
 function parseJwt(token) {
     try {
-        const base64Payload = token.split('.')[1]; // Get the payload
-        const payload = atob(base64Payload);       // Decode base64
-        return JSON.parse(payload);                // Parse JSON
+        const base64Payload = token.split('.')[1];
+        const payload = atob(base64Payload);
+        return JSON.parse(payload);
     } catch (error) {
         console.error("Invalid token format:", error);
         return null;
@@ -30,7 +30,6 @@ export default function MainPage() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        // First check if we have user in localStorage
         const storedUserData = localStorage.getItem("user");
         const token = localStorage.getItem("meaiFormToken");
 
@@ -39,7 +38,6 @@ export default function MainPage() {
             return;
         }
 
-        // Check if stored user data exists and is valid
         if (storedUserData && storedUserData !== "undefined") {
             try {
                 const storedUser = JSON.parse(storedUserData);
@@ -47,16 +45,13 @@ export default function MainPage() {
                 setLoading(false);
             } catch (error) {
                 console.error("Error parsing stored user data:", error);
-                // Continue to decode token since stored user data is invalid
                 decodeTokenAndSetUser(token);
             }
         } else {
-            // If no stored user but we have token, try to decode token
             decodeTokenAndSetUser(token);
         }
     }, [navigate]);
 
-    // Helper function to decode token and set user data
     const decodeTokenAndSetUser = (token) => {
         const decodedUser = parseJwt(token);
         if (decodedUser) {
@@ -69,10 +64,8 @@ export default function MainPage() {
             };
 
             setUser(userData);
-            // Store user data for future use
             localStorage.setItem("user", JSON.stringify(userData));
         } else {
-            // Invalid token
             localStorage.removeItem("meaiFormToken");
             localStorage.removeItem("user");
             navigate("/login");
@@ -80,7 +73,6 @@ export default function MainPage() {
         setLoading(false);
     };
 
-    // Forms this user has "entry" (fill) access to, for the dashboard card grid.
     useEffect(() => {
         if (!user) return;
 
@@ -108,8 +100,14 @@ export default function MainPage() {
     }, [user]);
 
     if (loading) return <LoadingDots />;
-
     if (!user) return null;
+
+    // Filter entry forms against DASHBOARD_FORM_NAMES (case-insensitive substring match)
+    const filteredForms = entryForms.filter(form =>
+        DASHBOARD_FORM_NAMES.some(allowedName =>
+            (form.name || "").toLowerCase().includes(allowedName.toLowerCase())
+        )
+    );
 
     return (
         <Layout>
@@ -125,14 +123,15 @@ export default function MainPage() {
                 </div>
             </div>
 
-            {!entryFormsLoading && entryForms.length > 0 && (
+            {/* Use filteredForms for both the check and the mapping */}
+            {!entryFormsLoading && filteredForms.length > 0 && (
                 <div className="mb-8">
                     <h2 className="text-lg font-semibold text-gray-800 mb-3">Forms you can fill</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {entryForms.map(form => (
+                        {filteredForms.map(form => (
                             <button
                                 key={form.id}
-                                onClick={() => navigate(`/form/${form.id}`)}
+                                onClick={() => navigate(`/form/${form.formLink}`)}
                                 className="text-left bg-white p-5 rounded-lg shadow hover:shadow-md hover:border-indigo-300 border border-transparent transition flex flex-col gap-2"
                             >
                                 <div className="flex items-center justify-between">
