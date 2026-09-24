@@ -6,7 +6,7 @@ import LoadingDots from "./LoadingDots";
 import { APP_CONSTANTS } from "./store";
 import {
     ShieldCheck, LogOut, Clock, CheckCircle2, XCircle, Send,
-    ClipboardList, ArrowRight, KeyRound
+    ClipboardList, ArrowRight, KeyRound, Wrench, PenSquare, UserRound
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -16,20 +16,19 @@ const STATUS_STYLES = {
     NotSent: { icon: Send, className: "text-gray-500 bg-gray-100" },
 };
 
-// Deterministic colour per role badge, purely cosmetic.
-const ROLE_THEMES = [
-    "bg-indigo-50 text-indigo-700 ring-indigo-100",
-    "bg-teal-50 text-teal-700 ring-teal-100",
-    "bg-amber-50 text-amber-700 ring-amber-100",
-    "bg-rose-50 text-rose-700 ring-rose-100",
-    "bg-sky-50 text-sky-700 ring-sky-100",
-    "bg-violet-50 text-violet-700 ring-violet-100",
-];
-function roleTheme(key) {
-    let hash = 0;
-    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    return ROLE_THEMES[hash % ROLE_THEMES.length];
+// A friendly, human role label instead of exposing raw AD group/security
+// group names (e.g. "SANAND-IT") — same precedence Layout.jsx uses for nav.
+function getRoleInfo(groups = []) {
+    if (groups.includes("SANAND-IT")) {
+        return { label: "IT Administrator", icon: Wrench };
+    }
+    if (groups.includes("Custom-Form_Creators")) {
+        return { label: "Form Creator", icon: PenSquare };
+    }
+    return { label: "Team Member", icon: UserRound };
 }
+
+
 
 export default function ProfilePage() {
     const [user, setUser] = useState(null);
@@ -109,6 +108,8 @@ export default function ProfilePage() {
 
     const displayName = user.name || user.username;
     const initial = displayName?.[0]?.toUpperCase() || "?";
+    const roleInfo = getRoleInfo(user.groups);
+    const RoleIcon = roleInfo.icon;
 
     return (
         <Layout>
@@ -135,15 +136,20 @@ export default function ProfilePage() {
                             {initial}
                         </div>
                         <div>
-                            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight"> {user.username
-                                ?.replace(/\./g, ' ')
-                                .replace(/\b\w/g, char => char.toUpperCase())}</h1>
-                            {user.name && user.username && user.name !== user.username && (
-                                <p className="text-indigo-200/80 text-sm mt-0.5">@ {user.username
+                            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">{
+                                displayName
                                     ?.replace(/\./g, ' ')
-                                    .replace(/\b\w/g, char => char.toUpperCase())}</p>
+                                    .replace(/\b\w/g, char => char.toUpperCase())
+                            }</h1>
+                            {user.name && user.username && user.name !== user.username && (
+                                <p className="text-indigo-200/80 text-sm mt-0.5">@{user.username}</p>
                             )}
-                           
+                            <div className="flex items-center gap-1.5 mt-3 bg-white/10 border border-white/15 rounded-full pl-1.5 pr-3 py-1 w-fit">
+                                <span className="w-5 h-5 rounded-full bg-white/15 flex items-center justify-center">
+                                    <RoleIcon size={11} className="text-white" />
+                                </span>
+                                <span className="text-xs font-medium text-indigo-100">{roleInfo.label}</span>
+                            </div>
                         </div>
                     </div>
 
@@ -230,14 +236,20 @@ export default function ProfilePage() {
                             <dd className="font-medium text-gray-800 text-right">{displayName}</dd>
                         </div>
                         <div className="flex justify-between gap-3">
-                            <dt className="text-gray-400">Roles</dt>
-                            <dd className="font-medium text-gray-800 text-right">{(user.groups || []).length}</dd>
+                            <dt className="text-gray-400">Role</dt>
+                            <dd className="font-medium text-gray-800 text-right">{roleInfo.label}</dd>
                         </div>
                     </dl>
                     <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-2 text-xs text-gray-400">
                         <KeyRound size={13} className="mt-0.5 shrink-0" />
                         <span>Account details come from Active Directory. To update your name or roles, contact IT.</span>
                     </div>
+                    {(user.groups || []).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                            <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-1.5">AD Groups</div>
+                            <p className="text-xs text-gray-400 break-words">{user.groups.join(", ")}</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </Layout>
