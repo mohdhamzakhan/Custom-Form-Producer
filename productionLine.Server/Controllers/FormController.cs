@@ -402,169 +402,161 @@ namespace productionLine.Server.Controllers
         [HttpGet("link/{formLink}")]
         public async Task<IActionResult> GetFormByLink(string formLink)
         {
-            try
+
+            formLink = WebUtility.UrlDecode(formLink);
+            formLink = formLink.Replace(" ", "-");
+            Form form = await _context.Forms.Include((Form f) => f.Fields).Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order)).ThenInclude((FormField field) => field.RemarkTriggers)
+                .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
+                .Include((Form f) => f.AllowedUsers)
+                .Include((Form f) => f.AllowedtoAccess)
+                .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
+            if (form == null)
             {
-                formLink = WebUtility.UrlDecode(formLink);
-                formLink = formLink.Replace(" ", "-");
-                Form form = await _context.Forms
-                    .Include((Form f) => f.Fields)
-                    .Include((Form f) => f.Fields.OrderBy((FormField field) => field.Order))
-                    .ThenInclude((FormField field) => field.RemarkTriggers)
-                    .Include((Form f) => f.Approvers.OrderBy((FormApprover a) => a.Level))
-                    .Include((Form f) => f.AllowedUsers)
-                    .Include((Form f) => f.AllowedtoAccess)
-                    .FirstOrDefaultAsync((Form f) => f.FormLink.ToLower() == formLink.ToLower());
-                if (form == null)
-                {
-                    return NotFound("Form not found.");
-                }
-                FormDto formDto = new FormDto
-                {
-                    Id = form.Id,
-                    FormLink = form.FormLink,
-                    Name = form.Name,
-                    LinkedFormId = form.LinkedFormId, // Move this to Form level
-                    KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
-                    AllowPartialFill = form.AllowPartialFill,
-                    Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
-                    {
-                        Id = a.Id,
-                        AdObjectId = a.AdObjectId,
-                        Name = a.Name,
-                        Email = a.Email,
-                        Type = a.Type,
-                        Level = a.Level
-                    }).ToList() ?? new List<ApproverDto>()),
-                    allowedUsers = (form.AllowedUsers?.Select((FormAccess a) => new ApproverDto
-                    {
-                        Id = a.Id,
-                        AdObjectId = a.AdObjectId,
-                        Name = a.Name,
-                        Email = a.Email,
-                        Type = a.Type,
-                        Level = a.Level,
-                        AccessLevel = a.AccessLevel
-                    }).ToList() ?? new List<ApproverDto>()),
-                    allowToAccess = (form.AllowedtoAccess?.Select((FormToAdd a) => new ApproverDto
-                    {
-                        Id = a.Id,
-                        AdObjectId = a.AdObjectId,
-                        Name = a.Name,
-                        Email = a.Email,
-                        Type = a.Type,
-                        Level = a.Level
-                    }).ToList() ?? new List<ApproverDto>()),
-                    Fields = form.Fields.Select((FormField f) => new FieldDto
-                    {
-                        Id = f.Id,
-                        Name = f.Label,
-                        Type = f.Type,
-                        Label = f.Label,
-                        Options = f.Options,
-                        Required = f.Required,
-                        Width = f.Width,
-                        RequireRemarks = f.RequiresRemarks,
-                        IsDecimal = f.Decimal,
-                        Max = f.Max,
-                        Min = f.Min,
-
-                        // Add these missing linked textbox properties:
-                        LinkedFormId = f.LinkedFormId,
-                        LinkedFieldId = f.LinkedFieldId,
-                        OptionsSource = f.OptionsSource,
-                        LinkedFieldReference = f.LinkedFieldReference,
-                        LinkedFieldType = f.LinkedFieldType,
-                        LinkedGridFieldId = f.LinkedGridFieldId,
-                        LinkedColumnId = f.LinkedColumnId,  // This is the key - map from database
-                        DisplayMode = f.DisplayMode,
-                        DisplayFormat = f.DisplayFormat,
-                        AllowManualEntry = f.AllowManualEntry,
-                        ShowLookupButton = f.ShowLookupButton,
-                        KeyFieldMappingsJson = f.KeyFieldMappingsJson,
-                        KeyFieldMappings = f.KeyFieldMappings,
-                        IMAGEOPTIONS = f.IMAGEOPTIONS,
-                        Order = f.Order,
-                        ImageData = f.IMAGEOPTIONS,
-                        minLength = f.minLength,
-                        maxLength = f.maxLength,
-                        lengthValidationMessage = f.lengthValidationMessage,
-                        AllowAddRows = f.AllowAddRows,
-                        AllowEditQuestions = f.AllowEditQuestions,
-                        DefaultRowsJson = f.DefaultRowsJson,
-                        DefaultRows = f.DefaultRows,
-                        FilledBy = f.FilledBy,
-                        VisibilityCondition = f.VisibilityCondition,
-
-
-                        RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
-                        {
-                            Id = rt.Id,
-                            Operator = rt.Operator,
-                            Value = rt.Value,
-                            FormFieldId = rt.FormFieldId
-                        }).ToList() ?? new List<RemarkTriggerDto>()),
-
-                        Column = (f.Columns?.Select((GridColumn ct) => new GridColumnDto
-                        {
-                            Formula = ct.Formula,
-                            Name = ct.Name,
-                            Decimal = ct.Decimal,
-                            Max = ct.Max,
-                            Id = ct.Id,
-                            Min = ct.Min,
-                            Type = ct.Type,
-                            Width = ct.Width,
-                            backgroundColor = ct.backgroundColor,
-                            textColor = ct.textColor,
-                            Options = (ct.Options ?? new List<string>()),
-                            ParentColumn = ct.ParentColumn,
-                            DependentOptions = ct.DependentOptions,
-                            StartTime = ct.StartTime,
-                            EndTime = ct.EndTime,
-                            Required = ct.Required,
-                            RemarksOptions = ct.RemarksOptions,
-
-                            // Add linked textbox properties for grid columns too:
-                            LinkedFormId = ct.LinkedFormId,
-                            LinkedFieldId = ct.LinkedFieldId,
-                            LinkedFieldType = ct.LinkedFieldType,
-                            LinkedGridFieldId = ct.LinkedGridFieldId,
-                            LinkedColumnId = ct.LinkedColumnId,
-                            DisplayMode = ct.DisplayMode,
-                            DisplayFormat = ct.DisplayFormat,
-                            AllowManualEntry = ct.AllowManualEntry,
-                            ShowLookupButton = ct.ShowLookupButton,
-                            KeyFieldMappingsJson = ct.KeyFieldMappingsJson,
-                            labelStyle = ct.labelStyle,
-                            labelText = ct.labelText,
-                            textAlign = ct.textAlign,
-                            lengthValidationMessage = ct.lengthValidationMessage,
-                            maxLength = ct.maxLength,
-                            minLength = ct.minLength,
-                            disabled = ct.disable,
-                            visible = ct.visible,
-                            Label = ct.Label,
-                            Fixed = ct.Fixed,
-                            RatingStyle = ct.RatingStyle,
-
-                        }).ToList() ?? new List<GridColumnDto>()),
-
-                        Formula = f.Formula,
-                        InitialRows = f.InitialRows,
-                        MaxRows = f.MaxRows,
-                        MinRows = f.MinRows,
-                        ResultDecimal = f.ResultDecimal,
-                        FieldReferencesJson = f.FieldReferencesJson
-                    }).ToList()
-
-                };
-                return Ok(formDto);
+                return NotFound("Form not found.");
             }
-            catch (Exception ex)
+            FormDto formDto = new FormDto
             {
-                return BadRequest(ex.Message);
-            }
+                Id = form.Id,
+                FormLink = form.FormLink,
+                Name = form.Name,
+                LinkedFormId = form.LinkedFormId, // Move this to Form level
+                KeyFieldMappings = form.KeyFieldMappings, // Move this to Form level
+                AllowPartialFill = form.AllowPartialFill,
+                Approvers = (form.Approvers?.Select((FormApprover a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
+                allowedUsers = (form.AllowedUsers?.Select((FormAccess a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level,
+                    AccessLevel = a.AccessLevel
+                }).ToList() ?? new List<ApproverDto>()),
+                allowToAccess = (form.AllowedtoAccess?.Select((FormToAdd a) => new ApproverDto
+                {
+                    Id = a.Id,
+                    AdObjectId = a.AdObjectId,
+                    Name = a.Name,
+                    Email = a.Email,
+                    Type = a.Type,
+                    Level = a.Level
+                }).ToList() ?? new List<ApproverDto>()),
+                Fields = form.Fields.Select((FormField f) => new FieldDto
+                {
+                    Id = f.Id,
+                    Name = f.Label,
+                    Type = f.Type,
+                    Label = f.Label,
+                    Options = f.Options,
+                    Required = f.Required,
+                    Width = f.Width,
+                    RequireRemarks = f.RequiresRemarks,
+                    IsDecimal = f.Decimal,
+                    Max = f.Max,
+                    Min = f.Min,
+
+                    // Add these missing linked textbox properties:
+                    LinkedFormId = f.LinkedFormId,
+                    LinkedFieldId = f.LinkedFieldId,
+                    OptionsSource = f.OptionsSource,
+                    LinkedFieldReference = f.LinkedFieldReference,
+                    LinkedFieldType = f.LinkedFieldType,
+                    LinkedGridFieldId = f.LinkedGridFieldId,
+                    LinkedColumnId = f.LinkedColumnId,  // This is the key - map from database
+                    DisplayMode = f.DisplayMode,
+                    DisplayFormat = f.DisplayFormat,
+                    AllowManualEntry = f.AllowManualEntry,
+                    ShowLookupButton = f.ShowLookupButton,
+                    KeyFieldMappingsJson = f.KeyFieldMappingsJson,
+                    KeyFieldMappings = f.KeyFieldMappings,
+                    IMAGEOPTIONS = f.IMAGEOPTIONS,
+                    Order = f.Order,
+                    ImageData = f.IMAGEOPTIONS,
+                    minLength = f.minLength,
+                    maxLength = f.maxLength,
+                    lengthValidationMessage = f.lengthValidationMessage,
+                    AllowAddRows = f.AllowAddRows,
+                    AllowEditQuestions = f.AllowEditQuestions,
+                    DefaultRowsJson = f.DefaultRowsJson,
+                    DefaultRows = f.DefaultRows,
+                    FilledBy = f.FilledBy,
+                    VisibilityCondition = f.VisibilityCondition,
+
+
+                    RemarkTriggers = (f.RemarkTriggers?.Select((RemarkTrigger rt) => new RemarkTriggerDto
+                    {
+                        Id = rt.Id,
+                        Operator = rt.Operator,
+                        Value = rt.Value,
+                        FormFieldId = rt.FormFieldId
+                    }).ToList() ?? new List<RemarkTriggerDto>()),
+
+                    Column = (f.Columns?.Select((GridColumn ct) => new GridColumnDto
+                    {
+                        Formula = ct.Formula,
+                        Name = ct.Name,
+                        Decimal = ct.Decimal,
+                        Max = ct.Max,
+                        Id = ct.Id,
+                        Min = ct.Min,
+                        Type = ct.Type,
+                        Width = ct.Width,
+                        backgroundColor = ct.backgroundColor,
+                        textColor = ct.textColor,
+                        Options = (ct.Options ?? new List<string>()),
+                        ParentColumn = ct.ParentColumn,
+                        DependentOptions = ct.DependentOptions,
+                        StartTime = ct.StartTime,
+                        EndTime = ct.EndTime,
+                        Required = ct.Required,
+                        RemarksOptions = ct.RemarksOptions,
+
+                        // Add linked textbox properties for grid columns too:
+                        LinkedFormId = ct.LinkedFormId,
+                        LinkedFieldId = ct.LinkedFieldId,
+                        LinkedFieldType = ct.LinkedFieldType,
+                        LinkedGridFieldId = ct.LinkedGridFieldId,
+                        LinkedColumnId = ct.LinkedColumnId,
+                        DisplayMode = ct.DisplayMode,
+                        DisplayFormat = ct.DisplayFormat,
+                        AllowManualEntry = ct.AllowManualEntry,
+                        ShowLookupButton = ct.ShowLookupButton,
+                        KeyFieldMappingsJson = ct.KeyFieldMappingsJson,
+                        labelStyle = ct.labelStyle,
+                        labelText = ct.labelText,
+                        textAlign = ct.textAlign,
+                        lengthValidationMessage = ct.lengthValidationMessage,
+                        maxLength = ct.maxLength,
+                        minLength = ct.minLength,
+                        disabled = ct.disable,
+                        visible = ct.visible,
+                        Label = ct.Label,
+                        Fixed = ct.Fixed,
+                        RatingStyle = ct.RatingStyle,
+
+                    }).ToList() ?? new List<GridColumnDto>()),
+
+                    Formula = f.Formula,
+                    InitialRows = f.InitialRows,
+                    MaxRows = f.MaxRows,
+                    MinRows = f.MinRows,
+                    ResultDecimal = f.ResultDecimal,
+                    FieldReferencesJson = f.FieldReferencesJson
+                }).ToList()
+
+            };
+            return Ok(formDto);
         }
+
 
         [HttpPost("{formId}/submit")]
         public async Task<IActionResult> SubmitForm(
@@ -1249,21 +1241,18 @@ namespace productionLine.Server.Controllers
             var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(s => new
-                {
+                .Select(s => new {
                     id = s.Id,
                     formId = s.FormId,
                     formName = s.Form.Name,
                     submittedAt = s.SubmittedAt,
                     submittedBy = s.SubmittedBy,
-                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new
-                    {
+                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
                         a.ApproverName,
                         a.ApprovalLevel,
                         a.Status
                     }),
-                    submissionData = s.SubmissionData.Select(d => new
-                    {
+                    submissionData = s.SubmissionData.Select(d => new {
                         d.FieldLabel,
                         d.FieldValue
                     })
@@ -1294,15 +1283,13 @@ namespace productionLine.Server.Controllers
             var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(s => new
-                {
+                .Select(s => new {
                     id = s.Id,
                     formId = s.FormId,
                     formName = s.Form.Name,
                     submittedAt = s.SubmittedAt,
                     submittedBy = s.SubmittedBy,
-                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new
-                    {
+                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
                         a.ApproverName,
                         a.ApprovalLevel,
                         a.Status
@@ -1334,15 +1321,13 @@ namespace productionLine.Server.Controllers
             var items = await query
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(s => new
-                {
+                .Select(s => new {
                     id = s.Id,
                     formId = s.FormId,
                     formName = s.Form.Name,
                     submittedAt = s.SubmittedAt,
                     submittedBy = s.SubmittedBy,
-                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new
-                    {
+                    approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
                         a.ApproverName,
                         a.ApprovalLevel,
                         a.Status
@@ -1369,22 +1354,19 @@ namespace productionLine.Server.Controllers
                 .Where(s => s.SubmittedBy == submittedBy)
                 .OrderByDescending(s => s.SubmittedAt);
 
-            var allItems = await query.Select(s => new
-            {
+            var allItems = await query.Select(s => new {
                 id = s.Id,
                 formId = s.FormId,
                 formName = s.Form.Name,
                 submittedAt = s.SubmittedAt,
-                approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new
-                {
+                approvals = s.Approvals.OrderBy(a => a.ApprovalLevel).Select(a => new {
                     a.ApproverName,
                     a.ApprovalLevel,
                     a.Status
                 }).ToList()
             }).ToListAsync();
 
-            var withDerived = allItems.Select(s =>
-            {
+            var withDerived = allItems.Select(s => {
                 string derivedStatus;
                 if (s.approvals.Count == 0) derivedStatus = "NotSent";
                 else if (s.approvals.Count == 1 && s.approvals[0].ApproverName == "System Approval") derivedStatus = "Approved";
@@ -2082,6 +2064,54 @@ namespace productionLine.Server.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, "Internal server error");
+            }
+        }
+
+        // Forms the given user has "entry" (fill) access to, based on each
+        // form's Allowed Users & Groups list (FF_FORMTOADD). A form with no
+        // entries on that list is accessible to everyone, matching the note
+        // shown in Form Builder ("No access restrictions set. Form will be
+        // accessible to all users."). Used to build the "forms I can fill"
+        // card grid on the dashboard.
+        [HttpGet("entry-access")]
+        public async Task<IActionResult> GetFormsWithEntryAccess([FromQuery] string username, [FromQuery] string groups)
+        {
+            try
+            {
+                var usernameLower = (username ?? "").Trim().ToLower();
+                var userGroups = (groups ?? "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(g => g.Trim().ToLower())
+                    .Where(g => g.Length > 0)
+                    .ToHashSet();
+
+                var forms = await _context.Forms
+                    .Include(f => f.AllowedtoAccess)
+                    .OrderByDescending(f => f.Id)
+                    .ToListAsync();
+
+                var accessible = forms
+                    .Where(f =>
+                        f.AllowedtoAccess == null || f.AllowedtoAccess.Count == 0 ||
+                        f.AllowedtoAccess.Any(a =>
+                            (a.Type == "user" && (a.Name ?? "").Trim().ToLower() == usernameLower) ||
+                            (a.Type == "group" && userGroups.Contains((a.Name ?? "").Trim().ToLower()))
+                        )
+                    )
+                    .Select(f => new
+                    {
+                        f.Id,
+                        f.Name,
+                        f.FormLink,
+                        f.CreatedAt
+                    })
+                    .ToList();
+
+                return Ok(accessible);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Internal server error: " + ex.Message);
             }
         }
 

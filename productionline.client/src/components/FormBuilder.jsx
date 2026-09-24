@@ -5437,7 +5437,7 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             type="text"
                                             value={questionCol.label || "Question"}
                                             onChange={(e) => {
-                                                const renamedColumns = renameColumnAndCascade(field.columns, questionCol.id, e.target.value);
+                                                const renamedColumns = renameColumnAndCascade(field.columns, questionColIndex, e.target.value);
                                                 renamedColumns[questionColIndex] = { ...renamedColumns[questionColIndex], label: e.target.value };
                                                 updateField({ columns: renamedColumns });
                                             }}
@@ -5461,6 +5461,27 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                             <option value="dropdown">Dropdown</option>
                                         </select>
                                     </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-gray-500 whitespace-nowrap">
+                                            Column Key (advanced):
+                                        </label>
+                                        <input
+                                            type="text"
+                                            defaultValue={questionCol.name || "question"}
+                                            onBlur={(e) => {
+                                                if (!e.target.value || e.target.value === questionCol.name) return;
+                                                const renamedColumns = renameColumnAndCascade(field.columns, questionColIndex, e.target.value);
+                                                updateField({ columns: renamedColumns });
+                                            }}
+                                            placeholder="e.g. 'competency'"
+                                            className="flex-1 px-3 py-1.5 border rounded text-sm font-mono text-gray-700"
+                                        />
+                                    </div>
+                                    <p className="text-xs text-gray-400 -mt-1">
+                                        This is the key stored with each submission and read by reports (e.g. for merging matching columns across grids).
+                                        Changing it does not change the label shown above. Changing it on a form that already has submissions will orphan those submissions' existing values for this column.
+                                    </p>
 
                                     {/* Configure options — cleanly rendered below the inputs */}
                                     {questionCol.type === "dropdown" && (
@@ -5505,6 +5526,24 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                                                 placeholder="Column label (e.g., 'Answer', 'Value', 'Score')"
                                                 className="w-full px-3 py-1 border rounded text-sm mb-1"
                                             />
+
+                                            {/* Column Key (advanced) — the key actually stored with each
+                                                submission and read by reports. Editing the label above
+                                                auto-derives this; edit here to set it directly instead,
+                                                e.g. to line it up with a matching column in another grid. */}
+                                            <input
+                                                type="text"
+                                                defaultValue={col.name || ""}
+                                                onBlur={(e) => {
+                                                    if (!e.target.value || e.target.value === col.name) return;
+                                                    const renamedColumns = renameColumnAndCascade(field.columns, originalIndex, e.target.value);
+                                                    updateField({ columns: renamedColumns });
+                                                }}
+                                                title="Column key (advanced) — the key stored with each submission. Editing this does not change the label above."
+                                                placeholder="column_key"
+                                                className="w-full px-3 py-1 border rounded text-xs font-mono text-gray-600 mb-1"
+                                            />
+
 
                                             {/* Column Type Selector */}
                                             <select

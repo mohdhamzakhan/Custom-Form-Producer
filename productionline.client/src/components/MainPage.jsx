@@ -2,6 +2,14 @@
 import { useNavigate } from "react-router-dom";
 import Layout from "./Layout";
 import LoadingDots from './LoadingDots';
+import { APP_CONSTANTS } from "./store";
+import { FileText, ArrowRight } from "lucide-react";
+
+// Only these forms get a card on the dashboard, even if the user has entry
+// access to others too. Matches case-insensitively against a form's name
+// containing any of these (e.g. "Competency" matches "Competency Mapping Test").
+// Edit this list to add/remove which forms show up here.
+const DASHBOARD_FORM_NAMES = ["Competency", "Gap Analysis"];
 
 function parseJwt(token) {
     try {
@@ -17,6 +25,8 @@ function parseJwt(token) {
 export default function MainPage() {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [entryForms, setEntryForms] = useState([]);
+    const [entryFormsLoading, setEntryFormsLoading] = useState(true);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -70,6 +80,33 @@ export default function MainPage() {
         setLoading(false);
     };
 
+    // Forms this user has "entry" (fill) access to, for the dashboard card grid.
+    useEffect(() => {
+        if (!user) return;
+
+        const fetchEntryForms = async () => {
+            try {
+                setEntryFormsLoading(true);
+                const groupsParam = encodeURIComponent((user.groups || []).join(','));
+                const res = await fetch(
+                    `${APP_CONSTANTS.API_BASE_URL}/api/forms/entry-access?username=${encodeURIComponent(user.username || '')}&groups=${groupsParam}`
+                );
+                if (res.ok) {
+                    const data = await res.json();
+                    setEntryForms(data || []);
+                } else {
+                    console.error("Failed to fetch entry-access forms");
+                }
+            } catch (error) {
+                console.error("Error fetching entry-access forms:", error);
+            } finally {
+                setEntryFormsLoading(false);
+            }
+        };
+
+        fetchEntryForms();
+    }, [user]);
+
     if (loading) return <LoadingDots />;
 
     if (!user) return null;
@@ -87,6 +124,28 @@ export default function MainPage() {
                     </div>
                 </div>
             </div>
+
+            {!entryFormsLoading && entryForms.length > 0 && (
+                <div className="mb-8">
+                    <h2 className="text-lg font-semibold text-gray-800 mb-3">Forms you can fill</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {entryForms.map(form => (
+                            <button
+                                key={form.id}
+                                onClick={() => navigate(`/form/${form.id}`)}
+                                className="text-left bg-white p-5 rounded-lg shadow hover:shadow-md hover:border-indigo-300 border border-transparent transition flex flex-col gap-2"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <FileText className="text-indigo-500" size={22} />
+                                    <ArrowRight className="text-gray-300" size={18} />
+                                </div>
+                                <div className="font-semibold text-gray-800">{form.name}</div>
+                                <div className="text-xs text-gray-400">Click to fill this form</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {user.groups && user.groups.includes("SANAND-IT") ? (
@@ -112,7 +171,7 @@ export default function MainPage() {
                         <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition">
                             <h2 className="text-xl font-semibold mb-4 text-indigo-700">Your Forms</h2>
                             <p className="text-gray-600 mb-4">Access and fill out your assigned forms</p>
-                            <button className="text-indigo-600 font-semibold hover:text-indigo-800">View Forms <a href ="/reports">→</a></button>
+                            <button className="text-indigo-600 font-semibold hover:text-indigo-800">View Forms <a href="/reports">→</a></button>
                         </div>
                         <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition">
                             <h2 className="text-xl font-semibold mb-4 text-indigo-700">Recent Activity</h2>
