@@ -20,6 +20,7 @@ import CompletePartialForm from "./components/CompletePartialForm";
 import ProductionMonitor from "./components/ProductionMonitor";
 import ProductionMonitorConfig from "./components/productionMonitorConfig";
 import AppwriteMenu from "./components/AppwriteMenu";
+import ProfilePage from "./components/ProfilePage";
 
 
 
@@ -96,8 +97,8 @@ function App() {
                     <Route
                         path="/submissions/:submissionId"
                         element={
-                                <SubmissionDetail />
- 
+                            <SubmissionDetail />
+
                         }
                     />
                     <Route
@@ -121,6 +122,14 @@ function App() {
                         element={<Navigate to="/login" replace />}
                     />
                     <Route path="/report" element={<ReportsList />} />
+                    <Route
+                        path="/profile"
+                        element={
+                            <ProtectedRoute>
+                                <ProfilePage />
+                            </ProtectedRoute>
+                        }
+                    />
                     <Route path="/reports/edit/:reportId" element={<ReportDesigner />} />
                     <Route path="/reports/view/:templateId" element={<ReportViewer />} />
                     <Route path="/reports/new" element={<ReportDesigner />} />
