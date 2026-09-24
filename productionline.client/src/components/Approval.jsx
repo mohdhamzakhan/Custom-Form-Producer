@@ -1,5 +1,5 @@
-﻿import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+﻿import { useState, useEffect, useRef } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import Layout from "./Layout";
 import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
@@ -7,6 +7,8 @@ import LoadingDots from './LoadingDots';
 export default function ApprovalPage() {
     const { submissionId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
+
     const [status, setStatus] = useState("Approved");
     const [comments, setComments] = useState("");
     const [submission, setSubmission] = useState(null);
@@ -14,6 +16,30 @@ export default function ApprovalPage() {
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
 
+    // Define the table colors ref and function
+    const tableColorsRef = useRef({});
+
+    const getTableColor = (fieldId) => {
+        const safeFieldId = fieldId || 'unknown';
+        if (!tableColorsRef.current[safeFieldId]) {
+            const colors = [
+                { titleBg: '#2563eb', rowBg: '#eff6ff', borderColor: '#bfdbfe' }, // blue
+                { titleBg: '#16a34a', rowBg: '#f0fdf4', borderColor: '#bbf7d0' }, // green
+                { titleBg: '#9333ea', rowBg: '#faf5ff', borderColor: '#e9d5ff' }, // purple
+                { titleBg: '#db2777', rowBg: '#fdf2f8', borderColor: '#fbcfe8' }, // pink
+                { titleBg: '#ca8a04', rowBg: '#fefce8', borderColor: '#fef08a' }, // yellow
+                { titleBg: '#4f46e5', rowBg: '#eef2ff', borderColor: '#c7d2fe' }, // indigo
+                { titleBg: '#dc2626', rowBg: '#fef2f2', borderColor: '#fecaca' }, // red
+                { titleBg: '#ea580c', rowBg: '#fff7ed', borderColor: '#fed7aa' }, // orange
+                { titleBg: '#0d9488', rowBg: '#f0fdfa', borderColor: '#99f6e4' }, // teal
+                { titleBg: '#0891b2', rowBg: '#ecfeff', borderColor: '#a5f3fc' }  // cyan
+            ];
+
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            tableColorsRef.current[safeFieldId] = randomColor;
+        }
+        return tableColorsRef.current[safeFieldId];
+    };
 
     // Fetch current user
     useEffect(() => {
@@ -62,10 +88,6 @@ export default function ApprovalPage() {
         try {
             if (!user) return alert("User not found!");
 
-            // Find the user's approval level.
-            // `user` is [username, ...groupNames] (see the login effect above) — for a
-            // "group" type approver we can't match on username at all, we need to check
-            // whether any of the current user's AD groups is the configured approver.
             let approvalLevel = 1; // Default to level 1
 
             if (submission?.form?.approvers?.length) {
@@ -85,27 +107,25 @@ export default function ApprovalPage() {
                 }
             }
 
-
-            console.log(approvalLevel)
+            console.log(approvalLevel);
 
             const approvalData = {
-
-                approverId: 123, // (you can replace with real user id if available)
-                approverName: user[0], // 🔥 from logged-in user
-                level: approvalLevel, // Use the correct level for this user
+                approverId: 123,
+                approverName: user[0],
+                level: approvalLevel,
                 comments: comments,
                 status: status,
             };
-
 
             const response = await fetch(`${APP_CONSTANTS.API_BASE_URL}/api/forms/submissions/${submissionId}/approve`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(approvalData),
             });
-            console.log(response)
+
+            console.log(response);
             const data = await response.text();
-            console.log(data)
+            console.log(data);
 
             if (!response.ok) {
                 console.error("Server responded with:", data);
@@ -113,7 +133,7 @@ export default function ApprovalPage() {
             }
 
             alert("Approval saved successfully!");
-            navigate(-1);; // redirect to report page
+            navigate(-1);
         } catch (error) {
             console.error("Error approving submission:", error);
             alert("Error approving submission");
@@ -140,14 +160,13 @@ export default function ApprovalPage() {
         submission.submissionData.forEach(item => {
             let fieldId = item.fieldLabel;
 
-            // 🔥 If this is a remark, remove ' (Remark)' from fieldLabel
             const isRemark = fieldId.endsWith(" (Remark)");
             if (isRemark) {
-                fieldId = fieldId.replace(" (Remark)", ""); // clean fieldId
+                fieldId = fieldId.replace(" (Remark)", "");
             }
 
-            const fieldLabel = getFieldLabel(fieldId); // Now lookup with clean ID
-            if (!fieldLabel) return; // if not found, skip
+            const fieldLabel = getFieldLabel(fieldId);
+            if (!fieldLabel) return;
 
             if (isRemark) {
                 if (!processedData[fieldLabel]) {
@@ -171,21 +190,17 @@ export default function ApprovalPage() {
         }));
     };
 
-    // Sort approvals by level (and then by date if needed)
     const getSortedApprovals = () => {
         if (!submission || !submission.approvals) return [];
 
         return [...submission.approvals].sort((a, b) => {
-            // Sort by approval level first
             if (a.approvalLevel !== b.approvalLevel) {
                 return a.approvalLevel - b.approvalLevel;
             }
-            // If same level, sort by date
             return new Date(a.approvedAt) - new Date(b.approvedAt);
         });
     };
 
-    // Get a color class based on approval status
     const getStatusColor = (status) => {
         switch (status) {
             case "Approved": return "text-green-600";
@@ -196,7 +211,6 @@ export default function ApprovalPage() {
 
     if (loading) return <LoadingDots />;
 
-
     if (!submission) {
         return (
             <Layout>
@@ -204,6 +218,7 @@ export default function ApprovalPage() {
             </Layout>
         );
     }
+
     const isGridValue = (value) => {
         try {
             const parsed = JSON.parse(value);
@@ -215,25 +230,18 @@ export default function ApprovalPage() {
 
     const getGridColumns = (gridData) => {
         if (!gridData || gridData.length === 0) return [];
-
-        // Get all unique column names from all rows
         const columnSet = new Set();
         gridData.forEach(row => {
             Object.keys(row).forEach(key => columnSet.add(key));
         });
-
         return Array.from(columnSet);
     };
 
-    // Normalize a stored color value: builder sometimes saves "#ffffff",
-    // sometimes just "ffffff". Make sure whatever we render always has a "#".
     const normalizeColor = (color) => {
         if (!color) return undefined;
         return color.startsWith('#') ? color : `#${color}`;
     };
 
-    // Look up the grid field definition (by label) in the form so we can pull
-    // each column's configured header/cell colors, same as the Form Builder.
     const getGridColumnStyles = (gridLabel) => {
         const styleMap = {};
         if (!formDefinition || !formDefinition.fields) return styleMap;
@@ -275,15 +283,9 @@ export default function ApprovalPage() {
         }
     };
 
-    // ---------------------------
-    // Build approval lists
-    // ---------------------------
     const processedData = processSubmissionData();
     const previousApprovals = getSortedApprovals();
 
-    // ---------------------------
-    // Group by Approval Level
-    // ---------------------------
     const groupedApprovals = Object.values(
         previousApprovals.reduce((acc, item) => {
             acc[item.approvalLevel] = acc[item.approvalLevel] || {
@@ -295,10 +297,9 @@ export default function ApprovalPage() {
         }, {})
     );
 
-
     return (
         <Layout>
-            <div className="p-4 max-w-1xl mx-auto bg-white rounded-xl shadow-md">
+            <div className="p-4 w-full sm:px-8 mx-auto bg-white rounded-xl shadow-md">
                 <h2 className="text-2xl font-bold mb-6">Approve Submission</h2>
 
                 {/* Submission Details */}
@@ -306,7 +307,7 @@ export default function ApprovalPage() {
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <p className="text-sm text-gray-600">Submission ID</p>
-                            <p className="font-semibold">{submission.id}</p>
+                            <p className="font-semibold break-all">{submission.id}</p>
                         </div>
                         <div>
                             <p className="text-sm text-gray-600">Submitted At</p>
@@ -331,68 +332,100 @@ export default function ApprovalPage() {
                                     <p className="text-gray-700 font-medium mb-1">
                                         {item.label}
                                     </p>
-                                    {isGridValue(item.value) ? (
-                                        <div className="w-full overflow-x-auto border border-gray-300 rounded">
-                                            {(() => {
-                                                const gridData = JSON.parse(item.value);
-                                                const columns = getGridColumns(gridData);
-                                                const columnStyles = getGridColumnStyles(item.label);
 
-                                                return (
-                                                    <table className="w-full text-sm text-left">
-                                                        <thead className="bg-gray-100">
-                                                            <tr>
-                                                                {columns.map((col, idx) => (
-                                                                    <th
-                                                                        key={idx}
-                                                                        className="px-2 py-1 border-b border-r whitespace-nowrap font-medium"
-                                                                        style={{
-                                                                            backgroundColor: columnStyles[col]?.backgroundColor,
-                                                                            color: columnStyles[col]?.color
-                                                                        }}
-                                                                    >
-                                                                        {col}
-                                                                    </th>
-                                                                ))}
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {gridData.map((row, rIdx) => (
-                                                                <tr key={rIdx} className="border-b hover:bg-gray-50">
-                                                                    {columns.map((col, cIdx) => {
-                                                                        const cellValue = row[col];
-                                                                        return (
-                                                                            <td
-                                                                                key={cIdx}
-                                                                                className="px-2 py-1 border-r whitespace-nowrap"
+                                    {isGridValue(item.value) ? (
+                                        <div className="w-full overflow-x-auto">
+                                            {(() => {
+                                                try {
+                                                    const gridData = JSON.parse(item.value);
+                                                    const columns = getGridColumns(gridData);
+                                                    const columnStyles = getGridColumnStyles(item.label);
+                                                    const color = getTableColor(item.label);
+                                                    const isFixed = columns.length < 8;
+
+                                                    return (
+                                                        <div
+                                                            className="rounded-md border overflow-hidden w-full min-w-full"
+                                                            style={{ borderColor: color.borderColor }}
+                                                        >
+                                                            <table className={`min-w-full text-sm text-left ${isFixed ? 'table-fixed' : ''}`}>
+                                                                <thead>
+                                                                    <tr>
+                                                                        {columns.map((col, idx) => (
+                                                                            <th
+                                                                                key={idx}
+                                                                                className="px-4 py-3 font-semibold"
                                                                                 style={{
-                                                                                    backgroundColor: columnStyles[col]?.backgroundColor,
-                                                                                    color: columnStyles[col]?.color
+                                                                                    // Removed the columnStyles override so the colorful hex codes are forced
+                                                                                    backgroundColor: color.titleBg,
+                                                                                    color: '#ffffff',
+                                                                                    borderBottom: `1px solid ${color.borderColor}`,
+                                                                                    borderRight: idx < columns.length - 1 ? `1px solid ${color.borderColor}` : 'none'
                                                                                 }}
                                                                             >
-                                                                                {cellValue !== undefined && cellValue !== null
-                                                                                    ? (typeof cellValue === 'boolean' ? String(cellValue) : String(cellValue))
-                                                                                    : ''}
-                                                                            </td>
-                                                                        );
-                                                                    })}
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                );
+                                                                                {col}
+                                                                            </th>
+                                                                        ))}
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {gridData.map((row, rIdx) => (
+                                                                        <tr
+                                                                            key={rIdx}
+                                                                            className="transition-colors hover:brightness-95"
+                                                                            style={{
+                                                                                backgroundColor: color.rowBg,
+                                                                                borderTop: rIdx > 0 ? `1px solid ${color.borderColor}` : 'none'
+                                                                            }}
+                                                                        >
+                                                                            {columns.map((col, cIdx) => {
+                                                                                let cellValue = row[col];
+
+                                                                                if (typeof cellValue === 'object' && cellValue !== null) {
+                                                                                    cellValue = JSON.stringify(cellValue);
+                                                                                }
+
+                                                                                return (
+                                                                                    <td
+                                                                                        key={cIdx}
+                                                                                        className="px-4 py-3 text-gray-800 align-top whitespace-pre-wrap break-words min-w-[150px]"
+                                                                                        style={{ borderRight: cIdx < columns.length - 1 ? `1px solid ${color.borderColor}` : 'none' }}
+                                                                                    >
+                                                                                        {cellValue !== undefined && cellValue !== null && cellValue !== '' ? (
+                                                                                            typeof cellValue === 'boolean' ? (
+                                                                                                <span className="font-semibold">{String(cellValue)}</span>
+                                                                                            ) : (
+                                                                                                String(cellValue)
+                                                                                            )
+                                                                                        ) : (
+                                                                                            <span className="text-gray-400">—</span>
+                                                                                        )}
+                                                                                    </td>
+                                                                                );
+                                                                            })}
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    );
+                                                } catch (error) {
+                                                    return (
+                                                        <div className="text-red-600 p-3 bg-red-50 rounded border border-red-200">
+                                                            Invalid grid data: {error.message}
+                                                        </div>
+                                                    );
+                                                }
                                             })()}
                                         </div>
                                     ) : (
-                                        <p className="ml-4 break-words">{item.value}</p>
+                                        <p className="text-gray-800 break-words">{item.value}</p>
                                     )}
 
-                                    {item.remark && (
-                                        <div className="ml-4 mt-2 bg-gray-50 p-2 rounded">
-                                            <p className="text-sm text-gray-600">Remark:</p>
-                                            <p className="italic text-gray-700 break-words">
-                                                {item.remark}
-                                            </p>
+                                    {item.remark && item.remark.trim() !== '' && (
+                                        <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded-r shadow-sm">
+                                            <p className="text-xs font-medium text-yellow-800 mb-1">Remark</p>
+                                            <p className="text-gray-700 break-words whitespace-pre-wrap text-sm">{item.remark}</p>
                                         </div>
                                     )}
                                 </div>
@@ -401,7 +434,6 @@ export default function ApprovalPage() {
                     </div>
                 </div>
 
-                {/* Previous Approvals Section */}
                 {/* Previous Approvals Section */}
                 {groupedApprovals.length > 0 && (
                     <div className="mb-6 rounded-lg border bg-gray-50 p-5">
@@ -462,11 +494,11 @@ export default function ApprovalPage() {
 
                 {/* Approval Form */}
                 <div className="mb-4">
-                    <label className="block mb-2">Status</label>
+                    <label className="block mb-2 font-medium text-gray-700">Status</label>
                     <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        className="w-full border p-2 rounded"
+                        className="w-full border p-2 rounded focus:ring focus:ring-blue-200"
                     >
                         <option value="Approved">Approve</option>
                         <option value="Rejected">Reject</option>
@@ -474,18 +506,19 @@ export default function ApprovalPage() {
                 </div>
 
                 <div className="mb-4">
-                    <label className="block mb-2">Comments</label>
+                    <label className="block mb-2 font-medium text-gray-700">Comments</label>
                     <textarea
                         value={comments}
                         onChange={(e) => setComments(e.target.value)}
-                        className="w-full border p-2 rounded"
+                        className="w-full border p-2 rounded focus:ring focus:ring-blue-200"
                         rows="4"
+                        placeholder="Add your approval comments here..."
                     />
                 </div>
 
                 <button
                     onClick={handleApproval}
-                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                    className="bg-blue-500 text-white px-6 py-2 rounded font-medium hover:bg-blue-600 transition-colors shadow-sm"
                 >
                     Submit Approval
                 </button>

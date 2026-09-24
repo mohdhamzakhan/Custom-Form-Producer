@@ -1,7 +1,8 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
+
 export default function SubmissionDetails() {
     const { submissionId } = useParams();
     const navigate = useNavigate();
@@ -10,6 +11,31 @@ export default function SubmissionDetails() {
     const [formDefinition, setFormDefinition] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // Define the table colors ref and function
+    const tableColorsRef = useRef({});
+
+    const getTableColor = (fieldId) => {
+        const safeFieldId = fieldId || 'unknown';
+        if (!tableColorsRef.current[safeFieldId]) {
+            const colors = [
+                { titleBg: '#2563eb', rowBg: '#eff6ff', borderColor: '#bfdbfe' }, // blue
+                { titleBg: '#16a34a', rowBg: '#f0fdf4', borderColor: '#bbf7d0' }, // green
+                { titleBg: '#9333ea', rowBg: '#faf5ff', borderColor: '#e9d5ff' }, // purple
+                { titleBg: '#db2777', rowBg: '#fdf2f8', borderColor: '#fbcfe8' }, // pink
+                { titleBg: '#ca8a04', rowBg: '#fefce8', borderColor: '#fef08a' }, // yellow
+                { titleBg: '#4f46e5', rowBg: '#eef2ff', borderColor: '#c7d2fe' }, // indigo
+                { titleBg: '#dc2626', rowBg: '#fef2f2', borderColor: '#fecaca' }, // red
+                { titleBg: '#ea580c', rowBg: '#fff7ed', borderColor: '#fed7aa' }, // orange
+                { titleBg: '#0d9488', rowBg: '#f0fdfa', borderColor: '#99f6e4' }, // teal
+                { titleBg: '#0891b2', rowBg: '#ecfeff', borderColor: '#a5f3fc' }  // cyan
+            ];
+
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            tableColorsRef.current[safeFieldId] = randomColor;
+        }
+        return tableColorsRef.current[safeFieldId];
+    };
 
     // Fetch submission data on component mount
     useEffect(() => {
@@ -30,16 +56,13 @@ export default function SubmissionDetails() {
         fetchSubmissionDetails();
     }, [submissionId]);
 
-
     const getFieldLabel = (fieldId) => {
-        if (!formDefinition || !formDefinition.fields) return fieldId; // fallback to ID if not found
+        if (!formDefinition || !formDefinition.fields) return fieldId;
 
         const field = formDefinition.fields.find(f => f.id === fieldId);
-        return field ? field.label : fieldId; // if field is found, return label; else fallback to ID
+        return field ? field.label : fieldId;
     };
 
-    // Group submission data to combine values with remarks
-    // Group submission data to combine values with remarks
     const processSubmissionData = () => {
         if (!submission || !submission.submissionData) return [];
 
@@ -70,76 +93,54 @@ export default function SubmissionDetails() {
         }));
     };
 
-    // Check if value is a base64 image (signature)
-    // Check if value is a base64 image (signature) - MOVED FIRST
     const isBase64Image = (value) => {
-        // Handle non-string values
         if (!value) return false;
         if (typeof value !== 'string') {
-            console.log('❌ Not a string for image check, type:', typeof value);
             return false;
         }
-
-        console.log('🔍 Checking image:', value.substring(0, 50) + '...');
 
         const isImage = value.startsWith('data:image/png;base64,') ||
             value.startsWith('data:image/jpeg;base64,') ||
             value.startsWith('data:image/jpg;base64,');
 
-        console.log('✅ Is base64 image?', isImage);
         return isImage;
     };
 
     const isGridValue = (value) => {
-        // Handle non-string values
         if (!value) return false;
         if (typeof value !== 'string') {
-            console.log('❌ Not a string, type:', typeof value);
             return false;
         }
-
-        console.log('🔍 Checking grid:', value.substring(0, 100) + '...');
 
         try {
             const parsed = JSON.parse(value);
-
-            // Check if it's an array with at least one element
             if (Array.isArray(parsed) && parsed.length > 0) {
                 const firstRow = parsed[0];
-
-                // Check if first element is an object (not a primitive)
                 if (typeof firstRow === 'object' && firstRow !== null && !Array.isArray(firstRow)) {
-                    console.log('✅ Grid detected');
                     return true;
                 }
             }
-
-            console.log('❌ Not a grid structure');
             return false;
         } catch (e) {
-            console.log('❌ Not valid JSON');
             return false;
         }
     };
-    // Format date for display
+
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
         return date.toLocaleString();
     };
 
-    // Go back to the reports page
     const handleGoBack = () => {
         navigate(-1);
     };
 
-    // Print submission details
     const handlePrint = () => {
         window.print();
     };
 
     if (loading) return <LoadingDots />;
-
 
     if (error) {
         return <div className="text-red-500 text-center">{error}</div>;
@@ -149,70 +150,20 @@ export default function SubmissionDetails() {
         return <div className="text-center">Submission not found</div>;
     }
 
-    //const isGridValue = (value) => {
-    //    console.log(value)
-    //    try {
-    //        const parsed = JSON.parse(value);
-    //        return Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object';
-    //    } catch {
-    //        return false;
-    //    }
-    //};
-
     const getGridColumns = (gridData) => {
         if (!gridData || gridData.length === 0) return [];
-
-        // Get all unique column names from all rows
         const columnSet = new Set();
         gridData.forEach(row => {
             Object.keys(row).forEach(key => columnSet.add(key));
         });
-
         return Array.from(columnSet);
     };
-
-    // Normalize a stored color value: builder sometimes saves "#ffffff",
-    // sometimes just "ffffff". Make sure whatever we render always has a "#".
-    const normalizeColor = (color) => {
-        if (!color) return undefined;
-        return color.startsWith('#') ? color : `#${color}`;
-    };
-
-    // Look up the grid field definition (by label) in the form so we can pull
-    // each column's configured header/cell colors, same as the Form Builder.
-    const getGridColumnStyles = (gridLabel) => {
-        const styleMap = {};
-        if (!formDefinition || !formDefinition.fields) return styleMap;
-
-        const gridField = formDefinition.fields.find(
-            f => f.label === gridLabel && (f.type === 'grid' || f.type === 'questionGrid')
-        );
-        if (!gridField) return styleMap;
-
-        let columns = gridField.columns;
-        if ((!columns || !columns.length) && gridField.columnsJson) {
-            try {
-                columns = JSON.parse(gridField.columnsJson);
-            } catch {
-                columns = [];
-            }
-        }
-
-        (columns || []).forEach(col => {
-            styleMap[col.name] = {
-                backgroundColor: normalizeColor(col.backgroundColor),
-                color: normalizeColor(col.textColor)
-            };
-        });
-
-        return styleMap;
-    };
-
 
     const processedData = processSubmissionData();
 
     return (
-        <div className="max-w-1xl mx-auto p-6"> {/* FIXED: max-w-1xl → max-w-4xl */}
+        // FIXED 1: Removed max-w-4xl and added w-full for full page width
+        <div className="w-full px-4 sm:px-8 py-6 mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold">Submission Details</h1>
                 <div>
@@ -232,10 +183,10 @@ export default function SubmissionDetails() {
             </div>
 
             <div className="bg-white shadow-md rounded-lg p-6 mb-6">
-                <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 bg-gray-50 p-4 rounded-lg border">
                     <div>
                         <p className="text-sm text-gray-600">Submission ID</p>
-                        <p className="font-semibold">{submission.id}</p>
+                        <p className="font-semibold break-all">{submission.id}</p>
                     </div>
                     <div>
                         <p className="text-sm text-gray-600">Submitted At</p>
@@ -247,7 +198,7 @@ export default function SubmissionDetails() {
                     </div>
                 </div>
 
-                <h2 className="text-xl font-semibold mb-4">Submitted Data</h2>
+                <h2 className="text-xl font-semibold mb-4 border-b pb-2">Submitted Data</h2>
 
                 {processedData.map((item, index) => (
                     <div key={index} className="border-b pb-6 mb-6 last:border-b-0 last:mb-0">
@@ -255,15 +206,13 @@ export default function SubmissionDetails() {
                             <div className="w-full">
                                 <p className="text-sm text-gray-600 mb-2 font-medium">{item.label}</p>
 
-                                {/* ✅ FIXED: Check IMAGE FIRST, then GRID, then TEXT */}
                                 {isBase64Image(item.value) ? (
-                                    <div className="border-2 border-blue-200 rounded-lg p-4 bg-gradient-to-br from-blue-50 to-indigo-50">
+                                    <div className="border-2 border-blue-200 rounded-lg p-4 bg-gradient-to-br from-blue-50 to-indigo-50 inline-block">
                                         <img
                                             src={item.value}
                                             alt="Signature"
-                                            className="w-full h-auto max-h-96 object-contain rounded-lg shadow-lg mx-auto block"
+                                            className="w-full h-auto max-h-48 object-contain rounded-lg shadow-sm"
                                             onError={(e) => {
-                                                console.error('Image failed to load:', e);
                                                 e.target.style.display = 'none';
                                             }}
                                         />
@@ -272,27 +221,34 @@ export default function SubmissionDetails() {
                                         </p>
                                     </div>
                                 ) : isGridValue(item.value) ? (
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-x-auto w-full">
                                         {(() => {
                                             try {
                                                 const gridData = JSON.parse(item.value);
                                                 const columns = getGridColumns(gridData);
-                                                const columnStyles = getGridColumnStyles(item.label);
-                                                console.log('📊 Grid columns found:', columns);
-                                                console.log('📊 Grid rows:', gridData.length);
+                                                const color = getTableColor(item.label);
 
                                                 return (
-                                                    <div className="border border-gray-300 rounded-lg overflow-hidden">
-                                                        <table className="min-w-full divide-y divide-gray-200">
-                                                            <thead className="bg-gray-50">
+                                                    <div
+                                                        className="rounded-md border overflow-hidden w-full"
+                                                        style={{ borderColor: color.borderColor }}
+                                                    >
+                                                        <table className={`min-w-full text-sm ${columns.length >= 7 ? 'table-fixed' : ''}`}>
+                                                            <thead>
                                                                 <tr>
                                                                     {columns.map((col, idx) => (
                                                                         <th
                                                                             key={idx}
-                                                                            className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-r border-gray-200 last:border-r-0"
+                                                                            className="px-4 py-3 text-left font-semibold"
                                                                             style={{
-                                                                                backgroundColor: columnStyles[col]?.backgroundColor,
-                                                                                color: columnStyles[col]?.color
+                                                                                // Apply fixed width ratios ONLY when there are exactly 5 columns
+                                                                                width: columns.length === 5
+                                                                                    ? (idx === 0 ? '22%' : idx === 1 ? '38%' : '13.33%')
+                                                                                    : 'auto',
+                                                                                backgroundColor: color.titleBg,
+                                                                                color: '#ffffff',
+                                                                                borderBottom: `1px solid ${color.borderColor}`,
+                                                                                borderRight: idx < columns.length - 1 ? `1px solid ${color.borderColor}` : 'none'
                                                                             }}
                                                                         >
                                                                             {col}
@@ -300,20 +256,30 @@ export default function SubmissionDetails() {
                                                                     ))}
                                                                 </tr>
                                                             </thead>
-                                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                            <tbody>
                                                                 {gridData.map((row, rIdx) => (
-                                                                    <tr key={rIdx} className="hover:bg-gray-50">
+                                                                    <tr
+                                                                        key={rIdx}
+                                                                        className="transition-colors hover:brightness-95"
+                                                                        style={{
+                                                                            backgroundColor: color.rowBg,
+                                                                            borderTop: rIdx > 0 ? `1px solid ${color.borderColor}` : 'none'
+                                                                        }}
+                                                                    >
                                                                         {columns.map((col, cIdx) => {
                                                                             let cellValue = row[col];
 
-                                                                            // ✅ RENDER IMAGES IN GRID CELLS
                                                                             if (isBase64Image(cellValue)) {
                                                                                 return (
-                                                                                    <td key={cIdx} className="px-4 py-3 border-r border-gray-200 last:border-r-0">
+                                                                                    <td
+                                                                                        key={cIdx}
+                                                                                        className="px-4 py-3 align-top"
+                                                                                        style={{ borderRight: cIdx < columns.length - 1 ? `1px solid ${color.borderColor}` : 'none' }}
+                                                                                    >
                                                                                         <img
                                                                                             src={cellValue}
                                                                                             alt={`${col} image`}
-                                                                                            className="max-w-[200px] max-h-[100px] object-contain"
+                                                                                            className="max-w-[200px] max-h-[100px] object-contain bg-white p-1 rounded border"
                                                                                             onError={(e) => {
                                                                                                 e.target.style.display = 'none';
                                                                                                 e.target.nextSibling.style.display = 'block';
@@ -326,20 +292,16 @@ export default function SubmissionDetails() {
                                                                                 );
                                                                             }
 
-                                                                            // ✅ Handle nested objects or arrays
                                                                             if (typeof cellValue === 'object' && cellValue !== null) {
                                                                                 cellValue = JSON.stringify(cellValue);
                                                                             }
 
-                                                                            // Regular cell
                                                                             return (
                                                                                 <td
                                                                                     key={cIdx}
-                                                                                    className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200 last:border-r-0 whitespace-nowrap"
-                                                                                    style={{
-                                                                                        backgroundColor: columnStyles[col]?.backgroundColor,
-                                                                                        color: columnStyles[col]?.color || undefined
-                                                                                    }}
+                                                                                    // FIXED 3: Changed whitespace-nowrap to whitespace-pre-wrap and break-words
+                                                                                    className="px-4 py-3 text-gray-800 align-top whitespace-pre-wrap break-words min-w-[150px]"
+                                                                                    style={{ borderRight: cIdx < columns.length - 1 ? `1px solid ${color.borderColor}` : 'none' }}
                                                                                 >
                                                                                     {cellValue !== undefined && cellValue !== null && cellValue !== '' ? (
                                                                                         typeof cellValue === 'boolean' ? (
@@ -360,7 +322,6 @@ export default function SubmissionDetails() {
                                                     </div>
                                                 );
                                             } catch (error) {
-                                                console.error('Grid parse error:', error);
                                                 return (
                                                     <div className="text-red-600 p-3 bg-red-50 rounded border border-red-200">
                                                         Invalid grid data: {error.message}
@@ -381,7 +342,6 @@ export default function SubmissionDetails() {
                                 )}
                             </div>
 
-                            {/* Remark Display */}
                             {item.remark && item.remark.trim() !== '' && (
                                 <div className="w-full bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm">
                                     <p className="text-sm font-medium text-yellow-800 mb-2">Remark</p>

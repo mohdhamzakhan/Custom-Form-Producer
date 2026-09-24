@@ -72,6 +72,30 @@ export default function EnhancedReportViewer() {
         // Shift C: 11:00 PM to 6:00 AM next day
         return 'C';
     };
+    // Use useRef instead of useState to prevent infinite render loops
+    const tableColorsRef = useRef({});
+
+    const getTableColor = (fieldId) => {
+        const safeFieldId = fieldId || 'unknown';
+        if (!tableColorsRef.current[safeFieldId]) {
+            const colors = [
+                { titleBg: '#2563eb', rowBg: '#eff6ff', borderColor: '#bfdbfe' }, // blue (600/50/200)
+                { titleBg: '#16a34a', rowBg: '#f0fdf4', borderColor: '#bbf7d0' }, // green
+                { titleBg: '#9333ea', rowBg: '#faf5ff', borderColor: '#e9d5ff' }, // purple
+                { titleBg: '#db2777', rowBg: '#fdf2f8', borderColor: '#fbcfe8' }, // pink
+                { titleBg: '#ca8a04', rowBg: '#fefce8', borderColor: '#fef08a' }, // yellow
+                { titleBg: '#4f46e5', rowBg: '#eef2ff', borderColor: '#c7d2fe' }, // indigo
+                { titleBg: '#dc2626', rowBg: '#fef2f2', borderColor: '#fecaca' }, // red
+                { titleBg: '#ea580c', rowBg: '#fff7ed', borderColor: '#fed7aa' }, // orange
+                { titleBg: '#0d9488', rowBg: '#f0fdfa', borderColor: '#99f6e4' }, // teal
+                { titleBg: '#0891b2', rowBg: '#ecfeff', borderColor: '#a5f3fc' }  // cyan
+            ];
+
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            tableColorsRef.current[safeFieldId] = randomColor;
+        }
+        return tableColorsRef.current[safeFieldId];
+    };
 
     console.log('🚀 REPORT VIEWER LOADED - calculatedFields:', calculatedFields);
 
@@ -959,22 +983,57 @@ export default function EnhancedReportViewer() {
                 if (gridDisplayMode === 'form' && template?.enableGridFormView !== false) {
                     return renderGridAsFormLayout(parsed, field);
                 }
+
+                // Extract a unique identifier for the field to apply a consistent color
+                const fId = typeof field === 'object' ? (field.id || field.label) : field;
+                const color = getTableColor(fId);
+
                 return (
-                    <table className="mini-grid-table">
-                        <thead>
-                            <tr>{getUnionColumns(parsed).map((col, i) => <th key={i}>{col}</th>)}</tr>
-                        </thead>
-                        <tbody>
-                            {parsed.map((row, ri) => (
-                                <tr key={ri}>
-                                    {getUnionColumns(parsed).map((col, ci) => {
-                                        const cell = row[col];
-                                        return <td key={ci}>{typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : (cell ?? "—")}</td>;
-                                    })}
+                    <div
+                        className="rounded-md border overflow-hidden w-full"
+                        style={{ borderColor: color.borderColor }}
+                    >
+                        <table className="mini-grid-table w-full text-sm">
+                            <thead>
+                                <tr>
+                                    {getUnionColumns(parsed).map((col, i) => (
+                                        <th
+                                            key={i}
+                                            style={{
+                                                backgroundColor: color.titleBg,
+                                                color: '#ffffff', // Changed to white text
+                                                borderBottom: `1px solid ${color.borderColor}`
+                                            }}
+                                            className="px-3 py-1.5 font-semibold text-left"
+                                        >
+                                            {col}
+                                        </th>
+                                    ))}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {parsed.map((row, ri) => (
+                                    <tr
+                                        key={ri}
+                                        style={{
+                                            backgroundColor: color.rowBg,
+                                            borderTop: ri > 0 ? `1px solid ${color.borderColor}` : 'none'
+                                        }}
+                                        className="transition-colors hover:brightness-95"
+                                    >
+                                        {getUnionColumns(parsed).map((col, ci) => {
+                                            const cell = row[col];
+                                            return (
+                                                <td key={ci} className="px-3 py-1.5 align-top text-gray-800">
+                                                    {typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : (cell ?? "—")}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 );
             }
         } catch { }
@@ -3216,7 +3275,11 @@ export default function EnhancedReportViewer() {
                                     {displayFields.map((field, j) => {
                                         const fLabel = typeof field === 'object' ? field.label : field;
                                         const fieldData = row.data?.find(d => d.fieldLabel === fLabel);
-                                        return <td key={j}>{formatCellValue(fieldData?.value, field)}</td>;
+                                        return (
+                                        <td key={j} style={{ verticalAlign: 'top', padding: '12px' }}>
+                                            {formatCellValue(fieldData?.value, field)}
+                                            </td>
+                                        );
                                     })}
                                 </tr>
                             ))}
@@ -4506,6 +4569,12 @@ html.dark-mode,
 }
 `;
 
+    const layoutStyles = `
+    .report-table td {
+        vertical-align: top !important;
+    }
+    `;
+
     const evaluateExpression = (expression, rowData, fields) => {
         try {
             let processedExpression = expression;
@@ -4876,7 +4945,7 @@ html.dark-mode,
 
     return (
         <>
-            <style>{loadingStyles + exportStyles + tooltipStyles}</style>
+            <style>{loadingStyles + exportStyles + tooltipStyles + layoutStyles}</style>
             <style>{shiftChartStyles + maximizeStyles + darkModeStyles}</style>
             <div
                 className={`report-viewer-wrapper ${isDarkMode ? 'dark-mode' : 'light-mode'}`}
@@ -5124,7 +5193,7 @@ html.dark-mode,
                                     borderRadius: '8px',
                                     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                                     padding: '10px',
-                                    zIndex: 20,
+                                    zIndex: 1000,
                                     minWidth: '180px'
                                 }}>
                                     <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: '#6b7280' }}>
