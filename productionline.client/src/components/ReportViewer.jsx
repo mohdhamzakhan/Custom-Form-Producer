@@ -52,6 +52,7 @@ export default function EnhancedReportViewer() {
     const [forms, setForms] = useState([]);
     const retryTimeoutRef = useRef(null);
     const [groupBySubmission, setGroupBySubmission] = useState(true);
+    const [mergeGridColumns, setMergeGridColumns] = useState(false);
     // How grid-type answers are rendered in this report: 'compact' = the existing
     // mini data table; 'form' = each grid row rendered as its own labeled block,
     // matching how the grid looks when someone fills out the form.
@@ -189,7 +190,8 @@ export default function EnhancedReportViewer() {
                     id: f.fieldId || f.id,
                     label: f.fieldLabel || f.label,
                     type: f.type || "text",
-                    visible: f.visible || false
+                    visible: f.visible || false,
+                    formId: f.formId ?? null
                 }));
 
                 console.log("Resolved", resolvedFields)
@@ -761,6 +763,18 @@ export default function EnhancedReportViewer() {
         return reportData.filter(row => String(row.formId) === String(activeFormTab));
     }, [reportData, multiPageEnabled, activeFormTab]);
 
+    // When Multi Page output is on, don't show a form's columns on another
+    // form's tab. A field with no formId is treated as shared (e.g. common
+    // fields) and stays visible on every tab.
+    const tabScopedFields = useMemo(() => {
+        if (!multiPageEnabled || activeFormTab === null) return selectedFields;
+        return selectedFields.filter(f => {
+            const formId = typeof f === 'object' ? f.formId : null;
+            return formId === null || formId === undefined || String(formId) === String(activeFormTab);
+        });
+    }, [selectedFields, multiPageEnabled, activeFormTab]);
+
+
     const dashboardReportData = useMemo(() => {
         if (dashboardFormFilter === 'all') return formTabReportData;
         return formTabReportData.filter(row => String(row.formId) === String(dashboardFormFilter));
@@ -799,6 +813,91 @@ export default function EnhancedReportViewer() {
         return fields.find(f => f.label === label && (f.type === 'grid' || f.type === 'questionGrid')) || null;
     };
 
+    // Parses a report cell value as a grid (array of row-objects) if possible.
+    // Handles the occasional double-encoded value (a JSON string containing
+    // another JSON string) the same way formatCellValue does.
+    const tryParseGridArray = (value) => {
+        if (!value || typeof value !== 'string') return null;
+        try {
+            let parsed = JSON.parse(value);
+            if (typeof parsed === 'string') {
+                try { parsed = JSON.parse(parsed); } catch { }
+            }
+            if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+                return parsed;
+            }
+        } catch { }
+        return null;
+    };
+
+    // Union of every key seen across all rows of a grid array, in first-seen
+    // order. Using only the first row's keys misses columns that only show
+    // up on later rows (sparse rows, or rows merged in from another grid).
+    const getUnionColumns = (parsed) => {
+        const seen = [];
+        const set = new Set();
+        (parsed || []).forEach(row => {
+            Object.keys(row || {}).forEach(k => {
+                if (!set.has(k)) { set.add(k); seen.push(k); }
+            });
+        });
+        return seen;
+    };
+
+    // When "Merge Grid Columns" is on and a report shows one row per
+    // submission, combine every grid-type field's rows into a single virtual
+    // grid field. Columns with the exact same header text (e.g. "question"
+    // in one grid and "question" in another) line up under one column;
+    // anything named differently just becomes its own column, populated only
+    // for the rows that have it.
+    const mergeGridFieldsForDisplay = (rows, fieldsList) => {
+        const gridFields = fieldsList.filter(f => {
+            const label = typeof f === 'object' ? f.label : f;
+            return rows.some(r => tryParseGridArray(r.data?.find(d => d.fieldLabel === label)?.value));
+        });
+
+        if (gridFields.length < 2) {
+            return { mergedFields: fieldsList, mergedRows: rows };
+        }
+
+        const gridLabels = new Set(gridFields.map(f => (typeof f === 'object' ? f.label : f)));
+        const firstGridIndex = fieldsList.findIndex(f => gridLabels.has(typeof f === 'object' ? f.label : f));
+
+        const mergedField = {
+            id: '__merged_grid__',
+            label: 'Combined Grid',
+            type: 'grid',
+            visible: true,
+            merged: true
+        };
+
+        const mergedFields = [
+            ...fieldsList.slice(0, firstGridIndex).filter(f => !gridLabels.has(typeof f === 'object' ? f.label : f)),
+            mergedField,
+            ...fieldsList.slice(firstGridIndex).filter(f => !gridLabels.has(typeof f === 'object' ? f.label : f))
+        ];
+
+        const mergedRows = rows.map(row => {
+            const combinedArray = [];
+            gridFields.forEach(f => {
+                const label = typeof f === 'object' ? f.label : f;
+                const parsed = tryParseGridArray(row.data?.find(d => d.fieldLabel === label)?.value);
+                if (parsed) combinedArray.push(...parsed);
+            });
+
+            const newData = (row.data || []).filter(d => !gridLabels.has(d.fieldLabel));
+            newData.push({
+                fieldLabel: mergedField.label,
+                value: JSON.stringify(combinedArray),
+                visible: true
+            });
+
+            return { ...row, data: newData };
+        });
+
+        return { mergedFields, mergedRows };
+    };
+
     const normalizeColor = (color) => {
         if (!color) return undefined;
         return color.startsWith('#') ? color : `#${color}`;
@@ -811,7 +910,7 @@ export default function EnhancedReportViewer() {
         const gridFieldDef = resolveGridFieldDef(field);
         const columns = gridFieldDef?.columns?.length
             ? gridFieldDef.columns
-            : Object.keys(parsed[0] || {}).map(name => ({ name }));
+            : getUnionColumns(parsed).map(name => ({ name }));
 
         return (
             <div className="grid-form-layout">
@@ -863,12 +962,15 @@ export default function EnhancedReportViewer() {
                 return (
                     <table className="mini-grid-table">
                         <thead>
-                            <tr>{Object.keys(parsed[0]).map((col, i) => <th key={i}>{col}</th>)}</tr>
+                            <tr>{getUnionColumns(parsed).map((col, i) => <th key={i}>{col}</th>)}</tr>
                         </thead>
                         <tbody>
                             {parsed.map((row, ri) => (
                                 <tr key={ri}>
-                                    {Object.values(row).map((cell, ci) => <td key={ci}>{typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : (cell ?? "—")}</td>)}
+                                    {getUnionColumns(parsed).map((col, ci) => {
+                                        const cell = row[col];
+                                        return <td key={ci}>{typeof cell === 'object' && cell !== null ? JSON.stringify(cell) : (cell ?? "—")}</td>;
+                                    })}
                                 </tr>
                             ))}
                         </tbody>
@@ -1052,9 +1154,10 @@ export default function EnhancedReportViewer() {
             // Add headers
             const headers = visibleFields.map(fieldId => {
                 const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                const fallbackLabel = typeof fieldId === 'object' ? (fieldId.label || fieldId.id) : fieldId;
                 const cleanedLabel = field?.label?.includes("→")
                     ? field.label.split("→").pop().trim()
-                    : field?.label || fieldId;
+                    : field?.label || fallbackLabel;
                 return cleanedLabel;
             });
 
@@ -1386,14 +1489,30 @@ export default function EnhancedReportViewer() {
                             onClick={() => setViewMode("expanded")}
                             className={viewMode === 'expanded' ? 'active' : ''}
                         >
-                            📋 Grouped
+                            📑 Expanded
                         </button>
                         <button
                             onClick={() => setViewMode("grouped")}
                             className={viewMode === 'grouped' ? 'active' : ''}
                         >
-                            📑 Expanded
+                            📋 Grouped
                         </button>
+                        <button
+                            onClick={() => setGroupBySubmission(v => !v)}
+                            title="When on, submissions sharing the same key are merged into one row and differing values are joined together"
+                            className={groupBySubmission ? 'active' : ''}
+                        >
+                            {groupBySubmission ? '🧩 Grouped by Submission' : '📄 One Row per Submission'}
+                        </button>
+                        {!groupBySubmission && (
+                            <button
+                                onClick={() => setMergeGridColumns(v => !v)}
+                                title="Combine every grid field's rows into one column, lining up columns with the exact same header name"
+                                className={mergeGridColumns ? 'active' : ''}
+                            >
+                                {mergeGridColumns ? '🔗 Grid Columns Merged' : '🔀 Merge Grid Columns'}
+                            </button>
+                        )}
                     </>
                 )}
 
@@ -1456,7 +1575,10 @@ export default function EnhancedReportViewer() {
         }
 
         console.log('📊 Using FLAT view - WILL SHOW SUMMARY ROWS');
-        return renderExpandedTableWithSummary(filteredReportData, summaryRows, selectedFields, fields);
+        const { mergedFields, mergedRows } = mergeGridColumns
+            ? mergeGridFieldsForDisplay(filteredReportData, tabScopedFields)
+            : { mergedFields: tabScopedFields, mergedRows: filteredReportData };
+        return renderExpandedTableWithSummary(mergedRows, summaryRows, mergedFields, fields);
     };
     const [activeTooltip, setActiveTooltip] = useState(null);
     const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -1536,7 +1658,7 @@ export default function EnhancedReportViewer() {
         console.log('Total submissions:', submissions.length);
         console.log('📊 summaryRows:', summaryRows);
 
-        const visibleFields = selectedFields.filter(fieldId => {
+        const visibleFields = tabScopedFields.filter(fieldId => {
             if (typeof fieldId === 'object') {
                 return fieldId.visible !== false;
             }
@@ -1579,9 +1701,10 @@ export default function EnhancedReportViewer() {
                             <tr>
                                 {visibleFields.map((fieldId, i) => {
                                     const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                    const fallbackLabel = typeof fieldId === 'object' ? (fieldId.label || fieldId.id) : fieldId;
                                     const cleanedLabel = field?.label?.includes("→")
                                         ? field.label.split("→").pop().trim()
-                                        : field?.label || fieldId;
+                                        : field?.label || fallbackLabel;
                                     return (
                                         <th key={i} style={{
                                             border: '1px solid #ccc',
@@ -1818,7 +1941,7 @@ export default function EnhancedReportViewer() {
             grouped[row.submissionId].push(row);
         });
 
-        const visibleFields = selectedFields.filter(field => {
+        const visibleFields = tabScopedFields.filter(field => {
             if (typeof field === 'object') {
                 return field.visible !== false;
             }
@@ -3065,9 +3188,10 @@ export default function EnhancedReportViewer() {
                             <tr>
                                 {visibleFields.map((fieldId, i) => {
                                     const field = fields.find(f => f.id === (fieldId.id || fieldId));
+                                    const fallbackLabel = typeof fieldId === 'object' ? (fieldId.label || fieldId.id) : fieldId;
                                     const cleanedLabel = field?.label?.includes("→")
                                         ? field.label.split("→").pop().trim()
-                                        : field?.label || fieldId;
+                                        : field?.label || fallbackLabel;
                                     return (
                                         <th key={i} style={{
                                             border: '1px solid #ccc',
