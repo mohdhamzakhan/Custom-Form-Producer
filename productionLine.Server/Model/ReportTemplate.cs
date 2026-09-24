@@ -80,6 +80,12 @@ namespace productionLine.Server.Model
         [Column("ENABLEGRIDFORMVIEW", TypeName = "NUMBER(1)")]
         public bool EnableGridFormView { get; set; } = true;
 
+        // JSON-serialized Dictionary<string,string> of { formId: aliasName }.
+        // Lets a multi-form report show a friendlier name per form than the
+        // form's own name, everywhere that form name is displayed.
+        [Column("FORMALIASES")]
+        public string? FormAliases { get; set; }
+
     }
 
     [Table("FF_REPORTFIELD")]

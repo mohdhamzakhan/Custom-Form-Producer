@@ -15,6 +15,7 @@ public class ReportTemplateDto
     public string? LayoutMode { get; set; }
     public string? OutputMode { get; set; } // "single" | "multipage"
     public bool EnableGridFormView { get; set; } = true;
+    public Dictionary<string, string>? FormAliases { get; set; } // { formId: aliasName }
     public List<ReportFieldDto> Fields { get; set; }
     public List<ReportFilterDto> Filters { get; set; }
     public List<CalculatedField> CalculatedFields { get; set; }     // ✅ NEW

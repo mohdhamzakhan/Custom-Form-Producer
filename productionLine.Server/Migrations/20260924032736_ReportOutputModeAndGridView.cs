@@ -10,18 +10,10 @@ namespace productionLine.Server.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "ENABLEGRIDFORMVIEW",
-                table: "FF_REPORTTEMPLATE",
-                type: "NUMBER(1)",
-                nullable: false,
-                defaultValue: 0);
-
             migrationBuilder.AddColumn<string>(
-                name: "OUTPUTMODE",
+                name: "FORMALIASES",
                 table: "FF_REPORTTEMPLATE",
-                type: "NVARCHAR2(20)",
-                maxLength: 20,
+                type: "NVARCHAR2(2000)",
                 nullable: true);
         }
 
@@ -29,11 +21,7 @@ namespace productionLine.Server.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "ENABLEGRIDFORMVIEW",
-                table: "FF_REPORTTEMPLATE");
-
-            migrationBuilder.DropColumn(
-                name: "OUTPUTMODE",
+                name: "FORMALIASES",
                 table: "FF_REPORTTEMPLATE");
         }
     }

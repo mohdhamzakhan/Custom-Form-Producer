@@ -12,7 +12,7 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    [Migration("20260923085227_ReportOutputModeAndGridView")]
+    [Migration("20260924032736_ReportOutputModeAndGridView")]
     partial class ReportOutputModeAndGridView
     {
         /// <inheritdoc />
@@ -1625,6 +1625,10 @@ namespace productionLine.Server.Migrations
                     b.Property<bool>("EnableGridFormView")
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("ENABLEGRIDFORMVIEW");
+
+                    b.Property<string>("FormAliases")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("FORMALIASES");
 
                     b.Property<int>("FormId")
                         .HasColumnType("NUMBER(10)")

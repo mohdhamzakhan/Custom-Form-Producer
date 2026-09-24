@@ -1623,6 +1623,10 @@ namespace productionLine.Server.Migrations
                         .HasColumnType("NUMBER(1)")
                         .HasColumnName("ENABLEGRIDFORMVIEW");
 
+                    b.Property<string>("FormAliases")
+                        .HasColumnType("NVARCHAR2(2000)")
+                        .HasColumnName("FORMALIASES");
+
                     b.Property<int>("FormId")
                         .HasColumnType("NUMBER(10)")
                         .HasColumnName("FORMID");

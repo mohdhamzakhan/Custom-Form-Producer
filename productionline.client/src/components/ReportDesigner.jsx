@@ -188,6 +188,7 @@ export default function EnhancedReportDesigner() {
     const [multiFormMode, setMultiFormMode] = useState(false);
     const [selectedForms, setSelectedForms] = useState([]); // Array of form IDs
     const [formFieldMappings, setFormFieldMappings] = useState({}); // { formId: { fields: [], selectedFields: [] } }
+    const [formAliases, setFormAliases] = useState({}); // { formId: "Friendly name" }
 
     // ✅ NEW: Form relationships state
     const [relationships, setRelationships] = useState([]);
@@ -206,11 +207,15 @@ export default function EnhancedReportDesigner() {
     const [submittedViewers, setSubmittedViewers] = useState([]);
 
     const [layoutMode, setLayoutMode] = useState("horizontal");
-    // "single" = all forms' data combined into one report (existing behaviour).
-    // "multipage" = one tab per form in the Report Viewer.
+
+    // ✅ NEW: "single" = every form's data combined into one report (existing
+    // behaviour). "multipage" = one tab per form in the Report Viewer, with a
+    // checkbox filter to choose which form tabs are visible.
     const [outputMode, setOutputMode] = useState("single");
-    // Lets the Report Viewer offer the "Grid: Compact / Grid: Form Layout" toggle.
+    // ✅ NEW: whether the Report Viewer offers the "Grid: Compact / Grid: Form
+    // Layout" toggle for grid-type answers.
     const [enableGridFormView, setEnableGridFormView] = useState(true);
+
     const toggleExpand = (rowIdx) => {
         setExpandedSubmissions((prev) =>
             prev.includes(rowIdx)
@@ -292,16 +297,6 @@ export default function EnhancedReportDesigner() {
                 if (field.columnJson) {
                     try {
                         const columns = JSON.parse(field.columnJson);
-                        // Also offer the grid as a single field so a submission's grid rows
-                        // can be shown nested (mini-table / Form Layout) instead of exploded
-                        // into one report row per grid row.
-                        expandedFields.push({
-                            id: field.id,
-                            label: field.label,
-                            type: 'grid',
-                            isWholeGrid: true,
-                            formId: formId,
-                        });
                         columns.forEach((col) => {
                             expandedFields.push({
                                 id: `${field.id}:${col.id}`,
@@ -348,6 +343,11 @@ export default function EnhancedReportDesigner() {
         setRelationships(prev => prev.filter(
             r => r.sourceFormId !== formId && r.targetFormId !== formId
         ));
+        setFormAliases(prev => {
+            const next = { ...prev };
+            delete next[formId];
+            return next;
+        });
     };
     // ✅ NEW: Get all fields from all selected forms (for multi-form mode)
     const getAllFields = () => {
@@ -400,7 +400,8 @@ export default function EnhancedReportDesigner() {
                 setTemplateName(data.name || '');
                 setLayoutMode(data.layoutMode || 'horizontal')
                 setOutputMode(data.outputMode || 'single');
-                setEnableGridFormView(data.enableGridFormView ?? true);
+                setEnableGridFormView(data.enableGridFormView !== undefined ? data.enableGridFormView : true);
+                setFormAliases(data.formAliases || {});
 
                 // Determine form IDs
                 const formIds = data.formIds || (data.formId ? [data.formId] : []);
@@ -438,17 +439,6 @@ export default function EnhancedReportDesigner() {
                                 if (field.columnJson) {
                                     try {
                                         const columns = JSON.parse(field.columnJson);
-                                        // Also offer the grid as a single field so a submission's grid rows
-                                        // can be shown nested (mini-table / Form Layout) instead of exploded
-                                        // into one report row per grid row.
-                                        expandedFields.push({
-                                            id: field.id,
-                                            label: field.label,
-                                            type: 'grid',
-                                            isWholeGrid: true,
-                                            formId: formId,
-                                            originalLabel: field.label,
-                                        });
                                         columns.forEach(col => {
                                             expandedFields.push({
                                                 id: `${field.id}:${col.id}`,
@@ -514,15 +504,6 @@ export default function EnhancedReportDesigner() {
                                 if (field.columnJson) {
                                     try {
                                         const columns = JSON.parse(field.columnJson);
-                                        // Also offer the grid as a single field so a submission's grid rows
-                                        // can be shown nested (mini-table / Form Layout) instead of exploded
-                                        // into one report row per grid row.
-                                        expandedFields.push({
-                                            id: field.id,
-                                            label: field.label,
-                                            type: 'grid',
-                                            isWholeGrid: true,
-                                        });
                                         columns.forEach(col => {
                                             expandedFields.push({
                                                 id: `${field.id}:${col.id}`,
@@ -746,15 +727,6 @@ export default function EnhancedReportDesigner() {
                     if (field.columnJson) {
                         try {
                             const columns = JSON.parse(field.columnJson);
-                            // Also offer the grid as a single field so a submission's grid rows
-                            // can be shown nested (mini-table / Form Layout) instead of exploded
-                            // into one report row per grid row.
-                            expandedFields.push({
-                                id: field.id,
-                                label: field.label,
-                                type: 'grid',
-                                isWholeGrid: true,
-                            });
                             columns.forEach((col) => {
                                 expandedFields.push({
                                     id: `${field.id}:${col.id}`,
@@ -801,15 +773,6 @@ export default function EnhancedReportDesigner() {
                 if (field.columnJson) {
                     try {
                         const columns = JSON.parse(field.columnJson);
-                        // Also offer the grid as a single field so a submission's grid rows
-                        // can be shown nested (mini-table / Form Layout) instead of exploded
-                        // into one report row per grid row.
-                        expandedFields.push({
-                            id: field.id,
-                            label: field.label,
-                            type: 'grid',
-                            isWholeGrid: true,
-                        });
                         columns.forEach((col) => {
                             expandedFields.push({
                                 id: `${field.id}:${col.id}`,
@@ -980,8 +943,9 @@ export default function EnhancedReportDesigner() {
                 };
             }),
             LayoutMode: layoutMode,
-            OutputMode: outputMode,
+            OutputMode: multiFormMode ? outputMode : "single",
             EnableGridFormView: enableGridFormView,
+            FormAliases: multiFormMode ? formAliases : null,
             Filters: filtersToSave,
             CalculatedFields: calculatedFields.map(c => ({
                 calculationType: c.calculationType || "aggregate",
@@ -1966,9 +1930,6 @@ export default function EnhancedReportDesigner() {
             IncludeApprovals: options.includeApprovals,
             IncludeRemarks: options.includeRemarks,
             SharedWithRole: selectedUsers.length > 0 ? JSON.stringify(selectedUsers) : null,
-            LayoutMode: layoutMode,
-            OutputMode: outputMode,
-            EnableGridFormView: enableGridFormView,
             Fields: activeSelectedFields.map((fieldId, index) => {
                 const field = activeFields.find(f => f.id === fieldId);
                 return {
@@ -1979,6 +1940,10 @@ export default function EnhancedReportDesigner() {
                     visible: field.visible
                 };
             }),
+            LayoutMode: layoutMode,
+            OutputMode: multiFormMode ? outputMode : "single",
+            EnableGridFormView: enableGridFormView,
+            FormAliases: multiFormMode ? formAliases : null,
             Filters: filtersToSave,
             CalculatedFields: calculatedFields.map(c => ({
                 calculationType: c.calculationType || "aggregate",
@@ -2132,17 +2097,28 @@ export default function EnhancedReportDesigner() {
                                         const form = forms.find(f => f.id === formId);
                                         const fieldCount = formFieldMappings[formId]?.selectedFields?.length || 0;
                                         return (
-                                            <div key={formId} className="flex items-center justify-between p-2 bg-blue-50 rounded">
-                                                <div>
-                                                    <div className="font-medium text-sm">{form?.name || `Form ${formId}`}</div>
-                                                    <div className="text-xs text-gray-500">{fieldCount} fields selected</div>
+                                            <div key={formId} className="p-2 bg-blue-50 rounded">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <div className="font-medium text-sm">{form?.name || `Form ${formId}`}</div>
+                                                        <div className="text-xs text-gray-500">{fieldCount} fields selected</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeFormFromSelection(formId)}
+                                                        className="text-red-500 hover:text-red-700"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    onClick={() => removeFormFromSelection(formId)}
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
+                                                <input
+                                                    type="text"
+                                                    value={formAliases[formId] || ""}
+                                                    onChange={(e) =>
+                                                        setFormAliases(prev => ({ ...prev, [formId]: e.target.value }))
+                                                    }
+                                                    placeholder={`Alias for "${form?.name || `Form ${formId}`}" (optional)`}
+                                                    className="w-full mt-2 border p-1.5 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                />
                                             </div>
                                         );
                                     })}
@@ -2650,57 +2626,68 @@ export default function EnhancedReportDesigner() {
                                         </p>
                                     </div>
                                 )}
-
-                                {multiFormMode && (
-                                    <div className="mt-6 pt-6 border-t">
-                                        <h4 className="text-sm font-semibold mb-2">Output Mode</h4>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <label className="flex items-center cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    value="single"
-                                                    checked={outputMode === "single"}
-                                                    onChange={(e) => setOutputMode(e.target.value)}
-                                                    className="mr-2"
-                                                />
-                                                <span>Single Page</span>
-                                                <span className="text-sm text-gray-500 ml-2">
-                                                    All forms' submissions pooled together
-                                                </span>
-                                            </label>
-
-                                            <label className="flex items-center cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    value="multipage"
-                                                    checked={outputMode === "multipage"}
-                                                    onChange={(e) => setOutputMode(e.target.value)}
-                                                    className="mr-2"
-                                                />
-                                                <span>Multi Page (Tabs)</span>
-                                                <span className="text-sm text-gray-500 ml-2">
-                                                    One tab per form in the Report Viewer, with a form filter
-                                                </span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="mt-6 pt-6 border-t">
-                                    <label className="flex items-center cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={enableGridFormView}
-                                            onChange={(e) => setEnableGridFormView(e.target.checked)}
-                                            className="mr-2"
-                                        />
-                                        <span>Allow "Grid: Form Layout" view</span>
-                                        <span className="text-sm text-gray-500 ml-2">
-                                            Lets viewers switch grid answers between a compact table and a form-style layout
-                                        </span>
-                                    </label>
-                                </div>
                             </div>
+
+                            {multiFormMode && (
+                                <div className="mb-6 bg-white p-6 rounded-lg shadow">
+                                    <h3 className="text-lg font-semibold mb-4">Output Mode</h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <label className="flex items-center cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                value="single"
+                                                checked={outputMode === "single"}
+                                                onChange={(e) => setOutputMode(e.target.value)}
+                                                className="mr-2"
+                                            />
+                                            <span>Single Page</span>
+                                            <span className="text-sm text-gray-500 ml-2">
+                                                All forms combined into one report
+                                            </span>
+                                        </label>
+
+                                        <label className="flex items-center cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                value="multipage"
+                                                checked={outputMode === "multipage"}
+                                                onChange={(e) => setOutputMode(e.target.value)}
+                                                className="mr-2"
+                                            />
+                                            <span>Multi Page</span>
+                                            <span className="text-sm text-gray-500 ml-2">
+                                                One tab per form, with a form filter
+                                            </span>
+                                        </label>
+                                    </div>
+                                    {outputMode === "multipage" && (
+                                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                                            <p className="text-sm text-blue-800">
+                                                💡 In the Report Viewer, each form gets its own tab. A checkbox filter lets
+                                                the viewer choose which form tabs are shown.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="mb-6 bg-white p-6 rounded-lg shadow">
+                                <h3 className="text-lg font-semibold mb-4">Grid Display</h3>
+                                <label className="flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={enableGridFormView}
+                                        onChange={(e) => setEnableGridFormView(e.target.checked)}
+                                        className="mr-2"
+                                    />
+                                    <span>Allow "Grid: Form Layout" view in Report Viewer</span>
+                                </label>
+                                <p className="text-sm text-gray-500 mt-1 ml-6">
+                                    When enabled, viewers can switch grid answers between a compact table and a
+                                    row-by-row layout that matches how the grid looks on the form itself.
+                                </p>
+                            </div>
+
                             {multiFormMode && selectedForms.length > 0 && (
                                 <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
                                     <h4 className="font-medium text-sm mb-2">Selected Forms:</h4>

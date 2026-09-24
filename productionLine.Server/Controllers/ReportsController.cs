@@ -1405,6 +1405,9 @@ namespace productionLine.Server.Controllers
                     template.LayoutMode = dto.LayoutMode;
                     template.OutputMode = string.IsNullOrWhiteSpace(dto.OutputMode) ? "single" : dto.OutputMode;
                     template.EnableGridFormView = dto.EnableGridFormView;
+                    template.FormAliases = dto.FormAliases?.Any() == true
+                        ? JsonSerializer.Serialize(dto.FormAliases, jsonOptions)
+                        : null;
 
                     // ✅ NEW: Save submitted viewers
                     template.SubmittedViewers = dto.SubmittedViewers?.Any() == true
@@ -1465,6 +1468,9 @@ namespace productionLine.Server.Controllers
                         LayoutMode = dto.LayoutMode,
                         OutputMode = string.IsNullOrWhiteSpace(dto.OutputMode) ? "single" : dto.OutputMode,
                         EnableGridFormView = dto.EnableGridFormView,
+                        FormAliases = dto.FormAliases?.Any() == true
+                            ? JsonSerializer.Serialize(dto.FormAliases, jsonOptions)
+                            : null,
 
                         // ✅ NEW: Save submitted viewers
                         SubmittedViewers = dto.SubmittedViewers?.Any() == true
@@ -1914,9 +1920,24 @@ namespace productionLine.Server.Controllers
                 template.Fields.First(f => f.FieldLabel == k).Order
             ).ToList();
 
+            Dictionary<string, string> formAliases = null;
+            if (!string.IsNullOrEmpty(template.FormAliases))
+            {
+                try { formAliases = JsonSerializer.Deserialize<Dictionary<string, string>>(template.FormAliases); }
+                catch { formAliases = null; }
+            }
+
             var formNames = new Dictionary<int, string>();
             foreach (var formId in formFieldMappings.Keys)
             {
+                string alias = formAliases != null && formAliases.TryGetValue(formId.ToString(), out var a) && !string.IsNullOrWhiteSpace(a)
+                    ? a
+                    : null;
+                if (alias != null)
+                {
+                    formNames[formId] = alias;
+                    continue;
+                }
                 var form = _context.Forms.FirstOrDefault(f => f.Id == formId);
                 if (form != null) formNames[formId] = form.Name;
             }
@@ -1976,9 +1997,24 @@ namespace productionLine.Server.Controllers
 
             // Needed so multi-form reports can tag each row with which form it
             // came from (used by the Report Viewer's per-form filter/tabs).
+            Dictionary<string, string> formAliases = null;
+            if (!string.IsNullOrEmpty(template.FormAliases))
+            {
+                try { formAliases = JsonSerializer.Deserialize<Dictionary<string, string>>(template.FormAliases); }
+                catch { formAliases = null; }
+            }
+
             var formNames = new Dictionary<int, string>();
             foreach (var formId in formFieldMappings.Keys)
             {
+                string alias = formAliases != null && formAliases.TryGetValue(formId.ToString(), out var a) && !string.IsNullOrWhiteSpace(a)
+                    ? a
+                    : null;
+                if (alias != null)
+                {
+                    formNames[formId] = alias;
+                    continue;
+                }
                 var form = _context.Forms.FirstOrDefault(f => f.Id == formId);
                 if (form != null) formNames[formId] = form.Name;
             }
@@ -2353,6 +2389,9 @@ namespace productionLine.Server.Controllers
                     layoutMode = template.LayoutMode,
                     outputMode = string.IsNullOrEmpty(template.OutputMode) ? "single" : template.OutputMode,
                     enableGridFormView = template.EnableGridFormView,
+                    formAliases = string.IsNullOrEmpty(template.FormAliases)
+                        ? new Dictionary<string, string>()
+                        : JsonSerializer.Deserialize<Dictionary<string, string>>(template.FormAliases),
                     formIds = formIds,
                     isMultiForm = template.IsMultiForm,
                     fields = template.Fields.Select(f => new
