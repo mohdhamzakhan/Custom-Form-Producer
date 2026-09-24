@@ -53,6 +53,7 @@ namespace productionLine.Server.Controllers
                 var claims = new List<Claim>
                 {
                     new Claim(ClaimTypes.Name, request.Username),
+                    new Claim("displayName", userPrincipal.DisplayName ?? request.Username),
                     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
                 };
 
@@ -77,9 +78,10 @@ namespace productionLine.Server.Controllers
 
                 return Ok(new
                 {
-                    Token = tokenString,
-                    Username = request.Username,
-                    Groups = groups
+                    token = tokenString,
+                    username = request.Username,
+                    displayName = userPrincipal.DisplayName ?? request.Username,
+                    groups = groups
                 });
             }
         }

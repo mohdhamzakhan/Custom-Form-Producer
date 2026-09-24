@@ -45,7 +45,7 @@ function LoginPage() {
                 const userData = {
                     username: data.username || username,
                     groups: data.groups || [],
-                    name: data.username || username,
+                    name: data.displayName || data.username || username,
                     expiry: expiry // 👈 added expiry
                 };
 
