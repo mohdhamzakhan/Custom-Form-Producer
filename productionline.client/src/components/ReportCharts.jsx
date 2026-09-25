@@ -2418,6 +2418,11 @@ const ReportCharts = React.memo(({
                                                                             New parts: +{data.newPartsInBucket}
                                                                         </p>
                                                                     )}
+                                                                    {data.model && (
+                                                                        <p style={{ margin: '5px 0', color: '#7c3aed', fontSize: '13px', fontWeight: 'bold' }}>
+                                                                            🏷️ Model: {data.model}
+                                                                        </p>
+                                                                    )}
                                                                     {data.isBreak && (
                                                                         <p style={{
                                                                             margin: '5px 0',
@@ -2519,22 +2524,36 @@ const ReportCharts = React.memo(({
                                                         strokeWidth={isFullscreenMode ? 12 : 6}
                                                         name="Actual Production"
                                                         connectNulls={false}
-                                                        dot={(props) => {
-                                                            const { cx, cy, payload } = props;
-                                                            if (payload.actualParts && payload.actualParts > 0) {
-                                                                return (
-                                                                    <circle
-                                                                        cx={cx}
-                                                                        cy={cy}
-                                                                        r={isFullscreenMode ? 6 : 4}
-                                                                        fill="#2563eb"
-                                                                        stroke="#fff"
-                                                                        strokeWidth={2}
-                                                                    />
-                                                                );
-                                                            }
-                                                            return null;
-                                                        }}
+                                                            dot={(props) => {
+                                                                const { cx, cy, payload } = props;
+                                                                if (payload.modelChanged) {
+                                                                    return (
+                                                                        <g key={`model-${cx}-${cy}`}>
+                                                                            <rect
+                                                                                x={cx - 5} y={cy - 5} width={10} height={10}
+                                                                                transform={`rotate(45 ${cx} ${cy})`}
+                                                                                fill="#f59e0b" stroke="#fff" strokeWidth={2}
+                                                                            />
+                                                                            <text
+                                                                                x={cx} y={cy - 14}
+                                                                                textAnchor="middle"
+                                                                                fontSize={isFullscreenMode ? 13 : 10}
+                                                                                fontWeight="bold"
+                                                                                fill={isDarkMode ? '#fbbf24' : '#b45309'}
+                                                                            >
+                                                                                {payload.model}
+                                                                            </text>
+                                                                        </g>
+                                                                    );
+                                                                }
+                                                                if (payload.actualParts && payload.actualParts > 0) {
+                                                                    return (
+                                                                        <circle cx={cx} cy={cy} r={isFullscreenMode ? 6 : 4}
+                                                                            fill="#2563eb" stroke="#fff" strokeWidth={2} />
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            }}
                                                         activeDot={{ r: isFullscreenMode ? 8 : 6 }}
                                                     />
                                                 </>

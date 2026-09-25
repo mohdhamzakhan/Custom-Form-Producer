@@ -154,6 +154,22 @@ namespace productionLine.Server.Controllers
                         .CountAsync();
                 }
 
+                var modelField = await activeContext.FormFields
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(f => f.Label == "7" && f.FormId == form);
+
+                Dictionary<long, string> submissionModelMap = new();
+                if (modelField != null && submissions.Any())
+                {
+                    var subIds = submissions.Select(s => s.Id).ToList();
+                    var fieldIdStr = modelField.Id.ToString();
+
+                    submissionModelMap = await activeContext.FormSubmissionData
+                        .AsNoTracking()
+                        .Where(d => subIds.Contains(d.FormSubmissionId) && d.FieldLabel == fieldIdStr)
+                        .ToDictionaryAsync(d => d.FormSubmissionId, d => d.FieldValue?.Trim() ?? "");
+                }
+
                 // Calculate target line
                 Console.WriteLine($"[ShiftProduction] Calculating target line...");
                 var targetLineData = CalculateTargetLine(targetParts, cycleTimeSeconds, startTime, endTime, breaksList);
@@ -250,7 +266,7 @@ namespace productionLine.Server.Controllers
                 // SINGLE-LINE chart data (Fallback)
                 // ============================================================
                 Console.WriteLine($"[ShiftProduction] Building SINGLE-LINE combined chart data...");
-                var combinedData = BuildCombinedChartData(submissions, targetLineData,multiplier);
+                var combinedData = BuildCombinedChartData(submissions, targetLineData,multiplier, submissionModelMap);
 
                 var currentProductionSingle = (int)Math.Round(submissions.Count * multiplier);
                 var efficiencySingle = targetParts > 0 ? (int)Math.Round((double)currentProductionSingle / targetParts * 100) : 0;
@@ -685,12 +701,14 @@ namespace productionLine.Server.Controllers
         private List<ChartDataPoint> BuildCombinedChartData(
             List<FormSubmission> submissions,
             List<ChartDataPoint> targetLineData,
-            double multiplier = 1.0)
+            double multiplier = 1.0,
+            Dictionary<long, string> submissionModelMap = null)
         {
             int ToBucket(int totalMinutes) => (totalMinutes / 5) * 5;
 
             // Map submission time "rounded buckets" to counts
             var timeToSubmissionsMap = new Dictionary<string, int>();
+            var timeToModelMap = new Dictionary<string, string>();
             foreach (var submission in submissions)
             {
                 var totalMinutes = submission.SubmittedAt.Hour * 60 + submission.SubmittedAt.Minute;
@@ -700,7 +718,15 @@ namespace productionLine.Server.Controllers
 
                 var timeKey = FormatTime(bucketMinutes);
                 timeToSubmissionsMap[timeKey] = timeToSubmissionsMap.GetValueOrDefault(timeKey) + 1;
+
+                // NEW: submissions are ordered by SubmittedAt, so this naturally keeps the latest model per bucket
+                if (submissionModelMap.TryGetValue(submission.Id, out var modelVal) && !string.IsNullOrWhiteSpace(modelVal))
+                {
+                    timeToModelMap[timeKey] = modelVal;
+                }
             }
+
+            
 
             // ✅ CRITICAL FIX: Determine shift start/end from targetLineData to get chronological order
             int? shiftStartBucket = null;
@@ -806,6 +832,8 @@ namespace productionLine.Server.Controllers
             var pendingPartsFromBreak = 0;
             var result = new List<ChartDataPoint>();
             bool anyActualSet = false;
+            string currentModel = null;      // <<< NEW — declare once, before the loop starts
+            string lastEmittedModel = null;  // <<< NEW
 
             for (int idx = 0; idx < targetLineData.Count; idx++)
             {
@@ -899,6 +927,21 @@ namespace productionLine.Server.Controllers
                     }
                     anyActualSet = true;
                 }
+                // <<< NEW — paste this block right here, after the if/else-if chain above,
+                 // before the "if (actualParts > 0 && result.All(...))" line that already exists
+                if (inWindow && !beforeProduction)
+                {
+                    if (timeToModelMap.TryGetValue(targetPoint.Time, out var bucketModel))
+                    {
+                        currentModel = bucketModel;
+                    }
+                }
+                bool modelChanged = inWindow && !beforeProduction
+                    && !string.IsNullOrEmpty(currentModel)
+                    && currentModel != lastEmittedModel;
+                if (modelChanged) lastEmittedModel = currentModel;
+                // <<< END NEW
+
                 if (actualParts > 0 && result.All(r => r.ActualParts == null))
                 {
                     foreach (var dp in result)
@@ -918,7 +961,9 @@ namespace productionLine.Server.Controllers
                                 : null,
                     IsBreak = targetPoint.IsBreak,
                     BreakName = targetPoint.BreakName,
-                    NewPartsInBucket = newParts
+                    NewPartsInBucket = newParts,
+                    Model = (inWindow && !beforeProduction) ? currentModel : null,   // NEW
+                    ModelChanged = modelChanged                                      // NEW
                 });
 
                 // ✅ Debug logging for midnight transition
@@ -1404,6 +1449,8 @@ namespace productionLine.Server.Controllers
         public bool IsBreak { get; set; }
         public string BreakName { get; set; }  // ✅ Add break name
         public int NewPartsInBucket { get; set; }
+        public string Model { get; set; }        // NEW
+        public bool ModelChanged { get; set; }   // NEW
     }
 
 
