@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261003052308_AuditReminderStages")]
+    partial class AuditReminderStages
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -26,279 +29,187 @@ namespace productionLine.Server.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("ID");
+                        .HasColumnType("NUMBER(10)");
 
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ApprovalComments")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("APPROVALCOMMENTS");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("APPROVEDAT");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("ApprovedBy")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("APPROVEDBY");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("ApproverAdObjectId")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("APPROVERADOBJECTID");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("ApproverEmail")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("APPROVEREMAIL");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("ApproverName")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("APPROVERNAME");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("CREATEDAT");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("CREATEDBY");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("DESCRIPTION");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("DurationType")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("DURATIONTYPE");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<DateTime>("EndDate")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("ENDDATE");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("PlanName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("NVARCHAR2(200)")
-                        .HasColumnName("PLANNAME");
+                        .HasColumnType("NVARCHAR2(200)");
 
                     b.Property<DateTime>("StartDate")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("STARTDATE");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("NVARCHAR2(20)")
-                        .HasColumnName("STATUS");
+                        .HasColumnType("NVARCHAR2(20)");
 
                     b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("UPDATEDAT");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("UpdatedBy")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("UPDATEDBY");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.HasKey("Id");
 
-                    b.ToTable("FF_AUDITPLAN");
+                    b.ToTable("AuditPlans");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntry", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("ID");
+                        .HasColumnType("NUMBER(10)");
 
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<int>("AuditPlanId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("AUDITPLANID");
+                        .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("AuditType")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITTYPE");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("AuditeeEmail")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITEEEMAIL");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("AuditeeId")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITEEID");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("AuditeeName")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITEENAME");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("AuditorEmail")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITOREMAIL");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("AuditorId")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITORID");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("AuditorName")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("AUDITORNAME");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("ClosedBy")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("CLOSEDBY");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("COMPLETEDAT");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("CompletionRemarks")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("COMPLETIONREMARKS");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("Department")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("DEPARTMENT");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("Frequency")
                         .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("FREQUENCY");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("HangfireJobId")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("HANGFIREJOBID");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<int>("ReminderDaysBefore")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("REMINDERDAYSBEFORE");
+                        .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("ReminderJobId")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("REMINDERJOBID");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<DateTime>("ScheduledDate")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("SCHEDULEDDATE");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("Scope")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("SCOPE");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("NVARCHAR2(20)")
-                        .HasColumnName("STATUS");
+                        .HasColumnType("NVARCHAR2(20)");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("NVARCHAR2(300)")
-                        .HasColumnName("TITLE");
+                        .HasColumnType("NVARCHAR2(300)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("AuditPlanId");
 
-                    b.ToTable("FF_AUDITPLANENTRY");
+                    b.ToTable("AuditPlanEntries");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntryNotification", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("ID");
+                        .HasColumnType("NUMBER(10)");
 
                     OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<int>("AuditPlanEntryId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("AUDITPLANENTRYID");
+                        .HasColumnType("NUMBER(10)");
 
                     b.Property<string>("HangfireJobId")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("HANGFIREJOBID");
+                        .HasColumnType("NVARCHAR2(2000)");
 
                     b.Property<string>("ReminderType")
                         .IsRequired()
                         .HasMaxLength(30)
-                        .HasColumnType("NVARCHAR2(30)")
-                        .HasColumnName("REMINDERTYPE");
+                        .HasColumnType("NVARCHAR2(30)");
 
                     b.Property<DateTime>("ScheduledFor")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("SCHEDULEDFOR");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<DateTime?>("SentAt")
-                        .HasColumnType("TIMESTAMP(7)")
-                        .HasColumnName("SENTAT");
+                        .HasColumnType("TIMESTAMP(7)");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("NVARCHAR2(20)")
-                        .HasColumnName("STATUS");
+                        .HasColumnType("NVARCHAR2(20)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("AuditPlanEntryId");
 
-                    b.ToTable("FF_AUDITPLANENTRYNOTIFICATION");
-                });
-
-            modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntryPerson", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("ID");
-
-                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AuditPlanEntryId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("AUDITPLANENTRYID");
-
-                    b.Property<string>("PersonEmail")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("PERSONEMAIL");
-
-                    b.Property<string>("PersonId")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("PERSONID");
-
-                    b.Property<string>("PersonName")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("NVARCHAR2(300)")
-                        .HasColumnName("PERSONNAME");
-
-                    b.Property<string>("PersonType")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("NVARCHAR2(10)")
-                        .HasColumnName("PERSONTYPE");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("NVARCHAR2(10)")
-                        .HasColumnName("ROLE");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuditPlanEntryId");
-
-                    b.ToTable("FF_AUDITPLANENTRYPERSON");
+                    b.ToTable("AuditPlanEntryNotifications");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.EmailSchedule", b =>
@@ -1892,17 +1803,6 @@ namespace productionLine.Server.Migrations
                     b.Navigation("AuditPlanEntry");
                 });
 
-            modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntryPerson", b =>
-                {
-                    b.HasOne("productionLine.Server.Model.AuditPlanEntry", "AuditPlanEntry")
-                        .WithMany("Participants")
-                        .HasForeignKey("AuditPlanEntryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AuditPlanEntry");
-                });
-
             modelBuilder.Entity("productionLine.Server.Model.EmailScheduleAttachment", b =>
                 {
                     b.HasOne("productionLine.Server.Model.EmailSchedule", "EmailSchedule")
@@ -2109,8 +2009,6 @@ namespace productionLine.Server.Migrations
             modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntry", b =>
                 {
                     b.Navigation("Notifications");
-
-                    b.Navigation("Participants");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.EmailSchedule", b =>

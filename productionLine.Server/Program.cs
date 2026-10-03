@@ -22,7 +22,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<PrimaryDbContext>(options =>
     options.UseOracle(builder.Configuration.GetConnectionString("SystemMonitorConnection"),
     optionsBuilder =>
-    { 
+    {
         optionsBuilder.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19);
     }));
 
@@ -133,6 +133,19 @@ builder.Services.AddHangfireServer(options =>
 });
 
 var app = builder.Build();
+
+// ============================================================
+// Apply any pending EF Core migrations on startup. Migration *files* already
+// existed in source control for AuditPlans/AuditPlanEntries, but nothing was
+// ever calling Database.Migrate() — so they were never actually run against
+// the real Oracle schema, which is why those tables didn't exist. This makes
+// "add a migration" + "it actually reaches the database" the same step again.
+// ============================================================
+using (var migrationScope = app.Services.CreateScope())
+{
+    var db = migrationScope.ServiceProvider.GetRequiredService<PrimaryDbContext>();
+    db.Database.Migrate();
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

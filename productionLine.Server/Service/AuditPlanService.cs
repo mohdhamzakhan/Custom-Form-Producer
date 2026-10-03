@@ -70,7 +70,7 @@ namespace productionLine.Server.Service
 
             // Cancel orphaned Hangfire jobs from the old entries
             foreach (var old in existing.Entries)
-                CancelEntryJobs(old);
+                await CancelPendingNotificationsAsync(db, old.Id);
 
             existing.PlanName = dto.PlanName;
             existing.Description = dto.Description;
@@ -109,7 +109,7 @@ namespace productionLine.Server.Service
             if (plan == null) return;
 
             foreach (var entry in plan.Entries)
-                CancelEntryJobs(entry);
+                await CancelPendingNotificationsAsync(db, entry.Id);
 
             db.AuditPlans.Remove(plan);
             await db.SaveChangesAsync();
@@ -134,27 +134,28 @@ namespace productionLine.Server.Service
                 foreach (var entry in plan.Entries)
                 {
                     if (entry.Status == "Completed") continue;
-                    ScheduleEntryJobs(entry);
+                    ScheduleEntryReminders(db, entry);
                 }
             }
 
             await db.SaveChangesAsync();
         }
 
-        // ── MARK COMPLETE ────────────────────────────────────────────
-        public async Task MarkEntryCompleteAsync(AuditPlanEntry entry)
+        // ── CLOSE / MARK COMPLETE ───────────────────────────────────────
+        public async Task CloseEntryAsync(AuditPlanEntry entry, string closedBy, string? remarks)
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<FormDbContext>();
 
-            // Cancel both the notification job and the reminder job
-            CancelEntryJobs(entry);
+            // Cancel every still-pending reminder stage for this entry (intimation,
+            // 7-day, 1-day, overdue) — not just a single hard-coded job.
+            await CancelPendingNotificationsAsync(db, entry.Id);
 
             db.AuditPlanEntries.Attach(entry);
             entry.Status = "Completed";
             entry.CompletedAt = DateTime.Now;
-            entry.HangfireJobId = null;
-            entry.ReminderJobId = null;
+            entry.ClosedBy = closedBy;
+            entry.CompletionRemarks = remarks;
 
             await db.SaveChangesAsync();
 
@@ -174,53 +175,77 @@ namespace productionLine.Server.Service
             }
         }
 
+        private static async Task CancelPendingNotificationsAsync(FormDbContext db, int entryId)
+        {
+            var pending = await db.AuditPlanEntryNotifications
+                .Where(n => n.AuditPlanEntryId == entryId && n.Status == "Scheduled")
+                .ToListAsync();
+
+            foreach (var n in pending)
+            {
+                if (!string.IsNullOrEmpty(n.HangfireJobId))
+                    BackgroundJob.Delete(n.HangfireJobId);
+
+                n.Status = "Cancelled";
+            }
+
+            RecurringJob.RemoveIfExists($"audit-entry-{entryId}");
+
+            if (pending.Count > 0)
+                await db.SaveChangesAsync();
+        }
+
         // ═════════════════════════════════════════════════════════════
         //  Job scheduling helpers
         // ═════════════════════════════════════════════════════════════
 
-        private void ScheduleEntryJobs(AuditPlanEntry entry)
+        // The four reminder stages requested: an intimation a month out, a reminder at
+        // 7 days and at 1 day before the scheduled date, and an escalation if it's still
+        // not closed 7 days *after*. Each stage is its own row/job, so stages don't
+        // overwrite each other's job id the way the old two-column design did.
+        private static readonly (string Type, Func<DateTime, DateTime> TargetDate)[] ReminderStages = new (string, Func<DateTime, DateTime>)[]
         {
-            var sendAt = entry.ScheduledDate;
-            var reminderAt = entry.ScheduledDate.AddDays(-entry.ReminderDaysBefore);
+            ("Intimation",    d => d.AddMonths(-1)),
+            ("Reminder7Days", d => d.AddDays(-7)),
+            ("Reminder1Day",  d => d.AddDays(-1)),
+            ("Overdue7Days",  d => d.AddDays(7)),
+        };
 
-            // Main notification on the audit day
-            if (sendAt > DateTime.Now)
+        private void ScheduleEntryReminders(FormDbContext db, AuditPlanEntry entry)
+        {
+            foreach (var stage in ReminderStages)
             {
-                var delay = sendAt - DateTime.Now;
+                var targetDate = stage.TargetDate(entry.ScheduledDate);
+
+                // Can't schedule a reminder for a moment that's already passed (e.g. the
+                // plan was approved less than a month before the audit date, so the
+                // "1 month before" intimation window has already gone by).
+                if (targetDate <= DateTime.Now) continue;
+
+                var delay = targetDate - DateTime.Now;
                 var jobId = BackgroundJob.Schedule<AuditPlanService>(
-                    svc => svc.SendAuditNotificationEmail(entry.Id), delay);
-                entry.HangfireJobId = jobId;
+                    svc => svc.SendAuditStageEmail(entry.Id, stage.Type), delay);
+
+                db.AuditPlanEntryNotifications.Add(new AuditPlanEntryNotification
+                {
+                    AuditPlanEntryId = entry.Id,
+                    ReminderType = stage.Type,
+                    ScheduledFor = targetDate,
+                    HangfireJobId = jobId,
+                    Status = "Scheduled",
+                });
             }
 
-            // Reminder N days before
-            if (reminderAt > DateTime.Now)
-            {
-                var delay = reminderAt - DateTime.Now;
-                var remId = BackgroundJob.Schedule<AuditPlanService>(
-                    svc => svc.SendAuditReminderEmail(entry.Id), delay);
-                entry.ReminderJobId = remId;
-            }
-
-            // Recurring audits → Hangfire recurring job
+            // Recurring audits still get a notification on each recurrence of the
+            // scheduled date itself, independent of the one-time reminder stages above.
             if (entry.Frequency != "Once")
             {
                 var cron = FrequencyToCron(entry.Frequency, entry.ScheduledDate);
                 RecurringJob.AddOrUpdate<AuditPlanService>(
                     $"audit-entry-{entry.Id}",
-                    svc => svc.SendAuditNotificationEmail(entry.Id),
+                    svc => svc.SendAuditStageEmail(entry.Id, "Intimation"),
                     cron);
             }
-        }
-
-        private static void CancelEntryJobs(AuditPlanEntry entry)
-        {
-            if (!string.IsNullOrEmpty(entry.HangfireJobId))
-                BackgroundJob.Delete(entry.HangfireJobId);
-
-            if (!string.IsNullOrEmpty(entry.ReminderJobId))
-                BackgroundJob.Delete(entry.ReminderJobId);
-
-            RecurringJob.RemoveIfExists($"audit-entry-{entry.Id}");
         }
 
         private static string FrequencyToCron(string frequency, DateTime anchor)
@@ -265,8 +290,10 @@ namespace productionLine.Server.Service
         //  serialize and invoke them. Each opens its own fresh scope.
         // ═════════════════════════════════════════════════════════════
 
+        // Single entry point for all four reminder stages (Intimation / Reminder7Days /
+        // Reminder1Day / Overdue7Days). Hangfire calls this by (entryId, reminderType).
         [AutomaticRetry(Attempts = 3)]
-        public async Task SendAuditNotificationEmail(int entryId)
+        public async Task SendAuditStageEmail(int entryId, string reminderType)
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<FormDbContext>();
@@ -277,15 +304,37 @@ namespace productionLine.Server.Service
 
             if (entry == null) return;
 
-            // Guard: do not send if already marked complete
+            var notification = await db.AuditPlanEntryNotifications
+                .Where(n => n.AuditPlanEntryId == entryId && n.ReminderType == reminderType)
+                .OrderByDescending(n => n.Id)
+                .FirstOrDefaultAsync();
+
+            // Guard: don't send once the audit's been closed out, and don't send twice
+            // if this job somehow got triggered more than once (Hangfire retries, etc).
             if (entry.Status == "Completed" || entry.Status == "Skipped")
             {
-                _log.LogInformation("Entry {Id} is {Status} — skipping email.", entryId, entry.Status);
+                _log.LogInformation("Entry {Id} is {Status} — skipping {Stage} email.", entryId, entry.Status, reminderType);
+                if (notification != null) { notification.Status = "Cancelled"; await db.SaveChangesAsync(); }
+                return;
+            }
+            if (notification != null && notification.Status == "Sent")
+            {
+                _log.LogInformation("{Stage} for entry {Id} was already sent — skipping duplicate.", reminderType, entryId);
                 return;
             }
 
-            var subject = $"[Audit] {entry.Title} – Scheduled for {entry.ScheduledDate:dd MMM yyyy}";
-            var body = BuildAuditEmailBody(entry, isReminder: false);
+            // The overdue escalation is conditional: only actually fire it if the audit
+            // is still open 7 days past its scheduled date (if it was closed in time,
+            // the guard above already returned).
+            var subject = reminderType switch
+            {
+                "Intimation" => $"[Audit Notice] {entry.Title} – due {entry.ScheduledDate:dd MMM yyyy}",
+                "Reminder7Days" => $"[Reminder] {entry.Title} – due in 7 days",
+                "Reminder1Day" => $"[Reminder] {entry.Title} – due tomorrow",
+                "Overdue7Days" => $"[OVERDUE] {entry.Title} – 7 days past due date",
+                _ => $"[Audit] {entry.Title}",
+            };
+            var body = BuildAuditEmailBody(entry, reminderType);
 
             var recipients = new List<string>();
             if (!string.IsNullOrEmpty(entry.AuditorEmail)) recipients.Add(entry.AuditorEmail);
@@ -294,35 +343,15 @@ namespace productionLine.Server.Service
             foreach (var to in recipients.Distinct())
                 await SendSmtpAsync(to, subject, body);
 
-            _log.LogInformation("Audit notification sent for entry {Id} ({Title}) to {Count} recipient(s).",
-                entryId, entry.Title, recipients.Distinct().Count());
-        }
+            if (notification != null)
+            {
+                notification.Status = "Sent";
+                notification.SentAt = DateTime.Now;
+                await db.SaveChangesAsync();
+            }
 
-        [AutomaticRetry(Attempts = 3)]
-        public async Task SendAuditReminderEmail(int entryId)
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<FormDbContext>();
-
-            var entry = await db.AuditPlanEntries
-                .Include(e => e.AuditPlan)
-                .FirstOrDefaultAsync(e => e.Id == entryId);
-
-            if (entry == null) return;
-            if (entry.Status == "Completed" || entry.Status == "Skipped") return;
-
-            var subject = $"[Reminder] {entry.Title} – in {entry.ReminderDaysBefore} day(s)";
-            var body = BuildAuditEmailBody(entry, isReminder: true);
-
-            var recipients = new List<string>();
-            if (!string.IsNullOrEmpty(entry.AuditorEmail)) recipients.Add(entry.AuditorEmail);
-            if (!string.IsNullOrEmpty(entry.AuditeeEmail)) recipients.Add(entry.AuditeeEmail);
-
-            foreach (var to in recipients.Distinct())
-                await SendSmtpAsync(to, subject, body);
-
-            _log.LogInformation("Audit reminder sent for entry {Id} to {Count} recipient(s).",
-                entryId, recipients.Distinct().Count());
+            _log.LogInformation("{Stage} sent for entry {Id} ({Title}) to {Count} recipient(s).",
+                reminderType, entryId, entry.Title, recipients.Distinct().Count());
         }
 
         [AutomaticRetry(Attempts = 3)]
@@ -390,11 +419,16 @@ namespace productionLine.Server.Service
         // ═════════════════════════════════════════════════════════════
         //  Email body builder
         // ═════════════════════════════════════════════════════════════
-        private static string BuildAuditEmailBody(AuditPlanEntry entry, bool isReminder)
+        private static string BuildAuditEmailBody(AuditPlanEntry entry, string reminderType)
         {
-            var heading = isReminder
-                ? $"Reminder: Upcoming Audit in {entry.ReminderDaysBefore} Day(s)"
-                : "Audit Notification";
+            var heading = reminderType switch
+            {
+                "Intimation" => "Upcoming Audit — Please Plan Ahead (1 Month Notice)",
+                "Reminder7Days" => "Reminder: Audit Due in 7 Days",
+                "Reminder1Day" => "Reminder: Audit Due Tomorrow",
+                "Overdue7Days" => "⚠ Overdue: This Audit Is 7 Days Past Its Due Date",
+                _ => "Audit Notification",
+            };
 
             var scopeRow = string.IsNullOrEmpty(entry.Scope) ? "" :
                 $"<tr><td style='padding:8px 12px;background:#f8fafc;font-weight:600;border:1px solid #e2e8f0;'>Scope</td>" +

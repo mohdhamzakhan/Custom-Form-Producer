@@ -34,6 +34,8 @@ namespace productionLine.Server.Model
         public DbSet<EmailScheduleLog> EmailScheduleLogs { get; set; }
         public DbSet<AuditPlan> AuditPlans { get; set; }
         public DbSet<AuditPlanEntry> AuditPlanEntries { get; set; }
+        public DbSet<AuditPlanEntryNotification> AuditPlanEntryNotifications { get; set; }
+        public DbSet<AuditPlanEntryPerson> AuditPlanEntryPeople { get; set; }
         public DbSet<PartialSubmission> PartialSubmissions { get; set; }
 
         public DbSet<LineConfig> LineConfigs { get; set; }
@@ -212,6 +214,29 @@ namespace productionLine.Server.Model
                 e.HasKey(en => en.Id);
                 e.Property(en => en.Title).IsRequired().HasMaxLength(300);
                 e.Property(en => en.Status).HasMaxLength(20);
+                e.HasMany(en => en.Notifications)
+                 .WithOne(n => n.AuditPlanEntry)
+                 .HasForeignKey(n => n.AuditPlanEntryId)
+                 .OnDelete(DeleteBehavior.Cascade);
+                e.HasMany(en => en.Participants)
+                 .WithOne(p => p.AuditPlanEntry)
+                 .HasForeignKey(p => p.AuditPlanEntryId)
+                 .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<AuditPlanEntryNotification>(e => {
+                e.HasKey(n => n.Id);
+                e.Property(n => n.ReminderType).IsRequired().HasMaxLength(30);
+                e.Property(n => n.Status).HasMaxLength(20);
+                e.HasIndex(n => n.AuditPlanEntryId);
+            });
+
+            modelBuilder.Entity<AuditPlanEntryPerson>(e => {
+                e.HasKey(p => p.Id);
+                e.Property(p => p.Role).IsRequired().HasMaxLength(10);
+                e.Property(p => p.PersonType).HasMaxLength(10);
+                e.Property(p => p.PersonName).IsRequired().HasMaxLength(300);
+                e.HasIndex(p => p.AuditPlanEntryId);
             });
 
             modelBuilder.Entity<LineConfig>(e =>

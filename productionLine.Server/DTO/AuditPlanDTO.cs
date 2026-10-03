@@ -100,5 +100,22 @@ namespace productionLine.Server.DTO.AuditPlan
         public DateTime? CompletedAt { get; set; }
         public string? HangfireJobId { get; set; }
         public string? ReminderJobId { get; set; }
+        public string? CompletionRemarks { get; set; }
+        public string? ClosedBy { get; set; }
+        public List<NotificationStageDto> Notifications { get; set; } = new();
+    }
+    public class NotificationStageDto
+    {
+        public string ReminderType { get; set; } = "";
+        public DateTime ScheduledFor { get; set; }
+        public DateTime? SentAt { get; set; }
+        public string Status { get; set; } = "";
+    }
+    public class CloseEntryDto
+    {
+        public string? Remarks { get; set; }
+        // Optional override of who's closing it; falls back to the authenticated
+        // user's identity on the server if not provided.
+        public string? ClosedBy { get; set; }
     }
 }

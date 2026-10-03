@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oracle.EntityFrameworkCore.Metadata;
 using productionLine.Server.Model;
@@ -11,9 +12,11 @@ using productionLine.Server.Model;
 namespace productionLine.Server.Migrations
 {
     [DbContext(typeof(FormDbContext))]
-    partial class FormDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261003053240_Correction")]
+    partial class Correction
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -252,53 +255,6 @@ namespace productionLine.Server.Migrations
                     b.HasIndex("AuditPlanEntryId");
 
                     b.ToTable("FF_AUDITPLANENTRYNOTIFICATION");
-                });
-
-            modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntryPerson", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("ID");
-
-                    OraclePropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AuditPlanEntryId")
-                        .HasColumnType("NUMBER(10)")
-                        .HasColumnName("AUDITPLANENTRYID");
-
-                    b.Property<string>("PersonEmail")
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("PERSONEMAIL");
-
-                    b.Property<string>("PersonId")
-                        .IsRequired()
-                        .HasColumnType("NVARCHAR2(2000)")
-                        .HasColumnName("PERSONID");
-
-                    b.Property<string>("PersonName")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("NVARCHAR2(300)")
-                        .HasColumnName("PERSONNAME");
-
-                    b.Property<string>("PersonType")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("NVARCHAR2(10)")
-                        .HasColumnName("PERSONTYPE");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("NVARCHAR2(10)")
-                        .HasColumnName("ROLE");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuditPlanEntryId");
-
-                    b.ToTable("FF_AUDITPLANENTRYPERSON");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.EmailSchedule", b =>
@@ -1892,17 +1848,6 @@ namespace productionLine.Server.Migrations
                     b.Navigation("AuditPlanEntry");
                 });
 
-            modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntryPerson", b =>
-                {
-                    b.HasOne("productionLine.Server.Model.AuditPlanEntry", "AuditPlanEntry")
-                        .WithMany("Participants")
-                        .HasForeignKey("AuditPlanEntryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AuditPlanEntry");
-                });
-
             modelBuilder.Entity("productionLine.Server.Model.EmailScheduleAttachment", b =>
                 {
                     b.HasOne("productionLine.Server.Model.EmailSchedule", "EmailSchedule")
@@ -2109,8 +2054,6 @@ namespace productionLine.Server.Migrations
             modelBuilder.Entity("productionLine.Server.Model.AuditPlanEntry", b =>
                 {
                     b.Navigation("Notifications");
-
-                    b.Navigation("Participants");
                 });
 
             modelBuilder.Entity("productionLine.Server.Model.EmailSchedule", b =>

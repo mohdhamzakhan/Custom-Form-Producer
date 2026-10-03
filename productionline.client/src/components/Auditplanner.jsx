@@ -148,6 +148,80 @@ const PersonPicker = ({ label, value, onChange, required }) => {
 
 
 // ─────────────────────────────────────────────────────────────────
+// MultiPersonPicker — AD search, multiple people (and/or groups)
+// ─────────────────────────────────────────────────────────────────
+const MultiPersonPicker = ({ label, value, onChange, required }) => {
+    const [q, setQ] = useState("");
+    const [open, setOpen] = useState(false);
+    const ref = useRef();
+    const { searchResults, searchAdDirectory } = useAdSearch();
+    const selected = value || [];
+
+    useEffect(() => { if (q.length >= 3) searchAdDirectory(q); }, [q]);
+    useEffect(() => {
+        const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const add = item => {
+        if (selected.some(p => p.id === item.id)) { setQ(""); setOpen(false); return; } // no duplicates
+        onChange([...selected, { id: item.id, name: item.name, email: item.email || null, type: item.type || "user" }]);
+        setQ("");
+        setOpen(false);
+    };
+    const remove = id => onChange(selected.filter(p => p.id !== id));
+
+    return (
+        <div ref={ref} className="relative">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+            </label>
+
+            {selected.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {selected.map(p => (
+                        <span key={p.id} className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 pl-1 pr-2 py-1">
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                                {p.type === "group" ? <Users size={10} /> : p.name?.charAt(0).toUpperCase()}
+                            </span>
+                            <span className="text-xs font-medium text-slate-700 max-w-[140px] truncate">{p.name}</span>
+                            <button type="button" onClick={() => remove(p.id)} className="text-slate-400 hover:text-red-500 transition-colors">
+                                <X size={11} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            <input
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition"
+                placeholder={`Search ${label} (min 3 chars)…`}
+                value={q}
+                onChange={e => { setQ(e.target.value); setOpen(true); }}
+                onFocus={() => setOpen(true)}
+            />
+            {open && searchResults.length > 0 && (
+                <div className="absolute z-30 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                    {searchResults.map(item => (
+                        <div key={item.id} onClick={() => add(item)}
+                            className="flex items-center gap-2 px-3 py-2.5 hover:bg-blue-50 cursor-pointer transition-colors">
+                            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold shrink-0">
+                                {item.type === "group" ? <Users size={13} /> : item.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-slate-800">{item.name}</p>
+                                <p className="text-xs text-slate-500">{item.email || item.type}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────────
 // StatusBadge
 // ─────────────────────────────────────────────────────────────────
 const StatusBadge = ({ status, small }) => {
@@ -187,7 +261,7 @@ const AuditEntryRow = ({ entry, idx, onChange, onRemove, planStart, planEnd }) =
                 <span className="flex-1 text-sm font-medium text-slate-700 truncate">{entry.title || <span className="text-slate-400 italic">Untitled audit</span>}</span>
                 <div className="flex items-center gap-3 shrink-0">
                     {entry.scheduledDate && <span className="text-xs text-slate-400 hidden md:block">{fmtDate(entry.scheduledDate)}</span>}
-                    {entry.auditor && <span className="text-xs text-slate-500 hidden md:block">👤 {entry.auditor.name}</span>}
+                    {entry.auditors?.length > 0 && <span className="text-xs text-slate-500 hidden md:block">👤 {entry.auditors.map(a => a.name).join(", ")}</span>}
                     <button onClick={e => { e.stopPropagation(); onRemove(idx); }} className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded">
                         <Trash2 size={13} />
                     </button>
@@ -225,11 +299,11 @@ const AuditEntryRow = ({ entry, idx, onChange, onRemove, planStart, planEnd }) =
                             onChange={e => upd({ department: e.target.value })} />
                     </div>
 
-                    {/* Auditor */}
-                    <PersonPicker label="Auditor" value={entry.auditor} onChange={v => upd({ auditor: v })} required />
+                    {/* Auditors — multiple people (or an AD group) can be assigned */}
+                    <MultiPersonPicker label="Auditors" value={entry.auditors} onChange={v => upd({ auditors: v })} required />
 
-                    {/* Auditee */}
-                    <PersonPicker label="Auditee" value={entry.auditee} onChange={v => upd({ auditee: v })} required />
+                    {/* Auditees — multiple people (or an AD group) can be assigned */}
+                    <MultiPersonPicker label="Auditees" value={entry.auditees} onChange={v => upd({ auditees: v })} required />
 
                     {/* Scheduled Date */}
                     <div>
@@ -280,7 +354,7 @@ const AuditEntryRow = ({ entry, idx, onChange, onRemove, planStart, planEnd }) =
 // ─────────────────────────────────────────────────────────────────
 const blankEntry = () => ({
     title: "", auditType: "Process", department: "",
-    auditor: null, auditee: null, scheduledDate: "",
+    auditors: [], auditees: [], scheduledDate: "",
     frequency: "Once", reminderDaysBefore: 3, scope: "",
 });
 
@@ -301,6 +375,8 @@ const PlanModal = ({ plan, onClose, onSaved, currentUser }) => {
             endDate: isoDate(plan.endDate),
             entries: (plan.entries || []).map(e => ({
                 ...e, scheduledDate: isoDate(e.scheduledDate),
+                auditors: e.auditors || [],
+                auditees: e.auditees || [],
             })),
         };
     });
@@ -329,8 +405,8 @@ const PlanModal = ({ plan, onClose, onSaved, currentUser }) => {
         if (form.entries.length === 0) { toast.error("Add at least one audit entry."); return false; }
         for (const [i, e] of form.entries.entries()) {
             if (!e.title.trim()) { toast.error(`Audit #${i + 1}: Title is required.`); return false; }
-            if (!e.auditor) { toast.error(`Audit #${i + 1}: Auditor is required.`); return false; }
-            if (!e.auditee) { toast.error(`Audit #${i + 1}: Auditee is required.`); return false; }
+            if (!e.auditors?.length) { toast.error(`Audit #${i + 1}: At least one Auditor is required.`); return false; }
+            if (!e.auditees?.length) { toast.error(`Audit #${i + 1}: At least one Auditee is required.`); return false; }
             if (!e.scheduledDate) { toast.error(`Audit #${i + 1}: Scheduled date is required.`); return false; }
         }
         return true;
@@ -351,12 +427,10 @@ const PlanModal = ({ plan, onClose, onSaved, currentUser }) => {
                 entries: form.entries.map(e => ({
                     ...e,
                     scheduledDate: new Date(e.scheduledDate).toISOString(),
-                    auditorId: e.auditor?.id,
-                    auditorName: e.auditor?.name,
-                    auditorEmail: e.auditor?.email,
-                    auditeeId: e.auditee?.id,
-                    auditeeName: e.auditee?.name,
-                    auditeeEmail: e.auditee?.email,
+                    // Full list of selected people/groups — the backend builds its
+                    // Auditor/Auditee participant rows from these.
+                    auditors: (e.auditors || []).map(a => ({ id: a.id, name: a.name, email: a.email, type: a.type || "user" })),
+                    auditees: (e.auditees || []).map(a => ({ id: a.id, name: a.name, email: a.email, type: a.type || "user" })),
                 })),
                 userName: currentUser
             };
@@ -531,8 +605,17 @@ const CalendarView = ({ planId }) => {
     useEffect(() => { fetchAudits(); }, [fetchAudits]);
 
     const markComplete = async (entryId) => {
-        await fetch(`${API}/entries/${entryId}/complete`, { method: "PATCH" });
-        toast.success("Audit marked as completed. Email notifications cancelled.");
+        const remarks = window.prompt("Closing remarks / findings (optional):", "");
+        if (remarks === null) return; // user cancelled
+
+        const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+
+        await fetch(`${API}/entries/${entryId}/close`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ remarks, closedBy: storedUser?.username }),
+        });
+        toast.success("Audit closed. All pending reminders for it have been cancelled.");
         fetchAudits();
     };
 
@@ -698,8 +781,17 @@ const PlanDrawer = ({ planId, onClose, onRefresh, currentUser }) => {
     };
 
     const markComplete = async (entryId) => {
-        await fetch(`${API}/entries/${entryId}/complete`, { method: "PATCH" });
-        toast.success("Marked complete. Email cancelled.");
+        const remarks = window.prompt("Closing remarks / findings (optional):", "");
+        if (remarks === null) return; // user cancelled
+
+        const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+
+        await fetch(`${API}/entries/${entryId}/close`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ remarks, closedBy: storedUser?.username }),
+        });
+        toast.success("Audit closed. All pending reminders for it have been cancelled.");
         load();
     };
 
@@ -842,7 +934,7 @@ const AuditPlanner = () => {
     // Current logged-in user — tries common property names across different auth setups
     const [user, setUser] = useState(null);
     const navigate = useNavigate();
-   
+
 
     const [plans, setPlans] = useState([]);
     const [total, setTotal] = useState(0);

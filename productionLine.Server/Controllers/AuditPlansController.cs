@@ -70,6 +70,7 @@ public class AuditPlansController : ControllerBase
     {
         var p = await _db.AuditPlans
             .Include(x => x.Entries)
+                .ThenInclude(e => e.Notifications)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return NotFound();
@@ -106,6 +107,7 @@ public class AuditPlansController : ControllerBase
     public async Task<IActionResult> GetEntries(int id)
     {
         var entries = await _db.AuditPlanEntries
+            .Include(e => e.Notifications)
             .Where(e => e.AuditPlanId == id)
             .OrderBy(e => e.ScheduledDate)
             .ToListAsync();
@@ -196,14 +198,22 @@ public class AuditPlansController : ControllerBase
         return NoContent();
     }
 
-    // ── MARK ENTRY COMPLETE ───────────────────────────────────────
-    [HttpPatch("entries/{entryId:int}/complete")]
-    public async Task<IActionResult> MarkEntryComplete(int entryId)
+    // ── CLOSE / MARK ENTRY COMPLETE ─────────────────────────────────
+    // Closing is how the auditor/auditee signs off that the audit actually happened —
+    // it records who closed it and (optionally) remarks/findings, and cancels every
+    // still-pending reminder stage for this entry.
+    [HttpPatch("entries/{entryId:int}/close")]
+    public async Task<IActionResult> CloseEntry(int entryId, [FromBody] CloseEntryDto dto)
     {
         var entry = await _db.AuditPlanEntries.FindAsync(entryId);
         if (entry == null) return NotFound();
+        if (entry.Status == "Completed") return BadRequest("This audit is already closed.");
 
-        await _service.MarkEntryCompleteAsync(entry);
+        var closedBy = !string.IsNullOrWhiteSpace(dto?.ClosedBy)
+            ? dto!.ClosedBy!
+            : (User.Identity?.Name ?? "system");
+
+        await _service.CloseEntryAsync(entry, closedBy, dto?.Remarks);
         return NoContent();
     }
 
@@ -227,7 +237,16 @@ public class AuditPlansController : ControllerBase
         Scope = e.Scope,
         Status = e.Status,
         CompletedAt = e.CompletedAt,
-        HangfireJobId = e.HangfireJobId,
-        ReminderJobId = e.ReminderJobId,
+        CompletionRemarks = e.CompletionRemarks,
+        ClosedBy = e.ClosedBy,
+        Notifications = e.Notifications
+            .OrderBy(n => n.ScheduledFor)
+            .Select(n => new NotificationStageDto
+            {
+                ReminderType = n.ReminderType,
+                ScheduledFor = n.ScheduledFor,
+                SentAt = n.SentAt,
+                Status = n.Status,
+            }).ToList(),
     };
 }
