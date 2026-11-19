@@ -7,6 +7,7 @@ import LoadingDots from './LoadingDots';
 import { useNavigate } from "react-router-dom";
 import SignatureCanvas from 'react-signature-canvas';
 import useAdSearch from './hooks/useAdSearch';
+import PhotoField from "./PhotoField";
 export default function DynamicForm() {
     const [formData, setFormData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -3631,6 +3632,19 @@ export default function DynamicForm() {
                     </div>
                 );
             }
+
+            case "photo":
+                return (
+                    <PhotoField
+                        field={field}
+                        value={formValues[field.id]}
+                        error={formErrors[field.id]}
+                        onChange={(url) => {
+                            handleInputChange(field.id, url, field.type, field);
+                            setFormErrors(prev => { const n = { ...prev }; delete n[field.id]; return n; });
+                        }}
+                    />
+                );
 
             default:
                 return null;

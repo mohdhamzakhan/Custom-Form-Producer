@@ -2,6 +2,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
+import { PhotoView } from "./PhotoField";
 
 export default function SubmissionDetails() {
     const { submissionId } = useParams();
@@ -69,7 +70,9 @@ export default function SubmissionDetails() {
         const processedData = {};
 
         submission.submissionData.forEach(item => {
-            const originalField = getFieldLabel(item.fieldLabel.replace(' Remark', '').replace(' (Remark)', ''));
+            const baseId = item.fieldLabel.replace(' Remark', '').replace(' (Remark)', '');
+            const originalField = getFieldLabel(baseId);
+            const fieldType = formDefinition?.fields?.find(f => f.id === baseId)?.type;
 
             if (item.fieldLabel.includes('Remark') || item.fieldLabel.includes('(Remark)')) {
                 if (!processedData[originalField]) {
@@ -84,12 +87,14 @@ export default function SubmissionDetails() {
                     processedData[originalField].value = item.fieldValue;
                 }
             }
+            processedData[originalField].type = fieldType;
         });
 
         return Object.entries(processedData).map(([label, data]) => ({
             label,
             value: data.value,
-            remark: data.remark
+            remark: data.remark,
+            type: data.type
         }));
     };
 
@@ -206,11 +211,19 @@ export default function SubmissionDetails() {
                             <div className="w-full">
                                 <p className="text-sm text-gray-600 mb-2 font-medium">{item.label}</p>
 
-                                {isBase64Image(item.value) ? (
+                                {item.type === 'photo' ? (
+                                    <div className="inline-block border rounded-lg p-2 bg-gray-50">
+                                        <PhotoView
+                                            value={item.value}
+                                            label={item.label}
+                                            className="max-h-72 max-w-full rounded cursor-zoom-in"
+                                        />
+                                    </div>
+                                ) : isBase64Image(item.value) ? (
                                     <div className="border-2 border-blue-200 rounded-lg p-4 bg-gradient-to-br from-blue-50 to-indigo-50 inline-block">
                                         <img
-                                            src={item.value}
-                                            alt="Signature"
+                                                src={item.value}
+                                                alt="Signature"
                                             className="w-full h-auto max-h-48 object-contain rounded-lg shadow-sm"
                                             onError={(e) => {
                                                 e.target.style.display = 'none';

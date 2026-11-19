@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import Layout from "./Layout";
 import { APP_CONSTANTS } from "./store";
 import LoadingDots from './LoadingDots';
+import { PhotoView } from "./PhotoField";
 
 export default function ApprovalPage() {
     const { submissionId } = useParams();
@@ -167,6 +168,7 @@ export default function ApprovalPage() {
 
             const fieldLabel = getFieldLabel(fieldId);
             if (!fieldLabel) return;
+            const fieldType = formDefinition.fields.find(f => f.id === fieldId)?.type;
 
             if (isRemark) {
                 if (!processedData[fieldLabel]) {
@@ -181,12 +183,14 @@ export default function ApprovalPage() {
                     processedData[fieldLabel].value = item.fieldValue;
                 }
             }
+            processedData[fieldLabel].type = fieldType;
         });
 
         return Object.entries(processedData).map(([label, data]) => ({
             label,
             value: data.value,
-            remark: data.remark
+            remark: data.remark,
+            type: data.type
         }));
     };
 
@@ -333,7 +337,13 @@ export default function ApprovalPage() {
                                         {item.label}
                                     </p>
 
-                                    {isGridValue(item.value) ? (
+                                    {item.type === "photo" ? (
+                                        <PhotoView
+                                            value={item.value}
+                                            label={item.label}
+                                            className="max-h-72 max-w-full rounded border cursor-zoom-in"
+                                        />
+                                    ) : isGridValue(item.value) ? (
                                         <div className="w-full overflow-x-auto">
                                             {(() => {
                                                 try {

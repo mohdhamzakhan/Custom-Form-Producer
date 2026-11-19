@@ -726,6 +726,17 @@ const FormPreview = ({ fields }) => {
                         </div>
                     </div>
                 );
+
+            case "photo":
+                return (
+                    <div>
+                        <label className="block text-sm font-medium mb-1">{field.label}{field.required && <span className="text-red-500 ml-1">*</span>}</label>
+                        <div className="w-full h-24 border-2 border-dashed rounded flex items-center justify-center text-xs text-gray-400">
+                            📷 Camera / photo upload (not interactive in preview)
+                        </div>
+                    </div>
+                );
+
             case "linkedTextbox":
                 return (
                     <div>
@@ -1397,7 +1408,7 @@ const FormBuilder = () => {
                         ? field.requireRemarksOutOfRange
                         : false,
                     linkedFormId: field.linkedFormId || null,
-                    IMAGEOPTIONS: field.IMAGEOPTIONS,
+                    IMAGEOPTIONS: field.IMAGEOPTIONS ?? field.imageoptions ?? field.imageData ?? null,
                 };
 
                 // Handle GRID and QUESTIONGRID fields
@@ -3252,7 +3263,7 @@ const FormBuilder = () => {
                     ) : (
                         <>
                             <div className="mb-6 flex gap-2 flex-wrap sticky top-0 z-50 bg-white p-4 border-b border-gray-200">
-                                {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid", "signature"].map(
+                                    {["textbox", "numeric", "dropdown", "checkbox", "radio", "date", "calculation", "time", "grid", "image", "questionGrid", "signature", "photo"].map(
                                     (type) => (
                                         <button
                                             key={type}
@@ -5261,6 +5272,13 @@ const FormField = ({ field, index, allFields, moveField, updateField, removeFiel
                         }
                         return null;
                     })()}
+                </div>
+            )}
+
+            {field.type === "photo" && (
+                <div className="mb-4 p-3 bg-gray-50 rounded border text-sm text-gray-600">
+                    📷 When filling the form, users can take a photo with their device camera or upload one.
+                    Tick <strong>Required</strong> above to make it mandatory.
                 </div>
             )}
 
