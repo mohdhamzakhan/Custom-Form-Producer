@@ -6,6 +6,7 @@ using productionLine.Server.Model;
 using productionLine.Server.Service;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using static productionLine.Server.Model.FormDbContext;
 
 namespace productionLine.Server.Controllers
@@ -17,6 +18,24 @@ namespace productionLine.Server.Controllers
         private readonly PrimaryDbContext _primaryContext;
         private readonly SecondaryDbContext _secondaryContext;
         private readonly IMemoryCache _cache;
+
+        // Per-worker single-flight protection for simultaneous cache misses.
+        // Set this IIS pool's Maximum Worker Processes to 1 for process-wide
+        // coordination on this server. Multiple IIS servers need a distributed lock.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> ChartLocks = new();
+
+        private static string BuildChartCacheKey(
+            DateTime selectedDate, string shift, int targetParts,
+            double cycleTimeSeconds, string startTime, string endTime,
+            string breaks, int formId, string groupByField)
+        {
+            return string.Join("|",
+                "shift_chart", formId, selectedDate.ToString("yyyyMMdd"),
+                shift ?? string.Empty, targetParts,
+                cycleTimeSeconds.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                startTime ?? string.Empty, endTime ?? string.Empty,
+                groupByField ?? string.Empty, breaks ?? string.Empty);
+        }
 
         public ShiftProductionController(PrimaryDbContext primaryContext, SecondaryDbContext secondaryContext, IMemoryCache cache)
         {
@@ -40,7 +59,43 @@ namespace productionLine.Server.Controllers
             [FromQuery] string endTime,
             [FromQuery] string breaks,
             [FromQuery] int formId,
-            [FromQuery] string groupByField = null)   // <-- ADD THIS NEW PARAM
+            [FromQuery] string groupByField = null)
+        {
+            var cacheKey = BuildChartCacheKey(
+                selectedDate, shift, targetParts, cycleTimeSeconds,
+                startTime, endTime, breaks, formId, groupByField);
+
+            if (_cache.TryGetValue(cacheKey, out object cached))
+                return Ok(cached);
+
+            var gate = ChartLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(HttpContext.RequestAborted);
+            try
+            {
+                // Recheck after acquiring the gate to avoid duplicate DB work.
+                if (_cache.TryGetValue(cacheKey, out cached))
+                    return Ok(cached);
+
+                return await GetShiftChartDataCore(
+                    selectedDate, shift, targetParts, cycleTimeSeconds,
+                    startTime, endTime, breaks, formId, groupByField);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        private async Task<IActionResult> GetShiftChartDataCore(
+            DateTime selectedDate,
+            string shift,
+            int targetParts,
+            double cycleTimeSeconds,
+            string startTime,
+            string endTime,
+            string breaks,
+            int formId,
+            string groupByField)
         {
             try
             {
@@ -67,12 +122,13 @@ namespace productionLine.Server.Controllers
                 if (cycleTimeSeconds <= 0)
                     return BadRequest(new { error = "cycleTimeSeconds must be greater than 0" });
 
-                // Build cache key - include groupByField
-                var cacheKey = $"shift_chart_{formId}_{selectedDate:yyyyMMdd}_{shift}_{targetParts}_{cycleTimeSeconds}_{groupByField ?? "none"}";
+                var cacheKey = BuildChartCacheKey(
+                    selectedDate, shift, targetParts, cycleTimeSeconds,
+                    startTime, endTime, breaks, formId, groupByField);
 
-                if (_cache.TryGetValue(cacheKey, out ShiftChartResponse cachedData))
+                if (_cache.TryGetValue(cacheKey, out object cachedData))
                 {
-                    Console.WriteLine($"[ShiftProduction] Returning cached data");
+                    Console.WriteLine("[ShiftProduction] Returning cached data");
                     return Ok(cachedData);
                 }
 
@@ -129,28 +185,24 @@ namespace productionLine.Server.Controllers
                 var startMinutes = ParseTimeToMinutes(startTime);
                 var isOvernight = ParseTimeToMinutes(endTime) <= startMinutes;
 
-                int initialCount = 0;
+                var shiftStartDateTime = queryDate.AddMinutes(startMinutes);
+                int initialCount;
+
                 if (isOvernight)
                 {
                     initialCount = await activeContext.FormSubmissions
                         .AsNoTracking()
-                        .Where(s =>
-                            s.FormId == form &&
-                            (
-                                s.SubmittedAt.Date < queryDate ||
-                                (s.SubmittedAt.Date == queryDate &&
-                                 s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute < startMinutes)
-                            ))
+                        .Where(s => s.FormId == form &&
+                                    s.SubmittedAt < shiftStartDateTime)
                         .CountAsync();
                 }
                 else
                 {
                     initialCount = await activeContext.FormSubmissions
                         .AsNoTracking()
-                        .Where(s =>
-                            s.FormId == form &&
-                            s.SubmittedAt.Date == queryDate &&
-                            s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute < startMinutes)
+                        .Where(s => s.FormId == form &&
+                                    s.SubmittedAt >= queryDate &&
+                                    s.SubmittedAt < shiftStartDateTime)
                         .CountAsync();
                 }
 
@@ -195,31 +247,21 @@ namespace productionLine.Server.Controllers
                         var isOvernightForQuery = endMinutesForQuery <= startMinutesForQuery;
                         var nextDateForQuery = queryDate.AddDays(1);
 
-                        var submissionDataList = await (
-                             from s in activeContext.FormSubmissions.AsNoTracking()
-                             join d in activeContext.FormSubmissionData.AsNoTracking() on s.Id equals d.FormSubmissionId
-                             where
-                                 s.FormId == form &&
-                                 d.FieldLabel == fieldIdStr &&
-                                 (
-                                     isOvernightForQuery
-                                     ? (
-                                         (s.SubmittedAt.Date == queryDate && (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) >= startMinutesForQuery)
-                                         ||
-                                         (s.SubmittedAt.Date == nextDateForQuery && (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) <= endMinutesForQuery)
-                                       )
-                                     : (
-                                         s.SubmittedAt.Date == queryDate &&
-                                         (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) >= startMinutesForQuery &&
-                                         (s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute) <= endMinutesForQuery
-                                       )
-                                 )
-                             select new
-                             {
-                                 d.FormSubmissionId,
-                                 d.FieldValue
-                             }
-                        ).ToListAsync();
+                        var submissionDataRows = submissionIds.Count == 0
+                            ? new List<FormSubmissionData>()
+                            : await activeContext.FormSubmissionData
+                                .AsNoTracking()
+                                .Where(d => submissionIds.Contains(d.FormSubmissionId) &&
+                                            d.FieldLabel == fieldIdStr)
+                                .ToListAsync();
+
+                        var submissionDataList = submissionDataRows
+                            .Select(d => new
+                            {
+                                d.FormSubmissionId,
+                                d.FieldValue
+                            })
+                            .ToList();
 
                         var submissionLineMap = submissionDataList
                             .GroupBy(d => d.FormSubmissionId)
@@ -266,7 +308,7 @@ namespace productionLine.Server.Controllers
                 // SINGLE-LINE chart data (Fallback)
                 // ============================================================
                 Console.WriteLine($"[ShiftProduction] Building SINGLE-LINE combined chart data...");
-                var combinedData = BuildCombinedChartData(submissions, targetLineData,multiplier, submissionModelMap);
+                var combinedData = BuildCombinedChartData(submissions, targetLineData, multiplier, submissionModelMap);
 
                 var currentProductionSingle = (int)Math.Round(submissions.Count * multiplier);
                 var efficiencySingle = targetParts > 0 ? (int)Math.Round((double)currentProductionSingle / targetParts * 100) : 0;
@@ -457,32 +499,21 @@ namespace productionLine.Server.Controllers
             var queryDate = selectedDate.Date;
             var isOvernightShift = endMinutes <= startMinutes;
 
-            IQueryable<FormSubmission> query;
+            var shiftStart = queryDate.AddMinutes(startMinutes);
+            var shiftEndDate = isOvernightShift ? queryDate.AddDays(1) : queryDate;
+            var shiftEnd = shiftEndDate.AddMinutes(endMinutes);
 
-            if (isOvernightShift)
-            {
-                var nextDate = queryDate.AddDays(1);
-                query = context.FormSubmissions
-                    .AsNoTracking()
-                    .Where(s =>
-                        ((s.SubmittedAt.Date == queryDate && s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes)
-                        ||
-                        (s.SubmittedAt.Date == nextDate && s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes))
-                         && s.FormId == formID
-                    );
-            }
-            else
-            {
-                query = context.FormSubmissions
-                    .AsNoTracking()
-                    .Where(s =>
-                        s.SubmittedAt.Date == queryDate &&
-                        s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute >= startMinutes &&
-                        s.SubmittedAt.Hour * 60 + s.SubmittedAt.Minute <= endMinutes && s.FormId == formID
-                    );
-            }
+            // Original logic included the entire end minute. Use an exclusive
+            // upper bound one minute later while keeping the SubmittedAt column
+            // unwrapped so a normal index can be considered by Oracle.
+            var shiftEndExclusive = shiftEnd.AddMinutes(1);
 
-            return await query
+            return await context.FormSubmissions
+                .AsNoTracking()
+                .Where(s =>
+                    s.FormId == formID &&
+                    s.SubmittedAt >= shiftStart &&
+                    s.SubmittedAt < shiftEndExclusive)
                 .OrderBy(s => s.SubmittedAt)
                 .Select(s => new FormSubmission
                 {
@@ -492,88 +523,6 @@ namespace productionLine.Server.Controllers
                 .ToListAsync();
         }
 
-
-
-
-        //    private List<ChartDataPoint> CalculateTargetLine(
-        //int targetParts,
-        //double cycleTimeSeconds,
-        //string startTime,
-        //string endTime,
-        //List<BreakConfig> breaks)
-        //    {
-        //        var partsPerSecond = 1.0 / cycleTimeSeconds;
-        //        var partsPerInterval = partsPerSecond * 300; // 5-minute intervals
-
-        //        var startMinutes = ParseTimeToMinutes(startTime);
-        //        var endMinutes = ParseTimeToMinutes(endTime);
-
-        //        // Handle overnight shifts
-        //        if (endMinutes <= startMinutes)
-        //        {
-        //            endMinutes += 24 * 60;
-        //        }
-
-        //        // ✅ Pre-process breaks with names
-        //        var breakRanges = breaks
-        //            .Where(b => !string.IsNullOrWhiteSpace(b.StartTime) && !string.IsNullOrWhiteSpace(b.EndTime))
-        //            .Select(b => {
-        //                try
-        //                {
-        //                    return new
-        //                    {
-        //                        Start = ParseTimeToMinutes(b.StartTime),
-        //                        End = ParseTimeToMinutes(b.EndTime),
-        //                        Name = b.Name ?? "Break",  // ✅ Include break name
-        //                        IsValid = true
-        //                    };
-        //                }
-        //                catch (Exception ex)
-        //                {
-        //                    Console.WriteLine($"[CalculateTargetLine] Skipping invalid break: {b.Name} - {ex.Message}");
-        //                    return new { Start = 0, End = 0, Name = "", IsValid = false };
-        //                }
-        //            })
-        //            .Where(b => b.IsValid)
-        //            .ToList();
-
-        //        Console.WriteLine($"[CalculateTargetLine] Using {breakRanges.Count} valid breaks out of {breaks.Count} total");
-
-        //        var targetData = new List<ChartDataPoint>();
-        //        var cumulativeParts = 0.0;
-
-        //        // Generate data points every 5 minutes
-        //        for (int minutes = startMinutes; minutes <= endMinutes; minutes += 5)
-        //        {
-        //            var adjustedMinutes = minutes >= 24 * 60 ? minutes - 24 * 60 : minutes;
-
-        //            // ✅ Check if current time is during a break and get break name
-        //            var currentBreak = breakRanges.FirstOrDefault(range =>
-        //                adjustedMinutes >= range.Start && adjustedMinutes <= range.End
-        //            );
-
-        //            var isDuringBreak = currentBreak != null;
-        //            var breakName = isDuringBreak ? currentBreak.Name : null;
-
-        //            // Only add parts if not during break
-        //            if (!isDuringBreak)
-        //            {
-        //                cumulativeParts += partsPerInterval;
-        //            }
-
-        //            targetData.Add(new ChartDataPoint
-        //            {
-        //                Time = FormatTime(adjustedMinutes),
-        //                TargetParts = (int)Math.Round(Math.Min(cumulativeParts, targetParts)),
-        //                ActualParts = 0,
-        //                IsBreak = isDuringBreak,
-        //                BreakName = breakName,  // ✅ Set break name
-        //                NewPartsInBucket = 0
-        //            });
-        //        }
-
-        //        return targetData;
-        //    }
 
         private List<ChartDataPoint> CalculateTargetLine(
     int targetParts,
@@ -726,7 +675,7 @@ namespace productionLine.Server.Controllers
                 }
             }
 
-            
+
 
             // ✅ CRITICAL FIX: Determine shift start/end from targetLineData to get chronological order
             int? shiftStartBucket = null;
@@ -928,7 +877,7 @@ namespace productionLine.Server.Controllers
                     anyActualSet = true;
                 }
                 // <<< NEW — paste this block right here, after the if/else-if chain above,
-                 // before the "if (actualParts > 0 && result.All(...))" line that already exists
+                // before the "if (actualParts > 0 && result.All(...))" line that already exists
                 if (inWindow && !beforeProduction)
                 {
                     if (timeToModelMap.TryGetValue(targetPoint.Time, out var bucketModel))
@@ -1074,13 +1023,16 @@ namespace productionLine.Server.Controllers
                 // So if selectedDate=April 25 and viewing Shift C, the date field = April 24
 
                 // Fetch a 2-day window to cover all cases
+                var downtimeRangeStart = queryDate.AddDays(-2);
+                var downtimeRangeEndExclusive = queryDate.AddDays(2);
+
                 var submissions = await _primaryContext.FormSubmissions
                     .AsNoTracking()
                     .Include(s => s.SubmissionData)
                     .Where(s => s.FormId == downtimeFormId &&
                         s.Status != "Draft" &&
-                        s.SubmittedAt.Date >= queryDate.AddDays(-2) &&
-                        s.SubmittedAt.Date <= queryDate.AddDays(1))
+                        s.SubmittedAt >= downtimeRangeStart &&
+                        s.SubmittedAt < downtimeRangeEndExclusive)
                     .ToListAsync();
 
                 Console.WriteLine($"[Downtime] Broad fetch: {submissions.Count} for form {downtimeFormId}");
@@ -1425,7 +1377,7 @@ namespace productionLine.Server.Controllers
         }
 
         // Services/QuantityMultiplierService.cs
-        
+
 
     }
 
